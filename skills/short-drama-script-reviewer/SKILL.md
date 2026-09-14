@@ -5,7 +5,7 @@ description: Review a confirmed short-drama script and shot units for hook, beat
 
 # Short-drama Script Reviewer
 
-Read `D:\短剧制作核心协议\09_脚本优化与分镜拆解规范.md` and the current project's confirmed script before reviewing. This Skill may identify problems and propose candidates, but must not silently rewrite confirmed plot, character relationships, world setting, or permissions.
+Read `D:\短剧制作核心协议\09_脚本优化与分镜拆解规范.md`, the confirmed script, and the complete objects produced by `short-drama-script-breakdown`. Review independently; do not generate or repair the reviewed objects in place. This Skill may identify problems and propose candidates, but must not silently rewrite confirmed plot, character relationships, world setting, or permissions.
 
 ## Required review record
 
@@ -20,3 +20,4 @@ For each production unit, record:
 
 The record must be `PASS` before the Prompt Compiler can route a video prompt. `PENDING` or `FAIL` blocks provider adapters.
 
+Also fail on uncovered or overlapping time, duplicate IDs, missing source evidence, a shot assigned to multiple production units, output/input state discontinuity without an explicit hard cut, or a production unit that combines incompatible space, costume, speaker, or high-risk contact. Store findings and evidence separately from the generated breakdown.

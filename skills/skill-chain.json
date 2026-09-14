@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "authority": "D:\\短剧制作核心协议\\00_自动化生产唯一入口.md",
+  "steps": [
+    {"skill": "short-drama-production-router", "after": []},
+    {"skill": "short-drama-script-breakdown", "after": ["short-drama-production-router"]},
+    {"skill": "short-drama-script-reviewer", "after": ["short-drama-script-breakdown"]},
+    {"skill": "short-drama-scene-continuity", "after": ["short-drama-script-reviewer"]},
+    {"skill": "short-drama-asset-router", "after": ["short-drama-scene-continuity"]},
+    {"skill": "short-drama-storyboard-planner", "after": ["short-drama-asset-router"], "when": "L2 or storyboard-required; L1 uses key-state planning only"},
+    {"skill": "short-drama-prompt-compiler", "after": ["short-drama-asset-router"]},
+    {"skill": "short-drama-production-qa", "after": ["short-drama-prompt-compiler"], "mode": "pre_generation"},
+    {"skill": "runninghub-local-adapter", "after": ["short-drama-production-qa"], "provider": "runninghub"},
+    {"skill": "xiaoyunque-local-adapter", "after": ["short-drama-production-qa"], "provider": "xiaoyunque"},
+    {"skill": "libtv-local-adapter", "after": ["short-drama-production-qa"], "provider": "libtv"},
+    {"skill": "short-drama-production-qa", "after_any": ["runninghub-local-adapter", "xiaoyunque-local-adapter", "libtv-local-adapter"], "mode": "post_generation"}
+  ]
+}

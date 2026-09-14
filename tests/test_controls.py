@@ -4,6 +4,7 @@ from production_control.asset_decider import decide
 from production_control.payload_compiler import compile_payload
 from production_control.qa_report import validate_report
 from production_control.capabilities import get_capability
+from production_control.skill_chain_validator import validate_chain as validate_skill_chain
 
 ROOT=Path(__file__).parents[1]
 def load(n): return json.loads((ROOT/'examples'/n).read_text(encoding='utf-8'))
@@ -20,3 +21,5 @@ def test_payload_requires_authorization():
     except ValueError as e: assert 'not authorized' in str(e)
     else: assert False
 
+def test_skill_chain_is_complete_and_ordered():
+    assert validate_skill_chain() == []

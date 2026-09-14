@@ -5,7 +5,7 @@ description: Compile approved short-drama production units into provider-neutral
 
 # Short-drama Prompt Compiler
 
-Use this skill after the project script and shot unit are confirmed. Read the D-drive core protocol first; it remains authoritative.
+Use this skill only after the script review and scene-continuity record are PASS and an asset decision exists. Read the D-drive core protocol first; it remains authoritative. Consume structured ProductionUnit and AssetDecision records, not an unreviewed prose summary.
 
 ## Default route
 
@@ -13,7 +13,7 @@ Use `direct_prompt` for ordinary prompt-first units. Require `keyframe_assisted`
 
 ## Required prompt fields
 
-Provide exactly one primary subject, primary action, camera instruction, shot-language tuple, speaker, start state, end state, reference responsibilities, and prohibitions. Record the Skill ID/version and an independent `PASS` QA evidence path. Do not use a storyboard as an identity reference.
+Emit a provider-neutral `PromptUnit` object before writing provider syntax. Provide exactly one primary subject, primary action, action boundary, camera instruction and purpose, shot-language tuple, speaker and exact dialogue, start state, end state, reference responsibilities with scope, audio intent, continuity dependency, and task-specific prohibitions. Record the Skill ID/version/hash and an independent QA evidence path. Do not use a storyboard as an identity reference.
 
 ## Review skills
 
@@ -23,7 +23,7 @@ Provide exactly one primary subject, primary action, camera instruction, shot-la
 
 ## Provider boundary
 
-Compile a provider-neutral unit first. A provider adapter for RunningHub, 小云雀, or LibTV may translate syntax and parameter names only. It may not alter confirmed plot, duration, assets, action, dialogue, or prohibitions.
+Compile a provider-neutral unit first. A provider adapter for RunningHub, 小云雀, or LibTV may translate syntax and parameter names only. It may not alter confirmed plot, duration, assets, action, dialogue, start/end states, or prohibitions. Adapter output must retain a source PromptUnit ID and provenance hash.
 
 ## Validation
 
