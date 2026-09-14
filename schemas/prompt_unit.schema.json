@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/prompt_unit.schema.json",
+  "title": "Provider-neutral prompt production unit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["unit_id", "purpose", "primary_subject", "primary_action", "camera", "dialogue", "continuity", "prohibitions", "risk_flags"],
+  "properties": {
+    "unit_id": {"type": "string", "minLength": 1},
+    "purpose": {"type": "string", "minLength": 1},
+    "primary_subject": {"type": "string", "minLength": 1},
+    "primary_action": {"type": "string", "minLength": 1},
+    "camera": {"type": "string", "minLength": 1},
+    "dialogue": {"type": "object", "additionalProperties": false, "required": ["speaker", "line_or_none"], "properties": {"speaker": {"type": "string", "minLength": 1}, "line_or_none": {"type": "string"}}},
+    "continuity": {"type": "object", "additionalProperties": false, "required": ["start_state", "end_state"], "properties": {"start_state": {"type": "string", "minLength": 1}, "end_state": {"type": "string", "minLength": 1}}},
+    "prohibitions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "risk_flags": {"type": "array", "uniqueItems": true, "items": {"enum": ["none", "physical_contact", "multi_character_choreography", "complex_prop_handoff", "cross_space_continuity", "complex_vfx_path", "new_character_or_scene", "real_tail_frame_required"]}}
+  }
+}
+

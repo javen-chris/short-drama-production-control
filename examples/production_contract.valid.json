@@ -1,0 +1,16 @@
+{
+  "contract_id": "DEMO-EP01-U01-v1",
+  "project": "DEMO",
+  "segment": "EP01-U01",
+  "current_gate": "G5",
+  "provider": "runninghub",
+  "target": {"duration_seconds": 5, "resolution": "720p", "aspect_ratio": "9:16"},
+  "authorization": {"video_submission_authorized": false, "max_submissions": 0, "allow_retry": false, "allow_model_switch": false, "allow_publish": false, "allow_master_overwrite": false},
+  "assets": [
+    {"role": "character_master", "path": "D:/项目/角色MASTER.png", "purpose": "锁定女主身份、发型、服装"},
+    {"role": "scene_master", "path": "D:/项目/书房MASTER.png", "purpose": "锁定书桌与空间锚点"}
+  ],
+  "storyboard_mode": "direct_prompt",
+  "prompt_unit": {"unit_id": "EP01-U01", "purpose": "开场钩子：主角发现异常来电", "primary_subject": "女主", "primary_action": "她在书桌前停下，抬手接起震动的手机", "camera": "中近景，轻微推进，保持人物右侧屏幕方向", "dialogue": {"speaker": "女主", "line_or_none": "谁？"}, "continuity": {"start_state": "女主站在书桌右侧，手机在桌上", "end_state": "手机在女主右手，目光落向屏幕"}, "prohibitions": ["不得新增人物", "不得出现伪文字或字幕", "不得改变服装"], "risk_flags": ["none"]}
+}
+
