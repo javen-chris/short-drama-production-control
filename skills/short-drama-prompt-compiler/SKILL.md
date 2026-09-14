@@ -17,7 +17,7 @@ Provide exactly one primary subject, primary action, camera instruction, shot-la
 
 ## Review skills
 
-- Script structure and optimization must be reviewed against the D-drive `09_脚本优化与分镜拆解规范.md` (hook, beat chain, visible change points, and one visual cause per unit).
+- Run the repository `short-drama-script-reviewer` Skill first; it reviews script structure against the D-drive `09_脚本优化与分镜拆解规范.md` (hook, beat chain, visible change points, and one visual cause per unit).
 - Camera language should vary in scale, angle, movement, and purpose. Run `python -m production_control.shot_language_linter <ordered-units.json>`; intentional consecutive reuse requires a written `repeat_reason`.
 - Provider/model-specific syntax is a later adapter concern. Use an installed provider skill only after the neutral prompt has passed this Skill and independent QA; the provider skill cannot rewrite the contract.
 

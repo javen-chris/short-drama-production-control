@@ -9,6 +9,7 @@ Authoritative production rules remain in `D:\短剧制作核心协议`. This rep
 | Prompt-first; storyboards only for complex risk | `storyboard_mode` plus risk-flag routing |
 | Every video prompt must be Skill-produced and QA-approved | `skill_production`, `qa_review.status=PASS`, and `script_review.status=PASS` |
 | Avoid meaningless repeated camera language | `shot_language_linter.py`; repeats require `repeat_reason` |
+| Script rhythm and shot decomposition review | repository Skill `short-drama-script-reviewer` and `script_review.status=PASS` |
 | Storyboard submitted to a video model must be a stitched composite | only `storyboard_composite` is an accepted storyboard role |
 | Character/scene/prop/tail-frame responsibilities remain distinct | explicit asset roles and policy checks |
 | Three generation channels | provider enum: `runninghub`, `xiaoyunque`, `libtv` |
