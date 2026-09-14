@@ -3,6 +3,7 @@ from pathlib import Path
 
 from production_control.contract_validator import validate_contract
 from production_control.prompt_linter import lint
+from production_control.shot_language_linter import lint_sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,3 +34,11 @@ def test_prompt_requires_prohibitions():
     unit["prohibitions"] = []
     assert lint(unit)
 
+
+def test_repeated_shot_language_requires_reason():
+    first = load("prompt_unit.direct.json")
+    second = json.loads(json.dumps(first))
+    second["unit_id"] = "EP01-U02"
+    assert lint_sequence([first, second])
+    second["repeat_reason"] = "保持观众视线锁定手机信息"
+    assert lint_sequence([first, second]) == []

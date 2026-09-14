@@ -36,6 +36,13 @@ def policy_errors(contract: dict) -> list[str]:
     mode = contract.get("storyboard_mode")
     auth = contract.get("authorization", {})
 
+    if not prompt.get("skill_production", {}).get("skill_id"):
+        errors.append("every video prompt must record the Skill that produced it")
+    if prompt.get("qa_review", {}).get("status") != "PASS":
+        errors.append("every video prompt must have independent QA status PASS")
+    if prompt.get("script_review", {}).get("status") != "PASS":
+        errors.append("script review must be PASS before provider routing")
+
     if contract.get("current_gate") not in {"G5", "G6"}:
         errors.append("current_gate must be G5 or G6 for a provider-ready production contract")
     if "character_master" not in roles or "scene_master" not in roles:

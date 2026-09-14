@@ -11,6 +11,5 @@
     {"role": "scene_master", "path": "D:/项目/书房MASTER.png", "purpose": "锁定书桌与空间锚点"}
   ],
   "storyboard_mode": "direct_prompt",
-  "prompt_unit": {"unit_id": "EP01-U01", "purpose": "开场钩子：主角发现异常来电", "primary_subject": "女主", "primary_action": "她在书桌前停下，抬手接起震动的手机", "camera": "中近景，轻微推进，保持人物右侧屏幕方向", "dialogue": {"speaker": "女主", "line_or_none": "谁？"}, "continuity": {"start_state": "女主站在书桌右侧，手机在桌上", "end_state": "手机在女主右手，目光落向屏幕"}, "prohibitions": ["不得新增人物", "不得出现伪文字或字幕", "不得改变服装"], "risk_flags": ["none"]}
+  "prompt_unit": {"unit_id": "EP01-U01", "purpose": "开场钩子：主角发现异常来电", "primary_subject": "女主", "primary_action": "她在书桌前停下，抬手接起震动的手机", "camera": "中近景，轻微推进，保持人物右侧屏幕方向", "shot_language": {"scale": "中近景", "angle": "平视", "movement": "轻微推进", "screen_direction": "人物保持右侧屏幕方向", "purpose": "让观众先看女主反应"}, "dialogue": {"speaker": "女主", "line_or_none": "谁？"}, "continuity": {"start_state": "女主站在书桌右侧，手机在桌上", "end_state": "手机在女主右手，目光落向屏幕"}, "reference_responsibilities": ["character_master=锁定女主脸、发型、服装", "scene_master=锁定书桌与空间锚点"], "prohibitions": ["不得新增人物", "不得出现伪文字或字幕", "不得改变服装"], "risk_flags": ["none"], "skill_production": {"skill_id": "short-drama-prompt-compiler", "skill_version": "0.1.0", "source_record": "skills/short-drama-prompt-compiler/SKILL.md"}, "qa_review": {"status": "PASS", "reviewer": "prompt-qa-v1", "evidence": "qa/prompt/EP01-U01.json"}, "script_review": {"status": "PASS", "hook": "异常来电在0-3秒出现", "beat_chain": ["钩子", "目标", "阻碍", "行动", "结果", "未解决问题"], "change_points": ["手机开始震动", "女主接听并回应"]}}
 }
-

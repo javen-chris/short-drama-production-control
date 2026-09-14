@@ -14,6 +14,15 @@ SCHEMAS = ROOT / "schemas"
 def lint(unit: dict) -> list[str]:
     schema = json.loads((SCHEMAS / "prompt_unit.schema.json").read_text(encoding="utf-8"))
     errors = [error.message for error in Draft202012Validator(schema).iter_errors(unit)]
+    skill = unit.get("skill_production", {})
+    qa = unit.get("qa_review", {})
+    script = unit.get("script_review", {})
+    if not skill.get("skill_id"):
+        errors.append("video prompts must be produced by a recorded Skill")
+    if qa.get("status") != "PASS":
+        errors.append("video prompt QA must be PASS before provider routing")
+    if script.get("status") != "PASS":
+        errors.append("script review must be PASS before provider routing")
     if unit.get("dialogue", {}).get("line_or_none") and unit.get("dialogue", {}).get("speaker") in {"", "none"}:
         errors.append("dialogue line requires one explicit speaker")
     return errors

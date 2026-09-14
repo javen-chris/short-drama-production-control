@@ -13,7 +13,13 @@ Use `direct_prompt` for ordinary prompt-first units. Require `keyframe_assisted`
 
 ## Required prompt fields
 
-Provide exactly one primary subject, primary action, camera instruction, speaker, start state, end state, reference responsibilities, and prohibitions. Do not use a storyboard as an identity reference.
+Provide exactly one primary subject, primary action, camera instruction, shot-language tuple, speaker, start state, end state, reference responsibilities, and prohibitions. Record the Skill ID/version and an independent `PASS` QA evidence path. Do not use a storyboard as an identity reference.
+
+## Review skills
+
+- Script structure and optimization must be reviewed against the D-drive `09_脚本优化与分镜拆解规范.md` (hook, beat chain, visible change points, and one visual cause per unit).
+- Camera language should vary in scale, angle, movement, and purpose. Run `python -m production_control.shot_language_linter <ordered-units.json>`; intentional consecutive reuse requires a written `repeat_reason`.
+- Provider/model-specific syntax is a later adapter concern. Use an installed provider skill only after the neutral prompt has passed this Skill and independent QA; the provider skill cannot rewrite the contract.
 
 ## Provider boundary
 
@@ -22,4 +28,3 @@ Compile a provider-neutral unit first. A provider adapter for RunningHub, 小云
 ## Validation
 
 Run `python -m production_control.prompt_linter <prompt-unit.json>` and `python -m production_control.contract_validator <production-contract.json>` before any adapter work. Passing validation does not authorize a paid submission.
-
