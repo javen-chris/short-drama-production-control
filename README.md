@@ -10,6 +10,7 @@ This private repository is the code control plane for the D-drive short-drama pr
 - checks consecutive shot-language reuse and requires a reason when repetition is intentional;
 - separates script review from prompt compilation through a dedicated repository Skill;
 - persists confirmed workflow decisions in `docs/decisions/` and adaptive asset routing in `docs/architecture/`;
+- keeps a dated GitHub AIGC workflow benchmark and reuse boundary in `docs/research/`;
 - treats prompts as the default path and storyboards as a risk-triggered exception;
 - has no network calls, provider calls, retry loop, or paid-task submission.
 
