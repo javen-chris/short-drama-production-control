@@ -17,3 +17,4 @@ jobs:
       - run: python -m production_control.contract_validator examples/production_contract.valid.json
       - run: python -m production_control.prompt_linter examples/prompt_unit.direct.json
       - run: pytest
+      - run: python -c "from production_control.security_scan import scan; e=scan('.'); print(*e, sep='\n'); raise SystemExit(bool(e))"
