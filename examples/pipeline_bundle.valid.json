@@ -1,0 +1,7 @@
+{
+  "script": {"script_id": "DEMO-EP01", "project": "DEMO", "segment": "EP01", "version": "v1", "status": "PASS", "hook": "异常来电", "beat_chain": ["钩子", "目标", "阻碍", "行动", "结果", "悬念"], "change_points": ["手机震动"], "confirmed_plot": true},
+  "shots": [{"shot_id": "S01", "script_id": "DEMO-EP01", "start_seconds": 0, "end_seconds": 5, "purpose": "建立异常", "viewer_focus": "女主", "scale": "中近景", "camera": "平视轻推", "action_start": "手机在桌上震动", "action_end": "女主接起手机", "speaker": "女主", "spatial_state": "书桌右侧", "causal_link": "异常来电触发接听"}],
+  "production_units": [{"production_unit_id": "U01", "script_id": "DEMO-EP01", "shot_ids": ["S01"], "duration_seconds": 5, "same_space": true, "same_costume": true, "single_speaker": true, "low_risk_continuity": true, "input_state": "手机在桌上", "output_state": "手机在右手"}],
+  "asset_decisions": [{"production_unit_id": "U01", "prompt_only": "PASS", "recommended_route": "PROMPT_ONLY_READY", "risk_factors": [], "missing_assets": [], "reason": "已有角色和场景MASTER，单一低风险动作", "blocked_until": []}]
+}
+

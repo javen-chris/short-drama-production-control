@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/production_unit.schema.json",
+  "title": "Video production unit", "type": "object", "additionalProperties": false,
+  "required": ["production_unit_id", "script_id", "shot_ids", "duration_seconds", "same_space", "same_costume", "single_speaker", "low_risk_continuity", "input_state", "output_state"],
+  "properties": {
+    "production_unit_id": {"type": "string", "minLength": 1}, "script_id": {"type": "string", "minLength": 1}, "shot_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "duration_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 60}, "same_space": {"type": "boolean"}, "same_costume": {"type": "boolean"}, "single_speaker": {"type": "boolean"}, "low_risk_continuity": {"type": "boolean"},
+    "input_state": {"type": "string", "minLength": 1}, "output_state": {"type": "string", "minLength": 1}, "real_tail_frame": {"type": "string"}
+  }
+}
+

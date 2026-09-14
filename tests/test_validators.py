@@ -4,6 +4,7 @@ from pathlib import Path
 from production_control.contract_validator import validate_contract
 from production_control.prompt_linter import lint
 from production_control.shot_language_linter import lint_sequence
+from production_control.pipeline_validator import validate_chain
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,3 +43,13 @@ def test_repeated_shot_language_requires_reason():
     assert lint_sequence([first, second])
     second["repeat_reason"] = "保持观众视线锁定手机信息"
     assert lint_sequence([first, second]) == []
+
+
+def test_pipeline_object_chain_is_valid():
+    assert validate_chain(load("pipeline_bundle.valid.json")) == []
+
+
+def test_pipeline_blocks_unconfirmed_script():
+    bundle = load("pipeline_bundle.valid.json")
+    bundle["script"]["status"] = "FAIL"
+    assert "script must be PASS before downstream objects" in validate_chain(bundle)

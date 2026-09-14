@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/asset_decision.schema.json",
+  "title": "Adaptive asset decision", "type": "object", "additionalProperties": false,
+  "required": ["production_unit_id", "prompt_only", "recommended_route", "risk_factors", "missing_assets", "reason", "blocked_until"],
+  "properties": {
+    "production_unit_id": {"type": "string", "minLength": 1}, "prompt_only": {"enum": ["PASS", "FAIL"]},
+    "recommended_route": {"enum": ["PROMPT_ONLY_READY", "KEYFRAME_REQUIRED", "ASSET_PLAN_REQUIRED", "STORYBOARD_REQUIRED", "BLOCKED_MISSING_MASTER"]},
+    "risk_factors": {"type": "array", "items": {"type": "string"}},
+    "missing_assets": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["role", "purpose", "minimum_scope"], "properties": {"role": {"type": "string"}, "purpose": {"type": "string"}, "minimum_scope": {"type": "string"}}}},
+    "reason": {"type": "string", "minLength": 1}, "estimated_extra_work": {"type": "string"}, "blocked_until": {"type": "array", "items": {"type": "string"}}
+  }
+}
+
