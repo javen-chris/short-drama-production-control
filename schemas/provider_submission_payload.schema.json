@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/provider_submission_payload.schema.json",
+  "title": "Provider submission payload", "type": "object", "additionalProperties": false,
+  "required": ["payload_id", "production_unit_id", "provider", "contract_id", "prompt_unit_id", "asset_paths", "submission_authorized"],
+  "properties": {
+    "payload_id": {"type": "string", "minLength": 1}, "production_unit_id": {"type": "string", "minLength": 1}, "provider": {"enum": ["runninghub", "xiaoyunque", "libtv"]}, "contract_id": {"type": "string", "minLength": 1}, "prompt_unit_id": {"type": "string", "minLength": 1}, "asset_paths": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "submission_authorized": {"const": true}
+  }
+}
+

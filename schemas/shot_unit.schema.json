@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/shot_unit.schema.json",
+  "title": "Shot unit", "type": "object", "additionalProperties": false,
+  "required": ["shot_id", "script_id", "start_seconds", "end_seconds", "purpose", "viewer_focus", "scale", "camera", "action_start", "action_end", "speaker", "spatial_state", "causal_link"],
+  "properties": {
+    "shot_id": {"type": "string", "minLength": 1}, "script_id": {"type": "string", "minLength": 1},
+    "start_seconds": {"type": "number", "minimum": 0}, "end_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "purpose": {"type": "string", "minLength": 1}, "viewer_focus": {"type": "string", "minLength": 1}, "scale": {"type": "string", "minLength": 1}, "camera": {"type": "string", "minLength": 1},
+    "action_start": {"type": "string", "minLength": 1}, "action_end": {"type": "string", "minLength": 1}, "speaker": {"type": "string", "minLength": 1},
+    "spatial_state": {"type": "string", "minLength": 1}, "causal_link": {"type": "string", "minLength": 1},
+    "risk_flags": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "real_tail_frame_required": {"type": "boolean"}
+  }
+}
+

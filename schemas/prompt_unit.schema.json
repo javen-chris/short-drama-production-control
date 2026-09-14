@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/prompt_unit.schema.json",
+  "title": "Provider-neutral prompt production unit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["unit_id", "purpose", "primary_subject", "primary_action", "camera", "shot_language", "dialogue", "continuity", "reference_responsibilities", "prohibitions", "risk_flags", "skill_production", "qa_review", "script_review"],
+  "properties": {
+    "unit_id": {"type": "string", "minLength": 1},
+    "purpose": {"type": "string", "minLength": 1},
+    "primary_subject": {"type": "string", "minLength": 1},
+    "primary_action": {"type": "string", "minLength": 1},
+    "camera": {"type": "string", "minLength": 1},
+    "repeat_reason": {"type": "string", "minLength": 1},
+    "shot_language": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scale", "angle", "movement", "screen_direction", "purpose"],
+      "properties": {
+        "scale": {"type": "string", "minLength": 1},
+        "angle": {"type": "string", "minLength": 1},
+        "movement": {"type": "string", "minLength": 1},
+        "screen_direction": {"type": "string", "minLength": 1},
+        "purpose": {"type": "string", "minLength": 1}
+      }
+    },
+    "dialogue": {"type": "object", "additionalProperties": false, "required": ["speaker", "line_or_none"], "properties": {"speaker": {"type": "string", "minLength": 1}, "line_or_none": {"type": "string"}}},
+    "continuity": {"type": "object", "additionalProperties": false, "required": ["start_state", "end_state"], "properties": {"start_state": {"type": "string", "minLength": 1}, "end_state": {"type": "string", "minLength": 1}}},
+    "reference_responsibilities": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "prohibitions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "risk_flags": {"type": "array", "uniqueItems": true, "items": {"enum": ["none", "physical_contact", "multi_character_choreography", "complex_prop_handoff", "cross_space_continuity", "complex_vfx_path", "new_character_or_scene", "real_tail_frame_required"]}},
+    "skill_production": {
+      "type": "object", "additionalProperties": false,
+      "required": ["skill_id", "skill_version", "source_record"],
+      "properties": {
+        "skill_id": {"type": "string", "minLength": 1},
+        "skill_version": {"type": "string", "minLength": 1},
+        "source_record": {"type": "string", "minLength": 1}
+      }
+    },
+    "qa_review": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "reviewer", "evidence"],
+      "properties": {
+        "status": {"const": "PASS"},
+        "reviewer": {"type": "string", "minLength": 1},
+        "evidence": {"type": "string", "minLength": 1}
+      }
+    },
+    "script_review": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "hook", "beat_chain", "change_points"],
+      "properties": {
+        "status": {"enum": ["PASS", "PENDING", "FAIL"]},
+        "hook": {"type": "string", "minLength": 1},
+        "beat_chain": {"type": "array", "minItems": 3, "items": {"type": "string", "minLength": 1}},
+        "change_points": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}
