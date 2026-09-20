@@ -2,8 +2,8 @@
   "project": "episode_demo",
   "series": "龙骨列车",
   "episode": "EP02",
-  "active_run_id": "RUN-EP02-U07",
-  "updated_at": "2026-09-20T15:10:52.212943+00:00",
+  "active_run_id": "RUN-EP02-U08",
+  "updated_at": "2026-09-20T15:21:51.143069+00:00",
   "runs": [
     {
       "run_id": "RUN-EP02-U01",
@@ -115,15 +115,15 @@
       "segment": "U08",
       "segment_title": "（待拆解）",
       "status": "RUNNING",
-      "current_step": "short-drama-production-router",
+      "current_step": "short-drama-script-breakdown",
       "pending_decision": "",
       "progress": {
-        "completed": 0,
+        "completed": 1,
         "total": 6
       },
       "path": "runs/RUN-EP02-U08.json",
-      "last_event_at": "",
-      "updated_at": "2026-09-20T14:26:43.896038+00:00"
+      "last_event_at": "2026-09-20T23:21:51+08:00",
+      "updated_at": "2026-09-20T15:21:51.142067+00:00"
     },
     {
       "run_id": "RUN-EP02-U09",
