@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生产线运行报告 · RUN-EP02-A2-20260920</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#1f2328; --line:#d1d9e0; --muted:#59636e; --card:#f6f8fa; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
+         font:15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  h3 { font-size:15px; margin:0; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .cards { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+  .card { flex:1 1 160px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card .k { color:var(--muted); font-size:12px; }
+  .card .v { font-size:18px; font-weight:600; margin-top:2px; }
+  .bar { height:6px; background:var(--line); border-radius:3px; margin-top:8px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:#1a7f37; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px;
+            color:#fff; background:var(--c,#6e7781); }
+  .step { border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .step.done { border-left:3px solid #1a7f37; }
+  .step header { display:flex; align-items:center; gap:8px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--c,#6e7781); flex:none; }
+  .step header h3 { flex:1; }
+  .meta { color:var(--muted); font-size:12.5px; margin:6px 0 4px; }
+  .meta code, .reads code, .pending code { font-size:12.5px; }
+  .reason { margin:6px 0; padding:6px 10px; background:var(--card); border-radius:6px; font-size:13px; }
+  .reads { list-style:none; margin:6px 0 0; padding:0; font-size:13px; }
+  .reads li { padding:2px 0 2px 18px; position:relative; }
+  .reads li::before { position:absolute; left:0; }
+  .reads li.ok::before { content:"✓"; color:#1a7f37; }
+  .reads li.miss::before { content:"✗"; color:#cf222e; }
+  .reads li.dim::before { content:"·"; color:var(--muted); }
+  .reads li.miss { color:#cf222e; }
+  .reads li.dim { color:var(--muted); }
+  .clean { background:rgba(26,127,55,.1); border:1px solid rgba(26,127,55,.4); border-radius:10px;
+            padding:12px 14px; margin-top:16px; }
+  .problems, .pending { background:var(--card); border:1px solid var(--line); border-radius:10px;
+                         padding:12px 14px; margin-top:16px; }
+  .problems { border-color:rgba(207,34,46,.5); }
+  .problems ul, .pending ul { margin:0; padding-left:20px; font-size:13.5px; }
+  .halt { margin-top:16px; padding:10px 14px; border-radius:10px; background:rgba(154,103,0,.12);
+           border:1px solid rgba(154,103,0,.4); }
+  footer { margin-top:28px; color:var(--muted); font-size:12px; }
+  code { font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>生产线运行报告</h1>
+  <div class="sub">运行 <code>RUN-EP02-A2-20260920</code> · 合同 <code>DEMO-EP02-A2</code> · 生成于 2026-09-20T13:20:50.651806+00:00</div>
+
+  <div class="cards">
+    <div class="card"><div class="k">状态</div><div class="v">PAUSED_EXCEPTION</div></div>
+    <div class="card"><div class="k">进度</div><div class="v">4 / 6</div>
+      <div class="bar"><i style="width:67%"></i></div></div>
+    <div class="card"><div class="k">合规</div><div class="v">PASS</div></div>
+    <div class="card"><div class="k">当前步骤</div><div class="v" style="font-size:14px">short-drama-production-qa</div></div>
+  </div>
+
+  <div class="halt"><strong>等待决定：</strong>第 2 格角色手部结构异常，判定 FAIL</div>
+
+  <h2>步骤明细（6 步）</h2>
+  
+      <section class="step done">
+        <header>
+          <span class="dot" style="--c:#1a7f37"></span>
+          <h3>short-drama-production-router</h3>
+          <span class="badge" style="--c:#1a7f37">已完成</span>
+        </header>
+        <div class="meta"><span>Skill：<code>short-drama-production-router</code></span> · <span>校验器：<code>contract_validator</code></span> · <span>读取证明：<code>ATT-20260920-001</code></span> · <span>证据：<code>workflow/qa_reports/short-drama-production-router.json</code></span> · <span class="dim">2026-09-20T13:20:49.988583+00:00</span></div>
+        
+        <ul class="reads"><li class="ok">已读 <code>00_自动化生产唯一入口_v3.0.md</code></li><li class="ok">已读 <code>核心自动化生产包/02_任务路由与Gate_v3.0.md</code></li></ul>
+      </section>
+      <section class="step done">
+        <header>
+          <span class="dot" style="--c:#1a7f37"></span>
+          <h3>short-drama-script-breakdown</h3>
+          <span class="badge" style="--c:#1a7f37">已完成</span>
+        </header>
+        <div class="meta"><span>Skill：<code>short-drama-script-breakdown</code></span> · <span>校验器：<code>contract_validator</code></span> · <span>证据：<code>workflow/qa_reports/short-drama-script-breakdown.json</code></span> · <span class="dim">2026-09-20T13:20:49.988583+00:00</span></div>
+        
+        <ul class="reads"><li class="ok">已读 <code>09_脚本优化与分镜拆解规范_v3.0.md</code></li></ul>
+      </section>
+      <section class="step done">
+        <header>
+          <span class="dot" style="--c:#1a7f37"></span>
+          <h3>short-drama-script-reviewer</h3>
+          <span class="badge" style="--c:#1a7f37">已完成</span>
+        </header>
+        <div class="meta"><span>Skill：<code>short-drama-script-reviewer</code></span> · <span>校验器：<code>contract_validator</code></span> · <span>证据：<code>workflow/qa_reports/short-drama-script-reviewer.json</code></span> · <span class="dim">2026-09-20T13:20:49.988583+00:00</span></div>
+        
+        <ul class="reads"><li class="ok">已读 <code>09_脚本优化与分镜拆解规范_v3.0.md</code></li></ul>
+      </section>
+      <section class="step done">
+        <header>
+          <span class="dot" style="--c:#1a7f37"></span>
+          <h3>short-drama-image-generator</h3>
+          <span class="badge" style="--c:#1a7f37">已完成</span>
+        </header>
+        <div class="meta"><span>Skill：<code>short-drama-image-generator</code></span> · <span>校验器：<code>contract_validator</code></span> · <span>证据：<code>workflow/qa_reports/short-drama-image-generator.json</code></span> · <span class="dim">2026-09-20T13:20:49.988583+00:00</span></div>
+        
+        <ul class="reads"><li class="ok">已读 <code>14_RH生图渠道与GPT通道现状_v3.0.md</code></li><li class="ok">已读 <code>16_生图渠道规则_v3.0.md</code></li></ul>
+      </section>
+      <section class="step ">
+        <header>
+          <span class="dot" style="--c:#bc4c00"></span>
+          <h3>short-drama-production-qa</h3>
+          <span class="badge" style="--c:#bc4c00">已挂起（异常）</span>
+        </header>
+        <div class="meta"><span>证据：<code>workflow/qa_reports/EP02-A2-U03_post.json</code></span> · <span class="dim">2026-09-20T13:20:49.988583+00:00</span></div>
+        <p class="reason">第 2 格角色手部结构异常，判定 FAIL</p>
+        <ul class="reads"><li class="dim">未开始 · 这一步需要读 <code>04_QA与文件治理_v3.0.md</code></li></ul>
+      </section>
+      <section class="step ">
+        <header>
+          <span class="dot" style="--c:#6e7781"></span>
+          <h3>runninghub-local-adapter</h3>
+          <span class="badge" style="--c:#6e7781">未开始</span>
+        </header>
+        <div class="meta"></div>
+        
+        <ul class="reads"><li class="dim">未开始 · 这一步需要读 <code>13_模型执行前硬门禁_v3.0.md</code></li></ul>
+      </section>
+
+  <div class="clean">合规检查通过：每一步都记录了 Skill、证据与必需的协议读取。</div>
+  <div class="pending"><h2>尚未执行（2）</h2><ul><li><code>short-drama-production-qa</code></li><li><code>runninghub-local-adapter</code></li></ul></div>
+
+  <footer>
+    数据来源：<code>run_state.json</code>（编排器与 Skill 运行事件）。生成命令：
+    <code>python -m production_control.run_report &lt;run_state.json&gt; --html report.html</code>
+  </footer>
+</div>
+</body>
+</html>

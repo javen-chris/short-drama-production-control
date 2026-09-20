@@ -34,6 +34,7 @@ Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及�
 | No duplicate paid submission; observed cost | `cost_ledger.py` idempotency keys and `cost_ledger.schema.json` |
 | Exception queue and edit candidate pool | `exception_queue.schema.json`, `edit_candidate.schema.json` |
 | Pipeline can pause, wait for approval, and resume from a checkpoint | `orchestrator.py`, `run_state.py`, `run_state.schema.json` |
+| A run can be read step by step without digging through logs | `run_report.py`: text summary or self-contained HTML (`python -m production_control.run_report <run_state.json> --html report.html`) |
 | Provider limits declared, not guessed | `capabilities/providers.json` with `provider_capability.schema.json` |
 | Agents must prove they read the current core protocol before producing | `tools/protocol_fingerprint.py`, `protocol_attestation.py`, `protocol_attestation.schema.json` |
 | Image assets exist only via GPT-Image-2, subscription channel first; seedream, banana, and qwen-image retired by user ruling 2026-09-20 | `short-drama-image-generator` Skill, `image_channel.py`, `image_channel.schema.json` |
