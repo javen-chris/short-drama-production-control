@@ -1,12 +1,31 @@
 {
   "run_id": "RUN-EP02-U07",
   "contract_id": "DRAGONTRAIN-EP02",
-  "current_step": "short-drama-production-router",
+  "current_step": "short-drama-script-breakdown",
   "status": "RUNNING",
   "checkpoint": "short-drama-production-router",
-  "completed_steps": [],
-  "events": [],
-  "updated_at": "2026-09-20T14:26:43.837863+00:00",
+  "completed_steps": [
+    "short-drama-production-router"
+  ],
+  "events": [
+    {
+      "step": "short-drama-production-router",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T23:10:52+08:00",
+      "skill_id": "short-drama-production-router",
+      "protocol_refs": [
+        {
+          "path": "00_自动化生产唯一入口_v3.0.md"
+        },
+        {
+          "path": "核心自动化生产包/02_任务路由与Gate_v3.0.md"
+        }
+      ],
+      "evidence": "workflow/qa_reports/router_U07.json",
+      "validator": ""
+    }
+  ],
+  "updated_at": "2026-09-20T15:10:52.192894+00:00",
   "pipeline": [
     "short-drama-production-router",
     "short-drama-script-breakdown",
