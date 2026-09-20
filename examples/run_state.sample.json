@@ -1,0 +1,97 @@
+{
+  "run_id": "RUN-EP02-A2-20260920",
+  "contract_id": "DEMO-EP02-A2",
+  "current_step": "short-drama-production-qa",
+  "status": "PAUSED_EXCEPTION",
+  "checkpoint": "short-drama-production-qa",
+  "completed_steps": [
+    "short-drama-production-router",
+    "short-drama-script-breakdown",
+    "short-drama-script-reviewer",
+    "short-drama-image-generator"
+  ],
+  "events": [
+    {
+      "step": "short-drama-production-router",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:20:49.988583+00:00",
+      "evidence": "workflow/qa_reports/short-drama-production-router.json",
+      "skill_id": "short-drama-production-router",
+      "protocol_refs": [
+        {
+          "path": "00_自动化生产唯一入口_v3.0.md",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "path": "核心自动化生产包/02_任务路由与Gate_v3.0.md",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "validator": "contract_validator",
+      "attestation_id": "ATT-20260920-001"
+    },
+    {
+      "step": "short-drama-script-breakdown",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:20:49.988583+00:00",
+      "evidence": "workflow/qa_reports/short-drama-script-breakdown.json",
+      "skill_id": "short-drama-script-breakdown",
+      "protocol_refs": [
+        {
+          "path": "09_脚本优化与分镜拆解规范_v3.0.md",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-script-reviewer",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:20:49.988583+00:00",
+      "evidence": "workflow/qa_reports/short-drama-script-reviewer.json",
+      "skill_id": "short-drama-script-reviewer",
+      "protocol_refs": [
+        {
+          "path": "09_脚本优化与分镜拆解规范_v3.0.md",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-image-generator",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:20:49.988583+00:00",
+      "evidence": "workflow/qa_reports/short-drama-image-generator.json",
+      "skill_id": "short-drama-image-generator",
+      "protocol_refs": [
+        {
+          "path": "16_生图渠道规则_v3.0.md",
+          "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        {
+          "path": "14_RH生图渠道与GPT通道现状_v3.0.md",
+          "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-production-qa",
+      "outcome": "PAUSED_EXCEPTION",
+      "at": "2026-09-20T13:20:49.988583+00:00",
+      "reason": "第 2 格角色手部结构异常，判定 FAIL",
+      "evidence": "workflow/qa_reports/EP02-A2-U03_post.json"
+    }
+  ],
+  "updated_at": "2026-09-20T13:20:49.977069+00:00",
+  "pipeline": [
+    "short-drama-production-router",
+    "short-drama-script-breakdown",
+    "short-drama-script-reviewer",
+    "short-drama-image-generator",
+    "short-drama-production-qa",
+    "runninghub-local-adapter"
+  ],
+  "pending_decision": "第 2 格角色手部结构异常，判定 FAIL"
+}
