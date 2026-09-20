@@ -11,6 +11,25 @@ face, wardrobe, scene, or prop MASTER; keyframes; storyboard composites. It is
 the only sanctioned route to pixels. Read `14_RH生图渠道与GPT通道现状.md` for
 RunningHub endpoint details and `16_生图渠道规则.md` for the rules.
 
+## Who authorizes the generation
+
+This depends on the production mode, per the user ruling of 2026-09-20:
+
+- **Autonomous target mode** (the user asked for "全自动 / 目标模式"): that start
+  command is itself the one-time authorization for filling missing assets. When
+  asset assessment finds a missing MASTER, keyframe, or storyboard, **generate
+  immediately, run independent QA, and continue on PASS** - do not stop and ask
+  per image. The paid RunningHub fallback is covered by the same authorization
+  once the subscription quota is exhausted.
+- **Regular gated flow** (the user confirms step by step): report the missing
+  asset at G3/G4 and wait for explicit authorization.
+
+Either way, four things are not optional: QA PASS before an asset is used as a
+MASTER, an `image_channel` record per generation, a recorded cost, and never
+overwriting an already-confirmed MASTER (new versions are generated as
+candidates and only replace it after QA and user confirmation). Pause when QA
+fails twice in a row or cumulative cost exceeds `budget_cny`.
+
 ## Model is pinned
 
 `gpt-image-2` is the only allowed image model, for every asset class — there is
