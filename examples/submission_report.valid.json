@@ -1,0 +1,31 @@
+{
+  "unit_id": "U03",
+  "run_id": "RUN-EP02-U03",
+  "project": "DRAGONTRAIN-EP02",
+  "segment": "B-3A（追逐）",
+  "platform": "runninghub",
+  "api_mode": "workflow_app",
+  "model": "rh_h3",
+  "model_version": "720P",
+  "duration_seconds": 5,
+  "resolution": "1280x720",
+  "fps": 24,
+  "aspect_ratio": "16:9",
+  "reference_assets": [
+    {"path": "场景资产/书架走廊.png", "role": "scene_master", "qa_status": "PASS"},
+    {"path": "人物资产库/女主/脸_MASTER.png", "role": "face_identity_master", "qa_status": "PASS"},
+    {"path": "故事本&首尾帧/EP02_U02_尾帧.png", "role": "previous_tail_frame", "qa_status": "PASS"}
+  ],
+  "prompt_path": "提示词/EP02_U03_rh_h3_视频提示词_v1.md",
+  "cost_estimate_cny": 0.1,
+  "authorization": {
+    "scope": "test_submission",
+    "source": "用户：QA 检查确认通过，可生视频",
+    "max_submissions": 1,
+    "submission_index": 1
+  },
+  "qa_gate": {"g5_review": "PASS", "preflight": "PASS", "assets_all_pass": true},
+  "confirmed": true,
+  "confirmed_at": "2026-09-20T22:30:00+08:00",
+  "confirmed_via": "用户在会话中确认"
+}

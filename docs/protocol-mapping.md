@@ -36,6 +36,7 @@ Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及�
 | Pipeline can pause, wait for approval, and resume from a checkpoint | `orchestrator.py`, `run_state.py`, `run_state.schema.json` |
 | A run can be read step by step without digging through logs | `run_report.py`: text summary or self-contained HTML (`python -m production_control.run_report <run_state.json> --html report.html`) |
 | A 20-segment episode stays navigable and its progress is viewable live | `run_index.py` (one file per segment + one index per episode), `run_server.py` (`--serve` for a refreshable live page), `run_index.schema.json` |
+| Video submissions carry complete content, not just authorization | `submission_report.py` (`python -m production_control.submission_report <report.json> [--project-root DIR]`), `submission_report.schema.json` |
 | Provider limits declared, not guessed | `capabilities/providers.json` with `provider_capability.schema.json` |
 | Agents must prove they read the current core protocol before producing | `tools/protocol_fingerprint.py`, `protocol_attestation.py`, `protocol_attestation.schema.json` |
 | Image assets exist only via GPT-Image-2, subscription channel first; seedream, banana, and qwen-image retired by user ruling 2026-09-20 | `short-drama-image-generator` Skill, `image_channel.py`, `image_channel.schema.json` |
