@@ -35,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
                         choices=["COMPLETED", "WAITING_APPROVAL", "PAUSED_EXCEPTION", "BLOCKED"])
     parser.add_argument("--reason", default="", help="暂停/异常的原因")
     parser.add_argument("--validator", default="", help="使用的校验器")
+    parser.add_argument("--allow-missing-evidence", action="store_true",
+                        help="确实没有本步产物时才用；默认要求 --evidence 指向的文件真实存在")
     args = parser.parse_args(argv)
 
     try:
@@ -42,9 +44,9 @@ def main(argv: list[str] | None = None) -> int:
             args.project_root, args.run, step=args.step,
             skill_id=args.skill or args.step, protocol_refs=args.protocol,
             evidence=args.evidence, outcome=args.outcome, reason=args.reason,
-            validator=args.validator,
+            validator=args.validator, allow_missing_evidence=args.allow_missing_evidence,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         print(f"失败：{exc}")
         return 1
 
