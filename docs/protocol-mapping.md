@@ -1,6 +1,6 @@
 # Protocol mapping
 
-Authoritative production rules remain in `D:\短剧制作核心协议`. This repository implements offline checks only.
+Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议`. This repository implements offline checks only.
 
 | D-drive rule | First-release implementation |
 |---|---|
@@ -21,6 +21,8 @@ Authoritative production rules remain in `D:\短剧制作核心协议`. This rep
 | Three generation channels | provider enum: `runninghub`, `xiaoyunque`, `libtv` |
 | Independent QA before and after generation | `short-drama-production-qa` in `pre_generation` and `post_generation` modes |
 | Local-only provider translation/submission boundary | `runninghub-local-adapter`, `xiaoyunque-local-adapter`, `libtv-local-adapter` |
+| One allowed image model with two channels: local subscription first, RunningHub workflow as authorized paid fallback | `image_channel.py`, `image_channel.schema.json`, and `IMAGE_CAPABILITIES` in `capabilities.py` |
+| Tail frames and storyboards are authorization-gated; missing ones degrade instead of blocking | `authorization.allow_tail_frame_generation` / `allow_storyboard_generation`, `DEGRADED_DIRECT` route, `fallback_notes` |
 
 The complete order is machine-checked from `skills/skill-chain.json`; CI must fail when a declared Skill is missing or a dependency appears after its consumer.
 
