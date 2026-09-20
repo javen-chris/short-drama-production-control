@@ -348,6 +348,19 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     live_hint = "实时模式：每次刷新都重新读取磁盘上的最新状态" if live else "静态快照：数据为生成时状态，需重新运行命令才会更新"
     auto_checked = "checked" if live else ""
     heading = " · ".join(x for x in (view["series"], view["episode"]) if x) or view["project"]
+    # A static export has no backend: any control that navigates or reloads would
+    # fail (and look like a broken app). Only the live server gets real controls.
+    toolbar_controls = (
+        f"""
+    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
+    <label><input type="checkbox" id="auto" {auto_checked}> 自动刷新（每 5 秒）</label>
+    <span class="dim">{live_hint}</span>"""
+        if live
+        else """
+    <span>这是<b>静态快照</b>：刷新与编辑控件在此不生效（静态文件没有后端）。
+      要实时刷新、切换段落或录入段清单，请运行：
+      <code>python tools\\render_run_report.py &lt;项目目录&gt; --serve</code></span>"""
+    )
 
     segments_json = json.dumps(view.get("segments", []), ensure_ascii=False)
     meta_json = json.dumps(
@@ -542,10 +555,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     项目 <code>{escape(view['project'])}</code> · 系列 {escape(view['series'] or '-')} · 集 {escape(view['episode'] or '-')}
   </div>
 
-  <div class="toolbar">
-    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
-    <label><input type="checkbox" id="auto" {auto_checked}> 自动刷新（每 5 秒）</label>
-    <span class="dim">{live_hint}</span>
+  <div class="toolbar">{toolbar_controls}
     <span class="dim">本次渲染：{escape(view['generated_at'])}</span>
   </div>
 
@@ -622,7 +632,15 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   </script>
 """
         if live
-        else ""
+        else """
+  <div class="toolbar">
+    <span>这是<b>静态快照</b>：切换段落与刷新按钮不会生效（静态文件没有后端，点了会报 AccessDenied）。</span>
+  </div>
+  <div class="toolbar">
+    <span class="dim">要看实时进度并在段之间来回切换，双击 <code>启动-运行总表.cmd</code>，
+      或运行：<code>python tools\\render_run_report.py &lt;项目目录&gt; --serve</code></span>
+  </div>
+"""
     )
 
     rows = _steps_html(summary)
