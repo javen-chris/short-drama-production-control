@@ -2,11 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/image_channel.schema.json",
   "title": "Image channel provenance record",
-  "description": "Every generated or edited image asset must record which GPT-Image-2 channel produced it.",
+  "description": "Metadata only: how one image was produced. The image itself is stored once, in the project's own asset folder; this record references it by path and never embeds or duplicates the file.",
   "type": "object",
   "additionalProperties": false,
   "required": ["asset_role", "image_channel", "model", "evidence"],
   "properties": {
+    "asset_path": {"type": "string", "minLength": 1, "description": "Path to the image relative to the project root. A reference, not a copy."},
     "asset_role": {"enum": ["character_master", "face_identity_master", "wardrobe_body_master", "scene_master", "prop_master", "keyframe", "storyboard_composite"]},
     "image_channel": {"enum": ["gpt_image2_local_subscription", "gpt_image2_runninghub_workflow"]},
     "model": {"const": "gpt-image-2"},

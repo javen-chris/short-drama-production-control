@@ -5,7 +5,7 @@ from production_control.payload_compiler import compile_payload
 from production_control.qa_report import validate_report
 from production_control.capabilities import get_capability
 from production_control.skill_chain_validator import validate_chain as validate_skill_chain
-from production_control.image_channel import choose_image_channel, validate_image_record
+from production_control.image_channel import choose_image_channel, validate_image_record, validate_ledger
 from production_control.capabilities import get_image_capability, IMAGE_MODEL
 
 ROOT=Path(__file__).parents[1]
@@ -116,3 +116,39 @@ def test_reference_count_respects_channel_limit():
     assert get_image_capability('gpt_image2_runninghub_workflow')['max_references']==3
     record={'asset_role':'keyframe','image_channel':'gpt_image2_runninghub_workflow','model':IMAGE_MODEL,'fallback_reason':'subscription_quota_exhausted','authorized':True,'task_id':'RH-1','evidence':'qa/img.json','reference_count':5}
     assert any('at most 3' in e for e in validate_image_record(record))
+
+
+def _entry(path, role='character_master'):
+    return {'asset_path':path,'asset_role':role,'image_channel':'gpt_image2_local_subscription','model':IMAGE_MODEL,'conversation_url':'https://chatgpt.com/c/1','evidence':'qa/img.json'}
+
+
+def test_ledger_references_images_without_copying_them(tmp_path):
+    from production_control.image_channel import validate_ledger
+
+    (tmp_path / '场景资产').mkdir()
+    (tmp_path / '场景资产' / '书房.png').write_bytes(b'png')
+    ledger = {'project':'DEMO','entries':[_entry('场景资产/书房.png','scene_master')]}
+    assert validate_ledger(ledger, tmp_path) == []
+
+
+def test_ledger_rejects_a_missing_image():
+    from production_control.image_channel import validate_ledger
+
+    ledger = {'project':'DEMO','entries':[_entry('场景资产/不存在.png','scene_master')]}
+    errors = validate_ledger(ledger, 'C:/definitely/not/here')
+    assert any('does not exist' in e for e in errors)
+
+
+def test_ledger_rejects_duplicate_entries():
+    from production_control.image_channel import validate_ledger
+
+    ledger = {'project':'DEMO','entries':[_entry('场景资产/书房.png','scene_master'), _entry('场景资产/书房.png','scene_master')]}
+    errors = validate_ledger(ledger)
+    assert any('duplicate asset_path' in e for e in errors)
+
+
+def test_ledger_entry_must_reference_a_path():
+    from production_control.image_channel import validate_ledger
+
+    ledger = {'project':'DEMO','entries':[{'asset_role':'keyframe','image_channel':'gpt_image2_local_subscription','model':IMAGE_MODEL,'evidence':'e.json'}]}
+    assert any('must reference asset_path' in e for e in validate_ledger(ledger))
