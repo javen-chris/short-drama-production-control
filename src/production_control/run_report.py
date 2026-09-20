@@ -85,7 +85,11 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
             {
                 "step": step,
                 "outcome": outcome,
-                "state_label": OUTCOME_LABELS.get(outcome, "未开始" if step not in completed else "已完成"),
+                "state_label": (
+                    OUTCOME_LABELS.get(outcome)
+                    or outcome
+                    or ("未开始" if step not in completed else "已完成")
+                ),
                 "at": event.get("at", ""),
                 "skill_id": event.get("skill_id", ""),
                 "validator": event.get("validator", ""),
