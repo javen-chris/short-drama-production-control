@@ -78,10 +78,10 @@
   </div>
 
   <div class="toolbar">
-    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
-    <label><input type="checkbox" id="auto" > 自动刷新（每 5 秒）</label>
-    <span class="dim">静态快照：数据为生成时状态，需重新运行命令才会更新</span>
-    <span class="dim">本次渲染：2026-09-20T14:26:45.389038+00:00</span>
+    <span>这是<b>静态快照</b>：刷新与编辑控件在此不生效（静态文件没有后端）。
+      要实时刷新、切换段落或录入段清单，请运行：
+      <code>python tools\render_run_report.py &lt;项目目录&gt; --serve</code></span>
+    <span class="dim">本次渲染：2026-09-20T14:54:36.894724+00:00</span>
   </div>
 
   <div class="cards"><div class="card"><div class="k">段数</div><div class="v">20</div></div><div class="card"><div class="k">已完成</div><div class="v">4</div></div><div class="card"><div class="k">进行中</div><div class="v">1</div></div><div class="card"><div class="k">等待批准</div><div class="v">0</div></div><div class="card"><div class="k">挂起 / 阻断</div><div class="v">1</div></div><div class="card"><div class="k">未开始</div><div class="v">14</div></div></div>
@@ -283,7 +283,7 @@
 
 
   <footer>
-    数据来源：<code><项目根>\workflow\run_index.json</code> ·
+    数据来源：<code><控制台根>\examples\episode_demo\workflow\run_index.json</code> ·
     索引更新：2026-09-20T14:26:44.589731+00:00 · 最新段落事件：2026-09-20T14:26:43.795224+00:00<br>
     刷新方式：重新执行渲染命令（无缓存，始终反映磁盘上的最新状态）。
   </footer>
