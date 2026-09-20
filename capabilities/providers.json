@@ -1,0 +1,48 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-09-20",
+  "providers": {
+    "runninghub": {
+      "provider": "runninghub",
+      "submission": "api",
+      "supports_prompt": true,
+      "supports_keyframe": true,
+      "supports_storyboard_composite": true,
+      "max_resolution": "720p-test",
+      "status_polling": true,
+      "reference_slots": 3,
+      "max_duration_seconds": 10,
+      "max_stable_characters": 2,
+      "supports_audio": false,
+      "known_failure_modes": ["故事本单格上传会被当成多个独立参考", "多人接触类动作需要拼版总图"]
+    },
+    "xiaoyunque": {
+      "provider": "xiaoyunque",
+      "submission": "api_or_mcp",
+      "supports_prompt": true,
+      "supports_keyframe": true,
+      "supports_storyboard_composite": true,
+      "max_resolution": "provider-dependent",
+      "status_polling": true,
+      "reference_slots": 3,
+      "max_duration_seconds": 10,
+      "max_stable_characters": 2,
+      "supports_audio": true,
+      "known_failure_modes": []
+    },
+    "libtv": {
+      "provider": "libtv",
+      "submission": "api_or_mcp",
+      "supports_prompt": true,
+      "supports_keyframe": true,
+      "supports_storyboard_composite": true,
+      "max_resolution": "provider-dependent",
+      "status_polling": true,
+      "reference_slots": 2,
+      "max_duration_seconds": 8,
+      "max_stable_characters": 2,
+      "supports_audio": true,
+      "known_failure_modes": []
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "project": "DEMO",
+  "segment": "EP01-U01",
+  "script_source": "script/EP01.md",
+  "prompt_skill_check": "short-drama-prompt-compiler 0.1.0",
+  "asset_manifest": [
+    {"role": "character_master", "name": "女主", "path": "masters/女主_MASTER.png"},
+    {"role": "scene_master", "name": "书房", "path": "masters/书房_MASTER.png"},
+    {"role": "prop_master", "name": "手机", "path": "masters/手机_MASTER.png"},
+    {"role": "tail_frame", "name": "上一镜真实尾帧", "degraded_note": "未授权制作尾帧，按已确认 start_state 文字承接"},
+    {"role": "storyboard", "name": "故事本拼版", "degraded_note": "未授权制作故事本，按强化禁项直拍，QA 加严"}
+  ],
+  "node_status": "READY_FOR_NODE"
+}

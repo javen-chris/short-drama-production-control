@@ -44,7 +44,7 @@ def test_qa_pass_with_failed_check_is_rejected():
     assert any('requires every check to be PASS' in e for e in validate_report(report,'pre_generation'))
 
 def test_valid_qa_report_passes():
-    checks={x:'PASS' for x in ('script','assets','prompt','skill')}
+    checks={x:'PASS' for x in ('authority','script','assets','prompt','skill','authorization','cost_estimate')}
     assert validate_report({'status':'PASS','checks':checks},'pre_generation')==[]
 
 def test_payload_requires_authorization():

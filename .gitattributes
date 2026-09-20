@@ -1,0 +1,12 @@
+# Keep every tracked text file LF-normalized: Windows CRLF churn makes Skill
+# diffs unreadable and hides the one line that actually changed.
+* text=auto eol=lf
+
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.py text eol=lf
+
+# Never normalize the things normalization would break.
+*.ps1 text eol=crlf
