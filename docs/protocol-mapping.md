@@ -23,6 +23,16 @@ Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及�
 | Local-only provider translation/submission boundary | `runninghub-local-adapter`, `xiaoyunque-local-adapter`, `libtv-local-adapter` |
 | One allowed image model with two channels: local subscription first, RunningHub workflow as authorized paid fallback | `image_channel.py`, `image_channel.schema.json`, and `IMAGE_CAPABILITIES` in `capabilities.py` |
 | Tail frames and storyboards are authorization-gated; missing ones degrade instead of blocking | `authorization.allow_tail_frame_generation` / `allow_storyboard_generation`, `DEGRADED_DIRECT` route, `fallback_notes` |
+| Asset identity pinned to a file and hash, never a free-form path | `asset_registry.schema.json` and `asset_registry.py` |
+| Pre-node hard gate with a mandatory MASTER manifest | `preflight.schema.json` and `preflight_gate.py` |
+| Stable layer separate from the shot layer | `series_contract.schema.json` |
+| Production units split for a stated reason only | `production_unit.split_rationale` and `split_argument` |
+| Face-only references never stand in for wardrobe or body | `face_identity_master` / `wardrobe_body_master` roles and `identity_scope_errors` |
+| Eight QA classes and rework accounting | `qa_report.py`: `classify_rework`, `top_rework_classes` |
+| No duplicate paid submission; observed cost | `cost_ledger.py` idempotency keys and `cost_ledger.schema.json` |
+| Exception queue and edit candidate pool | `exception_queue.schema.json`, `edit_candidate.schema.json` |
+| Pipeline can pause, wait for approval, and resume from a checkpoint | `orchestrator.py`, `run_state.py`, `run_state.schema.json` |
+| Provider limits declared, not guessed | `capabilities/providers.json` with `provider_capability.schema.json` |
 
 The complete order is machine-checked from `skills/skill-chain.json`; CI must fail when a declared Skill is missing or a dependency appears after its consumer.
 

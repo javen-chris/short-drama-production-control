@@ -40,7 +40,7 @@
         "type": "object", "additionalProperties": false,
         "required": ["role", "path", "purpose"],
         "properties": {
-          "role": {"enum": ["character_master", "scene_master", "prop_master", "real_tail_frame", "storyboard_composite", "keyframe"]},
+          "role": {"enum": ["character_master", "face_identity_master", "wardrobe_body_master", "scene_master", "prop_master", "real_tail_frame", "storyboard_composite", "keyframe"]},
           "path": {"type": "string", "minLength": 1},
           "purpose": {"type": "string", "minLength": 1}
         }

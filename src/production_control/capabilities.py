@@ -1,3 +1,16 @@
+"""Provider and image-channel capabilities.
+
+The built-in tables are the fallback. `capabilities/providers.json` is the
+auditable source of truth once it is present, and is schema-validated so a
+stale or hand-edited manifest fails loudly instead of silently changing limits.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from jsonschema import Draft202012Validator
+
 IMAGE_MODEL = "gpt-image-2"
 
 IMAGE_CAPABILITIES = {
@@ -11,9 +24,43 @@ CAPABILITIES={
  "libtv":{"provider":"libtv","submission":"api_or_mcp","supports_prompt":True,"supports_keyframe":True,"supports_storyboard_composite":True,"max_resolution":"provider-dependent","status_polling":True}
 }
 
+ROOT = Path(__file__).resolve().parents[2]
+MANIFEST = ROOT / "capabilities" / "providers.json"
+CAPABILITY_SCHEMA = ROOT / "schemas" / "provider_capability.schema.json"
+
+_OVERRIDES: dict[str, dict] | None = None
+
+
+def load_capabilities(path: str | Path = MANIFEST, *, reload: bool = False) -> dict[str, dict]:
+    """Load and validate the capability manifest; fall back to the built-in table."""
+    global _OVERRIDES
+    target = Path(path)
+    if not target.is_file():
+        _OVERRIDES = {}
+        return dict(CAPABILITIES)
+    if _OVERRIDES is not None and not reload:
+        return {**CAPABILITIES, **_OVERRIDES}
+    manifest = json.loads(target.read_text(encoding="utf-8"))
+    errors = validate_capabilities(manifest)
+    if errors:
+        raise ValueError("invalid capability manifest: " + "; ".join(errors))
+    _OVERRIDES = {name: dict(record, provider=name) for name, record in manifest["providers"].items()}
+    return {**CAPABILITIES, **_OVERRIDES}
+
+
+def validate_capabilities(manifest: dict) -> list[str]:
+    schema = json.loads(CAPABILITY_SCHEMA.read_text(encoding="utf-8"))
+    errors = [e.message for e in Draft202012Validator(schema).iter_errors(manifest)]
+    for name, record in manifest.get("providers", {}).items():
+        if record.get("provider") != name:
+            errors.append(f"{name}: provider field must match its key")
+    return errors
+
+
 def get_capability(provider: str) -> dict:
-    if provider not in CAPABILITIES: raise ValueError(f"unsupported provider: {provider}")
-    return CAPABILITIES[provider].copy()
+    table = load_capabilities()
+    if provider not in table: raise ValueError(f"unsupported provider: {provider}")
+    return table[provider].copy()
 
 def get_image_capability(channel: str) -> dict:
     if channel not in IMAGE_CAPABILITIES: raise ValueError(f"unsupported image channel: {channel}")

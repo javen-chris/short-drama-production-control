@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/provider_capability.schema.json",
+  "title": "Provider capability manifest",
+  "description": "What each generation channel can actually accept, so no agent has to guess a model's limits at submission time.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "updated_at", "providers"],
+  "properties": {
+    "version": {"type": "string", "minLength": 1},
+    "updated_at": {"type": "string", "minLength": 1},
+    "providers": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["provider", "submission", "supports_prompt", "supports_keyframe", "supports_storyboard_composite", "max_resolution", "status_polling"],
+        "properties": {
+          "provider": {"type": "string", "minLength": 1},
+          "submission": {"enum": ["api", "api_or_mcp", "local"]},
+          "supports_prompt": {"type": "boolean"},
+          "supports_keyframe": {"type": "boolean"},
+          "supports_storyboard_composite": {"type": "boolean"},
+          "max_resolution": {"type": "string", "minLength": 1},
+          "status_polling": {"type": "boolean"},
+          "reference_slots": {"type": "integer", "minimum": 0},
+          "max_duration_seconds": {"type": "number", "exclusiveMinimum": 0},
+          "max_stable_characters": {"type": "integer", "minimum": 1},
+          "supports_audio": {"type": "boolean"},
+          "known_failure_modes": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    }
+  }
+}

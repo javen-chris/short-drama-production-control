@@ -16,5 +16,10 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m production_control.contract_validator examples/production_contract.valid.json
       - run: python -m production_control.prompt_linter examples/prompt_unit.direct.json
+      - run: python -m production_control.pipeline_validator examples/pipeline_bundle.valid.json
+      - run: python -m production_control.preflight_gate examples/preflight.valid.json
+      - run: python -m production_control.skill_chain_validator
       - run: pytest
       - run: python -c "from production_control.security_scan import scan; e=scan('.'); print(*e, sep='\n'); raise SystemExit(bool(e))"
+      # An external $ref must never be resolved by a CI run: all schemas stay local.
+      - run: python -c "from production_control.capabilities import load_capabilities; c=load_capabilities(); print(sorted(c)); assert {'runninghub','xiaoyunque','libtv'} <= set(c)"

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/asset_registry.schema.json",
+  "title": "Series asset registry",
+  "description": "The authoritative index of every MASTER asset for one series: identity, role, path, hash, allowed use, and forbidden substitutes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["registry_version", "series_id", "assets"],
+  "properties": {
+    "registry_version": {"type": "string", "minLength": 1},
+    "series_id": {"type": "string", "minLength": 1},
+    "updated_at": {"type": "string", "minLength": 1},
+    "note": {"type": "string"},
+    "assets": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["asset_id", "role", "path", "status", "allowed_use"],
+        "properties": {
+          "asset_id": {"type": "string", "minLength": 1},
+          "role": {"enum": ["character_master", "face_identity_master", "wardrobe_body_master", "scene_master", "prop_master", "real_tail_frame", "storyboard_composite", "keyframe"]},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "status": {"enum": ["APPROVED", "DRAFT", "DEPRECATED"]},
+          "allowed_use": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "forbidden_substitutes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "image_channel": {"enum": ["gpt_image2_local_subscription", "gpt_image2_runninghub_workflow"]},
+          "qa_evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

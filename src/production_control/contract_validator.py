@@ -28,9 +28,39 @@ def schema_errors(contract: dict) -> list[str]:
     return [error.message for error in Draft202012Validator(schema, registry=registry).iter_errors(contract)]
 
 
+COMPLEX_FLAGS = {"physical_contact", "multi_character_choreography", "complex_prop_handoff", "cross_space_continuity", "complex_vfx_path"}
+BODY_SCOPE_SCALE = ("全身", "半身", "中景", "远景", "全景")
+HEAD_SCOPE_SCALE = ("特写", "头部", "脸部", "头像", "近景")
+
+
+def identity_scope_errors(contract: dict) -> list[str]:
+    """A body-scope shot must never rely on a face-only reference.
+
+    Mirrors the D-drive rule that a nine-grid face sheet is not a wardrobe or
+    body reference, and that face and clothing coming from different assets must
+    both be supplied with their roles stated.
+    """
+    errors: list[str] = []
+    roles = {asset.get("role") for asset in contract.get("assets", [])}
+    scale = contract.get("prompt_unit", {}).get("shot_language", {}).get("scale", "") or ""
+    if any(token in scale for token in BODY_SCOPE_SCALE):
+        body_authority = {"wardrobe_body_master", "character_master"} & roles
+        if not body_authority and "face_identity_master" in roles:
+            errors.append(f"{scale} 镜头不能只提供脸部 MASTER；需补充服装/身体 MASTER")
+        if "face_identity_master" in roles and "wardrobe_body_master" in roles:
+            responsibilities = contract.get("prompt_unit", {}).get("reference_responsibilities", [])
+            joined = " ".join(responsibilities)
+            if "face" not in joined.lower() or ("clothing" not in joined.lower() and "服装" not in joined):
+                errors.append("脸部与服装来自不同资产时，Prompt 必须分别写明 face identity 与 body/clothing 职责")
+    if any(token in scale for token in HEAD_SCOPE_SCALE) and not {"face_identity_master", "character_master"} & roles:
+        errors.append(f"{scale} 镜头需要脸部身份 MASTER")
+    return errors
+
+
 def policy_errors(contract: dict) -> list[str]:
     errors: list[str] = []
     roles = [asset["role"] for asset in contract.get("assets", [])]
+    asset_roles = set(roles)
     prompt = contract.get("prompt_unit", {})
     risk_flags = set(prompt.get("risk_flags", []))
     mode = contract.get("storyboard_mode")
@@ -45,8 +75,10 @@ def policy_errors(contract: dict) -> list[str]:
 
     if contract.get("current_gate") not in {"G5", "G6"}:
         errors.append("current_gate must be G5 or G6 for a provider-ready production contract")
-    if "character_master" not in roles or "scene_master" not in roles:
-        errors.append("character_master and scene_master are both required")
+    if not {"character_master", "face_identity_master", "wardrobe_body_master"} & asset_roles:
+        errors.append("an identity MASTER is required: character_master, or both face and wardrobe masters")
+    if "scene_master" not in roles:
+        errors.append("scene_master is required")
     if auth.get("video_submission_authorized") and auth.get("max_submissions", 0) != 1:
         errors.append("a submission-authorized first release contract must allow exactly one submission")
     if not auth.get("video_submission_authorized") and auth.get("max_submissions", 0) != 0:
@@ -72,6 +104,7 @@ def policy_errors(contract: dict) -> list[str]:
     # the degradation is recorded by asset_decider.fallback_notes, never a blocking error.
     if "none" in risk_flags and len(risk_flags) != 1:
         errors.append("risk_flags may contain none only by itself")
+    errors.extend(identity_scope_errors(contract))
     return errors
 
 

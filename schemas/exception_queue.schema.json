@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/exception_queue.schema.json",
+  "title": "Exception queue entries",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entries"],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["exception_id", "unit_id", "reason", "evidence", "only_decision", "unblock_condition"],
+        "properties": {
+          "exception_id": {"type": "string", "minLength": 1},
+          "unit_id": {"type": "string", "minLength": 1},
+          "reason": {"enum": ["missing_authoritative_script", "missing_master", "degraded_unit_qa_failure", "qa_failure", "qa_uncertain", "scope_change", "unauthorized_generation", "unknown_cloud_task", "budget_exceeded"]},
+          "evidence": {"type": "string", "minLength": 1},
+          "only_decision": {"type": "string", "minLength": 1},
+          "unblock_condition": {"type": "string", "minLength": 1},
+          "suggested_authorization": {"enum": ["allow_tail_frame_generation", "allow_storyboard_generation", "none"]},
+          "resolved": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

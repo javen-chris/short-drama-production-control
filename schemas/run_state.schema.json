@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/run_state.schema.json",
+  "title": "Pipeline run state and event log",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "contract_id", "current_step", "status"],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "contract_id": {"type": "string", "minLength": 1},
+    "current_step": {"type": "string", "minLength": 1},
+    "status": {"enum": ["RUNNING", "WAITING_APPROVAL", "PAUSED_EXCEPTION", "COMPLETED", "BLOCKED"]},
+    "checkpoint": {"type": "string", "minLength": 1},
+    "completed_steps": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "pending_decision": {"type": "string", "minLength": 1},
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["step", "outcome"],
+        "properties": {
+          "step": {"type": "string", "minLength": 1},
+          "outcome": {"enum": ["COMPLETED", "WAITING_APPROVAL", "PAUSED_EXCEPTION", "BLOCKED", "FAILED"]},
+          "at": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/edit_candidate.schema.json",
+  "title": "Edit candidate pool",
+  "description": "Only QA-passed material, or material the user explicitly accepted, may enter the edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "candidates"],
+  "properties": {
+    "project": {"type": "string", "minLength": 1},
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["unit_id", "media_path", "source"],
+        "properties": {
+          "unit_id": {"type": "string", "minLength": 1},
+          "media_path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "source": {"enum": ["qa_pass", "user_accepted"]},
+          "qa_status": {"enum": ["PASS", "FAIL", "UNCERTAIN"]},
+          "user_acceptance_note": {"type": "string", "minLength": 1},
+          "iteration_dir": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

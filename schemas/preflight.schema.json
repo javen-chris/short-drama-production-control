@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/preflight.schema.json",
+  "title": "Pre-flight asset manifest",
+  "description": "Machine version of the pre-node hard gate: the MASTER manifest must be emitted before any video node may be built. Tail frames and storyboards may degrade instead of blocking.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "segment", "script_source", "asset_manifest", "node_status"],
+  "properties": {
+    "project": {"type": "string", "minLength": 1},
+    "segment": {"type": "string", "minLength": 1},
+    "script_source": {"type": "string", "minLength": 1},
+    "prompt_skill_check": {"type": "string", "minLength": 1},
+    "asset_manifest": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["role", "name"],
+        "properties": {
+          "role": {"enum": ["character_master", "scene_master", "prop_master", "tail_frame", "storyboard"]},
+          "name": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "degraded_note": {"type": "string", "minLength": 1},
+          "storyboard_grids_confirmed": {"type": "boolean"}
+        }
+      }
+    },
+    "node_status": {"enum": ["READY_FOR_NODE", "BLOCKED_PRECHECK"]},
+    "missing": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}
