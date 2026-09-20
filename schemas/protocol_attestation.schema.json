@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/protocol_attestation.schema.json",
+  "title": "Protocol read attestation",
+  "description": "What an agent must emit to prove it read the current core protocol before producing anything.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["attestation_id", "task_id", "agent", "manifest_fingerprint", "read_files", "answers", "declared_at"],
+  "properties": {
+    "attestation_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "agent": {"enum": ["hermes", "codex", "workbuddy", "human", "other"]},
+    "manifest_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "read_files": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "answers": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "answer"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "answer": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "declared_at": {"type": "string", "minLength": 1}
+  }
+}
