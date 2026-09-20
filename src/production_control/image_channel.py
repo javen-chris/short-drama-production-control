@@ -7,6 +7,8 @@ authorization and a recorded reason.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from .capabilities import IMAGE_MODEL, get_image_capability
 
 LOCAL_CHANNEL = "gpt_image2_local_subscription"
@@ -88,4 +90,34 @@ def validate_image_record(record: dict) -> list[str]:
         errors.append(f"{channel} supports at most {capability['max_references']} references, got {references}")
     if record.get("cost_cny") is not None and record["cost_cny"] < 0:
         errors.append("cost_cny must not be negative")
+    return errors
+
+
+def validate_ledger(ledger: dict, project_root: str | None = None) -> list[str]:
+    """Validate the per-project ledger and check that referenced images exist.
+
+    The ledger is metadata: one file per project, entries referencing images that
+    live once, in the project's own asset folders. Nothing here copies an image.
+    """
+    errors: list[str] = []
+    if not ledger.get("project"):
+        errors.append("ledger must name its project")
+    entries = ledger.get("entries")
+    if not isinstance(entries, list):
+        return errors + ["ledger.entries must be a list"]
+    seen: set[str] = set()
+    for index, entry in enumerate(entries):
+        for message in validate_image_record(entry):
+            errors.append(f"entry {index}: {message}")
+        path = entry.get("asset_path")
+        if not path:
+            errors.append(f"entry {index}: ledger entries must reference asset_path")
+            continue
+        if path in seen:
+            errors.append(f"entry {index}: duplicate asset_path {path} - the ledger references images, it does not store them twice")
+        seen.add(path)
+        if project_root:
+            target = Path(project_root) / path
+            if not target.is_file():
+                errors.append(f"entry {index}: referenced image does not exist: {path}")
     return errors

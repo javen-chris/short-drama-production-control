@@ -11,6 +11,23 @@ face, wardrobe, scene, or prop MASTER; keyframes; storyboard composites. It is
 the only sanctioned route to pixels. Read `14_RH生图渠道与GPT通道现状.md` for
 RunningHub endpoint details and `16_生图渠道规则.md` for the rules.
 
+## The provenance record is metadata, not a second copy
+
+Do not misread the ledger requirement: `image_channel` is **one metadata entry
+per generated image**, not a copy of the image.
+
+- The image is written **once**, into the project's own asset folder, following
+  the project's declared layout (`场景资产/`, `物品资产/`, `故事本&首尾帧/`, or the
+  series library `人物资产库/`). This skill never hard-codes an absolute path and
+  never asks for a special asset folder.
+- Never duplicate an image "for the record". The ledger references it by
+  relative path and stores no image bytes.
+- Use **one append-only ledger per project**, `workflow/image_channel_log.json`
+  by default, or wherever the project's entry file declares. Not one file per
+  image. Validate it with `image_channel_log.schema.json` and
+  `validate_ledger()`, which also rejects duplicate references and paths that do
+  not exist.
+
 ## Who authorizes the generation
 
 This depends on the production mode, per the user ruling of 2026-09-20:

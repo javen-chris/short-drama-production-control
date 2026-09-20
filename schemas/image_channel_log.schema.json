@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/image_channel_log.schema.json",
+  "title": "Image channel ledger (one per project)",
+  "description": "Append-only ledger, one file per project, not one file per image. Entries are references to images stored once in the project's own asset folders.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "entries"],
+  "properties": {
+    "project": {"type": "string", "minLength": 1},
+    "log_path": {"type": "string", "minLength": 1, "description": "Where this ledger lives, relative to the project root. Defaults to workflow/image_channel_log.json unless the project entry file declares otherwise."},
+    "asset_root": {"type": "string", "minLength": 1, "description": "Declared asset folder for this project, if it differs from the standard layout. The rule never hard-codes this."},
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "image_channel.schema.json"}
+    }
+  }
+}
