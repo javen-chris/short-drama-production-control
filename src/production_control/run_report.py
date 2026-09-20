@@ -103,6 +103,8 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
     return {
         "run_id": state.get("run_id", ""),
         "contract_id": state.get("contract_id", ""),
+        "segment": state.get("segment", ""),
+        "segment_title": state.get("segment_title", ""),
         "status": state.get("status", ""),
         "pending_decision": state.get("pending_decision", ""),
         "current_step": state.get("current_step", ""),
@@ -579,7 +581,50 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
 """
 
 
-def render_html(summary: dict) -> str:
+def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | None = None,
+                project_meta: dict | None = None, all_runs_link: str = "") -> str:
+    """One segment, step by step: what it read, what it produced, where it is.
+
+    This is the primary view when serving live - the user watching a run wants the
+    segment in front of them, not a table of twenty. Other segments are reachable
+    from the picker without leaving the page.
+    """
+    siblings = siblings or []
+    meta = project_meta or {}
+    segment_title = summary.get("segment_title") or summary.get("segment") or summary["run_id"]
+
+    options = "".join(
+        f'<option value="{escape(row.get("run_id",""))}"'
+        f'{" selected" if row.get("run_id") == summary["run_id"] else ""}>'
+        f'{escape(row.get("segment_title") or row.get("segment") or row.get("run_id",""))}'
+        f'{" · " + escape(row.get("state_label") or "") if row.get("state_label") else ""}</option>'
+        for row in siblings
+    )
+    toolbar = (
+        f"""
+  <div class="toolbar">
+    <label>查看段：
+      <select onchange="location.href='/?run='+encodeURIComponent(this.value)">{options}</select>
+    </label>
+    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
+    <label><input type="checkbox" id="auto" checked> 自动刷新（每 5 秒）</label>
+    <span class="dim">刷新只重新读取磁盘上的轨迹，<strong>不会重启服务、不会清空进度</strong></span>
+    <span class="dim">本次渲染：{escape(summary['generated_at'])}</span>
+  </div>
+  <script>
+    var box = document.getElementById('auto');
+    var timer = null;
+    function applyAuto() {{
+      if (timer) {{ clearTimeout(timer); timer = null; }}
+      if (box && box.checked) {{ timer = setTimeout(function () {{ location.reload(); }}, 5000); }}
+    }}
+    if (box) {{ box.addEventListener('change', applyAuto); applyAuto(); }}
+  </script>
+"""
+        if live
+        else ""
+    )
+
     rows = _steps_html(summary)
     compliance = summary["compliance"]
     problems = "".join(f"<li>{escape(e)}</li>" for e in compliance.get("errors", []))
@@ -650,14 +695,28 @@ def render_html(summary: dict) -> str:
   .problems ul, .pending ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
   .halt {{ margin-top:16px; padding:10px 14px; border-radius:10px; background:rgba(154,103,0,.12);
            border:1px solid rgba(154,103,0,.4); }}
+  .toolbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px;
+              padding:10px 14px; background:var(--card); border:1px solid var(--line); border-radius:10px; }}
+  .toolbar button {{ font:inherit; font-size:13.5px; padding:5px 14px; border-radius:8px; cursor:pointer;
+                     border:1px solid var(--line); background:var(--bg); color:var(--fg); }}
+  .toolbar select {{ font:inherit; font-size:13.5px; padding:4px 8px; border-radius:6px;
+                     border:1px solid var(--line); background:var(--bg); color:var(--fg); max-width:320px; }}
+  .toolbar label {{ font-size:13px; display:flex; align-items:center; gap:6px; }}
   footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
   code {{ font-family: ui-monospace, Consolas, monospace; }}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>生产线运行报告</h1>
-  <div class="sub">运行 <code>{escape(summary['run_id'])}</code> · 合同 <code>{escape(summary['contract_id'])}</code> · 生成于 {escape(summary['generated_at'])}</div>
+  <h1>{escape(segment_title)}</h1>
+  <div class="sub">
+    项目 <code>{escape(meta.get('project') or '-')}</code>
+    · 系列 {escape(meta.get('series') or '-')} · 集 {escape(meta.get('episode') or '-')}
+    · 段 <code>{escape(summary.get('segment') or summary['run_id'])}</code>
+    · 运行 <code>{escape(summary['run_id'])}</code>
+  </div>
+
+  {toolbar}
 
   <div class="cards">
     <div class="card"><div class="k">状态</div><div class="v">{escape(summary['status'] or '-')}</div></div>
@@ -669,15 +728,15 @@ def render_html(summary: dict) -> str:
 
   {halt}
 
-  <h2>步骤明细（{len(summary['steps'])} 步）</h2>
+  <h2>协议读取与执行过程（{len(summary['steps'])} 步）</h2>
   {''.join(rows)}
 
   {problem_block}
   {pending_block}
 
   <footer>
-    数据来源：<code>run_state.json</code>（编排器与 Skill 运行事件）。生成命令：
-    <code>python -m production_control.run_report &lt;run_state.json&gt; --html report.html</code>
+    {'全部段一览与段清单：<a href="/overview">/overview</a> · ' if live else ''}
+    数据来源：<code>workflow/runs/{escape(summary['run_id'])}.json</code> · 渲染于 {escape(summary['generated_at'])}
   </footer>
 </div>
 </body>

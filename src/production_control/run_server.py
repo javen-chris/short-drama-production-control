@@ -70,8 +70,38 @@ def make_handler(project_root: str | Path):
 
         def do_GET(self) -> None:  # noqa: N802 - stdlib naming
             path = unquote(self.path.split("?", 1)[0])
+            query = self.path.split("?", 1)[1] if "?" in self.path else ""
+            requested = ""
+            for part in query.split("&"):
+                if part.startswith("run="):
+                    requested = unquote(part[4:])
             try:
                 if path in ("/", "/index.html"):
+                    # Primary view: the segment in progress, or the one asked for.
+                    view = current_view(root)
+                    rows = {row["run_id"]: row for row in view["runs"]}
+                    target = requested or view.get("active_run_id") or (view["runs"][0]["run_id"] if view["runs"] else "")
+                    if not target:
+                        self._send(200, "text/html; charset=utf-8",
+                                   render_project_html(view, live=True).encode("utf-8"))
+                        return
+                    run_file = run_index.run_path(root, target)
+                    if run_file.is_file():
+                        summary = build_report(run_file)
+                    else:
+                        summary = {
+                            "run_id": target, "contract_id": "", "segment": rows.get(target, {}).get("segment", ""),
+                            "segment_title": rows.get(target, {}).get("segment_title", ""), "status": "",
+                            "pending_decision": "", "current_step": "", "steps": [], "pending": [],
+                            "progress": {"completed": 0, "total": 0},
+                            "compliance": {"status": "NOT_STARTED", "errors": []},
+                            "generated_at": view["generated_at"],
+                        }
+                    page = render_html(summary, live=True, siblings=view["runs"],
+                                       project_meta={"project": view["project"], "series": view["series"],
+                                                     "episode": view["episode"]})
+                    self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+                elif path in ("/overview", "/all"):
                     html = render_project_html(current_view(root), live=True)
                     self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
                 elif path == "/data":
