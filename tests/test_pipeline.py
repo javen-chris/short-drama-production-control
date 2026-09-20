@@ -149,11 +149,15 @@ def test_orchestrator_resumes_after_approval(tmp_path):
     state = orchestrator.advance(state, {})
     assert state["status"] == "WAITING_APPROVAL"
     seen = []
+
+    def ok(step, ref="09_脚本优化与分镜拆解规范.md"):
+        return {"skill_id": step, "protocol_refs": [{"path": ref}], "evidence": f"evidence/{step}.json"}
+
     handlers = {
-        "short-drama-script-breakdown": lambda: seen.append("breakdown") or {},
-        "short-drama-script-reviewer": lambda: {},
-        "short-drama-production-qa": lambda: {},
-        "runninghub-local-adapter": lambda: {},
+        "short-drama-script-breakdown": lambda: seen.append("breakdown") or ok("short-drama-script-breakdown"),
+        "short-drama-script-reviewer": lambda: ok("short-drama-script-reviewer"),
+        "short-drama-production-qa": lambda: ok("short-drama-production-qa", "04_QA与文件治理.md"),
+        "runninghub-local-adapter": lambda: ok("runninghub-local-adapter", "13_模型执行前硬门禁.md"),
     }
     approvals = {"short-drama-script-breakdown", "short-drama-script-reviewer", "short-drama-production-qa", "runninghub-local-adapter"}
     for _ in range(len(orchestrator.plan_steps(chain))):

@@ -27,6 +27,10 @@ APPROVAL_BREAKPOINTS = {
 
 NON_PASS_OUTCOMES = {"qa_failure", "qa_uncertain", "missing_master", "unknown_cloud_task", "degraded_qa_failure"}
 
+# A step that reports success must also say which Skill ran it, which protocol
+# documents it read, and where the evidence lives. No evidence, no completion.
+REQUIRED_STEP_EVIDENCE = ("skill_id", "protocol_refs", "evidence")
+
 
 class StepFailure(Exception):
     """Raised by a step handler to park the run in the exception queue."""
@@ -85,7 +89,22 @@ def advance(state: dict, handlers: dict, approvals: set[str] | None = None) -> d
     if result.get("outcome") in NON_PASS_OUTCOMES:
         run_state.pause_for_exception(state, current, result.get("reason", result["outcome"]), result.get("evidence", ""))
         return state
-    run_state.complete(state, current)
+    missing = [field for field in REQUIRED_STEP_EVIDENCE if not result.get(field)]
+    if missing:
+        run_state.pause_for_exception(state, current, f"step reported success without recording {', '.join(missing)}")
+        return state
+    if result.get("skill_id") != current:
+        run_state.pause_for_exception(state, current, f"skill_id {result.get('skill_id')!r} does not match step {current}")
+        return state
+    run_state.complete(
+        state,
+        current,
+        skill_id=result.get("skill_id"),
+        protocol_refs=result.get("protocol_refs"),
+        validator=result.get("validator", ""),
+        attestation_id=result.get("attestation_id", ""),
+        evidence=result.get("evidence", ""),
+    )
     if state["status"] != "COMPLETED":
         state["status"] = "RUNNING"
         state.pop("pending_decision", None)

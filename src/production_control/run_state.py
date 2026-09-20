@@ -25,13 +25,18 @@ def start_run(path: str | Path, run_id: str, contract_id: str, first_step: str) 
     return read_task(path)
 
 
-def record_event(state: dict, step: str, outcome: str, reason: str = "", evidence: str = "") -> dict:
-    """Append one event and keep completed steps in order."""
+def record_event(state: dict, step: str, outcome: str, reason: str = "", evidence: str = "", **fields) -> dict:
+    """Append one event and keep completed steps in order.
+
+    Extra fields (skill_id, protocol_refs, validator, attestation_id) are what
+    make a step's invocation auditable after the fact.
+    """
     event = {"step": step, "outcome": outcome, "at": datetime.now(timezone.utc).isoformat()}
     if reason:
         event["reason"] = reason
     if evidence:
         event["evidence"] = evidence
+    event.update({key: value for key, value in fields.items() if value})
     state.setdefault("events", []).append(event)
     if outcome == "COMPLETED" and step not in state.get("completed_steps", []):
         state.setdefault("completed_steps", []).append(step)
@@ -62,8 +67,8 @@ def block(state: dict, step: str, reason: str) -> dict:
     return record_event(state, step, "BLOCKED", reason)
 
 
-def complete(state: dict, step: str) -> dict:
-    event = record_event(state, step, "COMPLETED")
+def complete(state: dict, step: str, **fields) -> dict:
+    event = record_event(state, step, "COMPLETED", **fields)
     pending = [name for name in state.get("pipeline", []) if name not in state["completed_steps"]]
     if not pending:
         state["status"] = "COMPLETED"
