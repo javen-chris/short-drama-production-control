@@ -27,6 +27,7 @@ This control plane addresses each of those with explicit contracts, gates, and g
 - persists confirmed workflow decisions in `docs/decisions/` and adaptive asset routing in `docs/architecture/`;
 - pins every image asset to one declared model and channel, with the paid fallback used only on a recorded reason and explicit authorization;
 - renders a step-by-step run report — text or a self-contained HTML page — showing which Skill each step invoked, which protocol documents it read, where the evidence is, and where a run stopped;
+- keeps a multi-segment episode navigable: one trace file per segment plus a project index, with a locally served page (`--serve`) whose refresh button always returns current state;
 - keeps task state, asset decisions, provider capabilities, unified QA checks, provenance hashing, payload compilation, and PR security scanning;
 - keeps a dated AIGC production benchmark and reuse boundary in `docs/research/`;
 - treats prompts as the default path and storyboards as a risk-triggered exception;

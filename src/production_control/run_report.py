@@ -168,11 +168,12 @@ _STATUS_COLORS = {
 }
 
 
-def render_html(summary: dict) -> str:
-    def badge(outcome: str, label: str) -> str:
-        color = _STATUS_COLORS.get(outcome, "#6e7781")
-        return f'<span class="badge" style="--c:{color}">{escape(label)}</span>'
+def _badge(outcome: str, label: str) -> str:
+    color = _STATUS_COLORS.get(outcome, "#6e7781")
+    return f'<span class="badge" style="--c:{color}">{escape(label)}</span>'
 
+
+def _steps_html(summary: dict) -> list[str]:
     rows: list[str] = []
     for item in summary["steps"]:
         reads = []
@@ -203,7 +204,7 @@ def render_html(summary: dict) -> str:
         <header>
           <span class="dot" style="--c:{_STATUS_COLORS.get(item['outcome'], '#6e7781')}"></span>
           <h3>{escape(item['step'])}</h3>
-          {badge(item['outcome'], item['state_label'])}
+          {_badge(item['outcome'], item['state_label'])}
         </header>
         <div class="meta">{' · '.join(meta)}</div>
         {reason}
@@ -211,6 +212,283 @@ def render_html(summary: dict) -> str:
       </section>"""
         )
 
+    return rows
+
+
+RUN_STATUS_LABELS = {
+    "COMPLETED": "已完成",
+    "WAITING_APPROVAL": "等待批准",
+    "PAUSED_EXCEPTION": "已挂起",
+    "BLOCKED": "已阻断",
+    "RUNNING": "进行中",
+    "": "未开始",
+}
+
+
+def summarize_project(index: dict, project_root: str | Path | None = None, *, with_details: bool = True) -> dict:
+    """Build the episode-wide view: one row per segment, optionally with detail."""
+    root = Path(project_root) if project_root else None
+    rows = []
+    for row in index.get("runs", []) or []:
+        item = dict(row)
+        item["active"] = row.get("run_id") == index.get("active_run_id")
+        item["state_label"] = RUN_STATUS_LABELS.get(row.get("status", "") or "", "未开始")
+        progress = row.get("progress") or {}
+        total = progress.get("total") or 0
+        item["percent"] = 0 if not total else round(100 * (progress.get("completed") or 0) / total)
+        item["detail"] = None
+        if with_details and root:
+            candidate = root / (row.get("path") or "")
+            if candidate.is_file():
+                try:
+                    item["detail"] = summarize(json.loads(candidate.read_text(encoding="utf-8")))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    item["detail"] = None
+        rows.append(item)
+
+    counts = {"total": len(rows), "completed": 0, "running": 0, "waiting": 0, "blocked": 0, "not_started": 0}
+    for row in rows:
+        status = row.get("status") or ""
+        started = bool(row.get("last_event_at")) or bool((row.get("progress") or {}).get("completed"))
+        if status == "COMPLETED":
+            counts["completed"] += 1
+        elif status == "WAITING_APPROVAL":
+            counts["waiting"] += 1
+        elif status in {"PAUSED_EXCEPTION", "BLOCKED"}:
+            counts["blocked"] += 1
+        elif started:
+            counts["running"] += 1
+        else:
+            counts["not_started"] += 1
+
+    newest_event = max((row.get("last_event_at", "") or "" for row in rows), default="")
+    index_time = index.get("updated_at", "") or ""
+    source = ""
+    if root:
+        candidate = root / "workflow" / "run_index.json"
+        if candidate.is_file():
+            source = str(candidate)
+    return {
+        "project": index.get("project", ""),
+        "series": index.get("series", ""),
+        "episode": index.get("episode", ""),
+        "active_run_id": index.get("active_run_id", ""),
+        "runs": rows,
+        "counts": counts,
+        "data_source": source,
+        "index_updated_at": index_time,
+        "newest_event_at": newest_event,
+        "stale": bool(newest_event and index_time and newest_event > index_time),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def render_project_text(view: dict) -> str:
+    lines = [f"项目 {view['project']}  系列 {view['series'] or '-'}  集 {view['episode'] or '-'}"]
+    counts = view["counts"]
+    lines.append(
+        f"共 {counts['total']} 段：已完成 {counts['completed']} · 进行中 {counts['running']} · "
+        f"等待批准 {counts['waiting']} · 挂起/阻断 {counts['blocked']} · 未开始 {counts['not_started']}"
+    )
+    active = next((r for r in view["runs"] if r["active"]), None)
+    if active:
+        lines.append(f"当前进行到：{active['run_id']}  {active.get('segment_title','')}  [{active['state_label']}]")
+    else:
+        lines.append("当前进行到：-")
+    lines.append(f"数据来源：{view['data_source'] or '(未找到 run_index.json)'}    索引更新时间：{view['index_updated_at'] or '-'}")
+    if view["stale"]:
+        lines.append("⚠️ 索引比段落事件旧：先 run_index.sync 再渲染，否则看到的是旧状态")
+    lines.append("")
+    for row in view["runs"]:
+        mark = "▶" if row["active"] else " "
+        title = f"  {row.get('segment_title','')}" if row.get("segment_title") else ""
+        lines.append(f"{mark} {row['run_id']}{title}  [{row['state_label']}]  {row['percent']}%  {row.get('current_step','') or ''}")
+        if row.get("pending_decision"):
+            lines.append(f"      待决定：{row['pending_decision']}")
+        detail = row.get("detail")
+        if detail:
+            lines.append(f"      步骤 {detail['progress']['completed']}/{detail['progress']['total']} · 合规 {detail['compliance']['status']}")
+            for error in detail["compliance"].get("errors", []):
+                lines.append(f"        - {error}")
+    return "\n".join(lines)
+
+
+def render_project_html(view: dict, *, live: bool = False) -> str:
+    """Episode-wide page: every segment on one screen, expandable to per-step detail.
+
+    live=True is served by run_server: the page re-reads disk on every request, so
+    the refresh button and auto-refresh always show current state. A static export
+    (live=False) is a snapshot and says so.
+    """
+    counts = view["counts"]
+    cards = "".join(
+        f'<div class="card"><div class="k">{label}</div><div class="v">{value}</div></div>'
+        for label, value in (
+            ("段数", counts["total"]),
+            ("已完成", counts["completed"]),
+            ("进行中", counts["running"]),
+            ("等待批准", counts["waiting"]),
+            ("挂起 / 阻断", counts["blocked"]),
+            ("未开始", counts["not_started"]),
+        )
+    )
+
+    active = next((r for r in view["runs"] if r["active"]), None)
+    if active:
+        active_name = active.get("segment_title") or active.get("segment") or active.get("run_id", "")
+        active_line = (
+            f"<strong>{escape(active_name)}</strong> "
+            f'<span class="dim">{escape(active["run_id"])} · {escape(active["state_label"])} · '
+            f'{escape(active.get("current_step", "") or "-")}</span>'
+        )
+    else:
+        active_line = '<span class="dim">尚无进行中的段</span>'
+    live_hint = "实时模式：每次刷新都重新读取磁盘上的最新状态" if live else "静态快照：数据为生成时状态，需重新运行命令才会更新"
+    auto_checked = "checked" if live else ""
+    heading = " · ".join(x for x in (view["series"], view["episode"]) if x) or view["project"]
+
+    rows = []
+    for row in view["runs"]:
+        detail = ""
+        if row.get("detail"):
+            detail = (
+                '<details class="more"><summary>展开该段逐步明细（'
+                f"{row['detail']['progress']['completed']}/{row['detail']['progress']['total']} 步）</summary>"
+                f"{''.join(_steps_html(row['detail']))}</details>"
+            )
+        decision = (
+            f'<div class="reason">待决定：{escape(row.get("pending_decision", ""))}</div>'
+            if row.get("pending_decision")
+            else ""
+        )
+        rows.append(
+            f"""
+      <tr class="{'active' if row['active'] else ''}">
+        <td class="rid">{'▶ ' if row['active'] else ''}<code>{escape(row.get('run_id',''))}</code>
+          {f'<div class="title">{escape(row.get("segment_title",""))}</div>' if row.get("segment_title") else ''}</td>
+        <td>{_badge(row.get('status','') or '', row['state_label'])}</td>
+        <td><div class="bar"><i style="width:{row['percent']}%"></i></div><span class="dim">{row['percent']}%</span></td>
+        <td><code class="dim">{escape(row.get('current_step','') or '-')}</code>{decision}</td>
+        <td class="dim">{escape(row.get('last_event_at','') or '-')}</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5">{detail}</td></tr>"""
+        )
+
+    stale = (
+        '<div class="problems"><h2>索引可能过期</h2><ul><li>段落文件里有比索引更新的事件：先执行 '
+        "<code>run_index.sync</code> 再渲染，否则看到的是旧状态。</li></ul></div>"
+        if view["stale"]
+        else ""
+    )
+
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>项目运行总表 · {escape(view['project'])}</title>
+<style>
+  :root {{ color-scheme: light dark; --bg:#fff; --fg:#1f2328; --line:#d1d9e0; --muted:#59636e; --card:#f6f8fa; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
+         font:15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }}
+  .wrap {{ max-width:1000px; margin:0 auto; }}
+  h1 {{ font-size:20px; margin:0 0 4px; }}
+  h2 {{ font-size:15px; margin:0 0 10px; }}
+  h3 {{ font-size:15px; margin:0; }}
+  .sub {{ color:var(--muted); font-size:13px; margin-bottom:20px; }}
+  .cards {{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }}
+  .card {{ flex:1 1 110px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }}
+  .card .k {{ color:var(--muted); font-size:12px; }}
+  .card .v {{ font-size:18px; font-weight:600; margin-top:2px; }}
+  table {{ width:100%; border-collapse:collapse; font-size:13.5px; }}
+  th, td {{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }}
+  th {{ color:var(--muted); font-weight:500; font-size:12px; }}
+  tr.active td {{ background:rgba(9,105,218,.08); }}
+  tr.detailrow td {{ padding:0 10px 12px; }}
+  .rid {{ white-space:nowrap; }}
+  .bar {{ height:6px; background:var(--line); border-radius:3px; overflow:hidden; min-width:80px; margin-bottom:2px; }}
+  .bar > i {{ display:block; height:100%; background:#1a7f37; }}
+  .badge {{ display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; color:#fff; background:var(--c,#6e7781); }}
+  .dim {{ color:var(--muted); }}
+  .step {{ border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; }}
+  .step.done {{ border-left:3px solid #1a7f37; }}
+  .step header {{ display:flex; align-items:center; gap:8px; }}
+  .dot {{ width:8px; height:8px; border-radius:50%; background:var(--c,#6e7781); flex:none; }}
+  .meta {{ color:var(--muted); font-size:12.5px; margin:6px 0 4px; }}
+  .reason {{ margin:6px 0; padding:6px 10px; background:var(--card); border-radius:6px; font-size:12.5px; }}
+  .reads {{ list-style:none; margin:6px 0 0; padding:0; font-size:13px; }}
+  .reads li {{ padding:2px 0 2px 18px; position:relative; }}
+  .reads li::before {{ position:absolute; left:0; }}
+  .reads li.ok::before {{ content:"✓"; color:#1a7f37; }}
+  .reads li.miss::before {{ content:"✗"; color:#cf222e; }}
+  .reads li.dim::before {{ content:"·"; color:var(--muted); }}
+  .reads li.miss {{ color:#cf222e; }}
+  .more summary {{ cursor:pointer; color:var(--muted); font-size:12.5px; }}
+  .toolbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px;
+              padding:10px 14px; background:var(--card); border:1px solid var(--line); border-radius:10px; }}
+  .toolbar button {{ font:inherit; font-size:13.5px; padding:5px 14px; border-radius:8px; cursor:pointer;
+                     border:1px solid var(--line); background:var(--bg); color:var(--fg); }}
+  .toolbar button:hover {{ border-color:var(--muted); }}
+  .toolbar label {{ font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer; }}
+  .title {{ color:var(--muted); font-size:12px; margin-top:2px; }}
+  .now {{ font-size:13px; }}
+  .now strong {{ font-size:14.5px; }}
+  .problems {{ background:var(--card); border:1px solid rgba(207,34,46,.5); border-radius:10px; padding:12px 14px; margin-bottom:16px; }}
+  .problems ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
+  footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
+  code {{ font-family: ui-monospace, Consolas, monospace; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{escape(heading)} 运行总表</h1>
+  <div class="sub">
+    项目 <code>{escape(view['project'])}</code> · 系列 {escape(view['series'] or '-')} · 集 {escape(view['episode'] or '-')}
+  </div>
+
+  <div class="toolbar">
+    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
+    <label><input type="checkbox" id="auto" {auto_checked}> 自动刷新（每 5 秒）</label>
+    <span class="dim">{live_hint}</span>
+    <span class="dim">本次渲染：{escape(view['generated_at'])}</span>
+  </div>
+
+  <div class="cards">{cards}</div>
+
+  <div class="now">当前进行到：{active_line}</div>
+  {stale}
+
+  <table>
+    <thead><tr><th>段 / 运行</th><th>状态</th><th>进度</th><th>当前步骤 / 待决定</th><th>最后事件</th></tr></thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+
+  <footer>
+    数据来源：<code>{escape(view['data_source'] or 'workflow/run_index.json')}</code> ·
+    索引更新：{escape(view['index_updated_at'] or '-')} · 最新段落事件：{escape(view['newest_event_at'] or '-')}<br>
+    {'实时模式由本地服务提供；真实磁盘状态以 workflow/runs/ 下的段落文件为准。' if live else '刷新方式：重新执行渲染命令（无缓存，始终反映磁盘上的最新状态）。'}
+  </footer>
+</div>
+<script>
+  var box = document.getElementById('auto');
+  var timer = null;
+  function applyAuto() {{
+    if (timer) {{ clearTimeout(timer); timer = null; }}
+    if (box && box.checked) {{ timer = setTimeout(function () {{ location.reload(); }}, 5000); }}
+  }}
+  if (box) {{ box.addEventListener('change', applyAuto); applyAuto(); }}
+</script>
+</body>
+</html>
+"""
+
+
+def render_html(summary: dict) -> str:
+    rows = _steps_html(summary)
     compliance = summary["compliance"]
     problems = "".join(f"<li>{escape(e)}</li>" for e in compliance.get("errors", []))
     problem_block = (
@@ -324,23 +602,86 @@ def build_report(run_state_path: str | Path, chain: dict | None = None, manifest
     return summarize(state, chain, manifest)
 
 
+def resolve_input(path_str: str) -> tuple[str, Path | None, Path | None]:
+    """Decide what the user pointed at: a project folder, an index, or one run.
+
+    Accepting all three means there is one command to remember, and it always
+    works whether you are looking at a segment or the whole episode.
+    """
+    path = Path(path_str)
+    if path.is_dir():
+        for candidate in (path / "workflow" / "run_index.json", path / "run_index.json"):
+            if candidate.is_file():
+                return "project", candidate, candidate.parent.parent if candidate.parent.name == "workflow" else candidate.parent
+        return "unknown", None, None
+    if path.name == "run_index.json":
+        root = path.parent.parent if path.parent.name == "workflow" else path.parent
+        return "project", path, root
+    if path.is_file():
+        return "run", path, path.parent
+    return "unknown", None, None
+
+
 def main() -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Render a human-readable report from run_state.json")
-    parser.add_argument("run_state")
+    from . import run_index
+
+    parser = argparse.ArgumentParser(
+        description="Render a readable report from a run_state.json, a run_index.json, or a project folder."
+    )
+    parser.add_argument("target", help="项目目录 / workflow/run_index.json / 单个 run_state.json")
     parser.add_argument("--html", help="write a self-contained HTML report to this path")
     parser.add_argument("--json", action="store_true", help="print the summary as JSON instead of text")
+    parser.add_argument("--no-details", action="store_true", help="skip per-step detail for each segment")
+    parser.add_argument("--serve", action="store_true",
+                        help="启动本地实时服务（刷新按钮/自动刷新会重新读取磁盘）")
+    parser.add_argument("--port", type=int, default=8765, help="--serve 使用的端口（默认 8765）")
+    parser.add_argument("--no-open", action="store_true", help="--serve 时不自动打开浏览器")
     args = parser.parse_args()
-    summary = build_report(args.run_state)
+
+    kind, target, root = resolve_input(args.target)
+    if kind == "unknown":
+        print(f"无法识别输入：{args.target}")
+        print("可指向：项目目录、workflow/run_index.json、或某个 run_state.json")
+        return 2
+
+    if args.serve:
+        from .run_server import serve
+
+        project_root = root if kind == "project" else Path(args.target)
+        httpd = serve(project_root, args.port, open_browser=not args.no_open)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\n已停止。")
+        finally:
+            httpd.server_close()
+        return 0
+
+    if kind == "project":
+        index = json.loads(target.read_text(encoding="utf-8"))
+        # Merge whatever is on disk before rendering: a window that wrote its run
+        # file but not the index must not make the report look stale.
+        index = run_index.sync_index(root, index)
+        view = summarize_project(index, root, with_details=not args.no_details)
+        payload = view
+        text = render_project_text(view)
+        page = render_project_html(view)
+    else:
+        summary = build_report(target)
+        payload = summary
+        text = render_text(summary)
+        page = render_html(summary)
+
     if args.html:
-        target = Path(args.html)
-        target.write_text(render_html(summary), encoding="utf-8")
-        print(f"html report written: {target}")
+        out = Path(args.html)
+        out.write_text(page, encoding="utf-8")
+        print(f"html report written: {out}")
     if args.json:
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
     elif not args.html:
-        print(render_text(summary))
+        print(text)
     return 0
 
 

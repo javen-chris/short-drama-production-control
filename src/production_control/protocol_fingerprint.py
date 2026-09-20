@@ -32,6 +32,7 @@ REQUIRED_CORE_FILES = [
     "13_模型执行前硬门禁_v3.0.md",
     "14_RH生图渠道与GPT通道现状_v3.0.md",
     "16_生图渠道规则_v3.0.md",
+    "18_运行轨迹与进度可视规则_v3.0.md",
 ]
 
 # Answers are normalized (trimmed, lowercased) before hashing.
@@ -45,6 +46,8 @@ CHALLENGE_BANK = [
     {"id": "tail-frame-blocking", "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）", "expected": "否"},
     {"id": "max-submissions", "prompt": "一份合同授权的付费视频提交最多几次？（数字）", "expected": "1"},
     {"id": "protocol-version", "prompt": "当前核心协议的主版本号是？（如 2.0）", "expected": "3.0"},
+    {"id": "run-trace-location", "prompt": "每段（每次运行）的轨迹文件存放在项目 workflow 下的哪个目录？（填目录名）", "expected": "runs"},
+    {"id": "run-trace-missing", "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）", "expected": "不算"},
 ]
 
 CHALLENGE_SAMPLE = 3

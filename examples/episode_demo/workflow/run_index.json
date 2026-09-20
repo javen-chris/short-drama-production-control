@@ -1,0 +1,309 @@
+{
+  "project": "episode_demo",
+  "series": "龙骨列车",
+  "episode": "EP02",
+  "active_run_id": "RUN-EP02-U06",
+  "updated_at": "2026-09-20T13:38:16.119633+00:00",
+  "runs": [
+    {
+      "run_id": "RUN-EP02-U01",
+      "segment": "U01",
+      "segment_title": "B-2A（物理格斗）",
+      "status": "COMPLETED",
+      "current_step": "runninghub-local-adapter",
+      "pending_decision": "",
+      "progress": {
+        "completed": 6,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U01.json",
+      "last_event_at": "2026-09-20T13:38:14.548777+00:00",
+      "updated_at": "2026-09-20T13:38:14.567341+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U02",
+      "segment": "U02",
+      "segment_title": "B-2B（近身压制）",
+      "status": "COMPLETED",
+      "current_step": "runninghub-local-adapter",
+      "pending_decision": "",
+      "progress": {
+        "completed": 6,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U02.json",
+      "last_event_at": "2026-09-20T13:38:14.707109+00:00",
+      "updated_at": "2026-09-20T13:38:14.723562+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U03",
+      "segment": "U03",
+      "segment_title": "B-3A（追逐）",
+      "status": "COMPLETED",
+      "current_step": "runninghub-local-adapter",
+      "pending_decision": "",
+      "progress": {
+        "completed": 6,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U03.json",
+      "last_event_at": "2026-09-20T13:38:14.859722+00:00",
+      "updated_at": "2026-09-20T13:38:14.876147+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U04",
+      "segment": "U04",
+      "segment_title": "B-3B（对峙）",
+      "status": "COMPLETED",
+      "current_step": "runninghub-local-adapter",
+      "pending_decision": "",
+      "progress": {
+        "completed": 6,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U04.json",
+      "last_event_at": "2026-09-20T13:38:15.010469+00:00",
+      "updated_at": "2026-09-20T13:38:15.024674+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U05",
+      "segment": "U05",
+      "segment_title": "B-3C（反击）",
+      "status": "PAUSED_EXCEPTION",
+      "current_step": "short-drama-production-qa",
+      "pending_decision": "第 2 格角色手部结构异常，判定 FAIL",
+      "progress": {
+        "completed": 4,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U05.json",
+      "last_event_at": "2026-09-20T13:38:15.198368+00:00",
+      "updated_at": "2026-09-20T13:38:15.216023+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U06",
+      "segment": "U06",
+      "segment_title": "B-3D（人物躲避爆炸）",
+      "status": "RUNNING",
+      "current_step": "short-drama-script-breakdown",
+      "pending_decision": "",
+      "progress": {
+        "completed": 1,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U06.json",
+      "last_event_at": "2026-09-20T13:38:15.290907+00:00",
+      "updated_at": "2026-09-20T13:38:15.307955+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U07",
+      "segment": "U07",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U07.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.348660+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U08",
+      "segment": "U08",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U08.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.398418+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U09",
+      "segment": "U09",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U09.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.447140+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U10",
+      "segment": "U10",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U10.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.506081+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U11",
+      "segment": "U11",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U11.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.558315+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U12",
+      "segment": "U12",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U12.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.613299+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U13",
+      "segment": "U13",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U13.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.679638+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U14",
+      "segment": "U14",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U14.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.736318+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U15",
+      "segment": "U15",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U15.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.797166+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U16",
+      "segment": "U16",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U16.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.863362+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U17",
+      "segment": "U17",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U17.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:15.944400+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U18",
+      "segment": "U18",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U18.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:16.002073+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U19",
+      "segment": "U19",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U19.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:16.056458+00:00"
+    },
+    {
+      "run_id": "RUN-EP02-U20",
+      "segment": "U20",
+      "segment_title": "（待拆解）",
+      "status": "RUNNING",
+      "current_step": "short-drama-production-router",
+      "pending_decision": "",
+      "progress": {
+        "completed": 0,
+        "total": 6
+      },
+      "path": "runs/RUN-EP02-U20.json",
+      "last_event_at": "",
+      "updated_at": "2026-09-20T13:38:16.118553+00:00"
+    }
+  ]
+}

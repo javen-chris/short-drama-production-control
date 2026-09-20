@@ -13,11 +13,25 @@ from production_control.run_report import (  # noqa: E402
     build_report,
     main,
     render_html,
+    render_project_html,
+    render_project_text,
     render_text,
+    resolve_input,
     summarize,
+    summarize_project,
 )
 
-__all__ = ["build_report", "main", "render_html", "render_text", "summarize"]
+__all__ = [
+    "build_report",
+    "main",
+    "render_html",
+    "render_project_html",
+    "render_project_text",
+    "render_text",
+    "resolve_input",
+    "summarize",
+    "summarize_project",
+]
 
 
 if __name__ == "__main__":

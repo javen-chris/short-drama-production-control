@@ -1,0 +1,94 @@
+{
+  "run_id": "RUN-EP02-U05",
+  "contract_id": "DRAGONTRAIN-EP02",
+  "current_step": "short-drama-production-qa",
+  "status": "PAUSED_EXCEPTION",
+  "checkpoint": "short-drama-production-qa",
+  "completed_steps": [
+    "short-drama-production-router",
+    "short-drama-script-breakdown",
+    "short-drama-script-reviewer",
+    "short-drama-image-generator"
+  ],
+  "events": [
+    {
+      "step": "short-drama-production-router",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:15.076413+00:00",
+      "evidence": "workflow/qa_reports/short-drama-production-router.json",
+      "skill_id": "short-drama-production-router",
+      "protocol_refs": [
+        {
+          "path": "00_自动化生产唯一入口_v3.0.md"
+        },
+        {
+          "path": "核心自动化生产包/02_任务路由与Gate_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-script-breakdown",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:15.121375+00:00",
+      "evidence": "workflow/qa_reports/short-drama-script-breakdown.json",
+      "skill_id": "short-drama-script-breakdown",
+      "protocol_refs": [
+        {
+          "path": "09_脚本优化与分镜拆解规范_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-script-reviewer",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:15.150151+00:00",
+      "evidence": "workflow/qa_reports/short-drama-script-reviewer.json",
+      "skill_id": "short-drama-script-reviewer",
+      "protocol_refs": [
+        {
+          "path": "09_脚本优化与分镜拆解规范_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-image-generator",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:15.174902+00:00",
+      "evidence": "workflow/qa_reports/short-drama-image-generator.json",
+      "skill_id": "short-drama-image-generator",
+      "protocol_refs": [
+        {
+          "path": "16_生图渠道规则_v3.0.md"
+        },
+        {
+          "path": "14_RH生图渠道与GPT通道现状_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-production-qa",
+      "outcome": "PAUSED_EXCEPTION",
+      "at": "2026-09-20T13:38:15.198368+00:00",
+      "reason": "第 2 格角色手部结构异常，判定 FAIL",
+      "evidence": "workflow/qa_reports/U05_post.json"
+    }
+  ],
+  "updated_at": "2026-09-20T13:38:15.200037+00:00",
+  "pipeline": [
+    "short-drama-production-router",
+    "short-drama-script-breakdown",
+    "short-drama-script-reviewer",
+    "short-drama-image-generator",
+    "short-drama-production-qa",
+    "runninghub-local-adapter"
+  ],
+  "segment": "U05",
+  "segment_title": "B-3C（反击）",
+  "series": "龙骨列车",
+  "episode": "EP02",
+  "pending_decision": "第 2 格角色手部结构异常，判定 FAIL"
+}
