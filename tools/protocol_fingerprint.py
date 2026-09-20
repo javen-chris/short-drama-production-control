@@ -34,7 +34,8 @@ REQUIRED_CORE_FILES = [
     "核心自动化生产包/04_专项规则.md",
     "11_目标模式自动建卡与连续执行规则.md",
     "13_模型执行前硬门禁.md",
-    "14_生图渠道规则.md",
+    "14_RH生图渠道与GPT通道现状.md",
+    "16_生图渠道规则.md",
 ]
 
 # Answers are normalized (trimmed, lowercased) before hashing.
