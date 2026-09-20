@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/submission_report.schema.json",
+  "title": "Pre-submission confirmation report",
+  "description": "Written before any video generation submission, on any platform (API, workflow app, or clicking generate in a web UI). Being authorized is not the same as submitting correct content: the report must list every reference asset and every parameter.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["unit_id", "platform", "api_mode", "model", "duration_seconds", "resolution", "aspect_ratio", "reference_assets", "authorization", "qa_gate", "confirmed"],
+  "properties": {
+    "unit_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string"},
+    "project": {"type": "string"},
+    "segment": {"type": "string"},
+    "platform": {"type": "string", "pattern": "^(runninghub|xiaoyunque|libtv|local|other:.+)$"},
+    "api_mode": {"enum": ["api", "workflow_app", "ui_manual"]},
+    "model": {"type": "string", "minLength": 1},
+    "model_version": {"type": "string"},
+    "duration_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "resolution": {"type": "string", "minLength": 1},
+    "fps": {"type": "number", "exclusiveMinimum": 0},
+    "aspect_ratio": {"type": "string", "minLength": 1},
+    "reference_assets": {
+      "type": "array",
+      "description": "Every asset the generation conditions on. An empty list means the video is generated with nothing to anchor identity or scene, which is a blocking error when the unit has assets.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "role", "qa_status"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "role": {"type": "string", "minLength": 1},
+          "qa_status": {"enum": ["PASS", "FAIL", "UNCERTAIN", "NOT_CHECKED"]},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "prompt": {"type": "string"},
+    "prompt_path": {"type": "string"},
+    "prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "cost_estimate_cny": {"type": "number", "minimum": 0},
+    "authorization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scope", "source"],
+      "properties": {
+        "scope": {"enum": ["qa_only", "test_submission", "full_segment", "within_budget"]},
+        "source": {"type": "string", "minLength": 1, "description": "The instruction text or confirmation sheet this authorization comes from."},
+        "max_submissions": {"type": "integer", "minimum": 0},
+        "submission_index": {"type": "integer", "minimum": 0}
+      }
+    },
+    "qa_gate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["g5_review", "preflight", "assets_all_pass"],
+      "properties": {
+        "g5_review": {"enum": ["PASS", "FAIL", "UNCERTAIN", "NOT_RUN"]},
+        "preflight": {"enum": ["PASS", "FAIL", "UNCERTAIN", "NOT_RUN"]},
+        "assets_all_pass": {"type": "boolean"}
+      }
+    },
+    "confirmed": {"type": "boolean"},
+    "confirmed_at": {"type": "string"},
+    "confirmed_via": {"type": "string"},
+    "submitted_at": {"type": "string"},
+    "task_id": {"type": "string"},
+    "actual_cost_cny": {"type": "number", "minimum": 0},
+    "output_path": {"type": "string"}
+  }
+}

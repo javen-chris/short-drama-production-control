@@ -33,6 +33,7 @@ REQUIRED_CORE_FILES = [
     "14_RH生图渠道与GPT通道现状_v3.0.md",
     "16_生图渠道规则_v3.0.md",
     "18_运行轨迹与进度可视规则_v3.0.md",
+    "19_视频提交前确认报告与授权范围规则_v3.0.md",
 ]
 
 # Answers are normalized (trimmed, lowercased) before hashing.
@@ -48,6 +49,8 @@ CHALLENGE_BANK = [
     {"id": "protocol-version", "prompt": "当前核心协议的主版本号是？（如 2.0）", "expected": "3.0"},
     {"id": "run-trace-location", "prompt": "每段（每次运行）的轨迹文件存放在项目 workflow 下的哪个目录？（填目录名）", "expected": "runs"},
     {"id": "run-trace-missing", "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）", "expected": "不算"},
+    {"id": "submit-requires-report", "prompt": "提交视频前必须落盘哪份产物？（填名称）", "expected": "确认报告"},
+    {"id": "empty-assets-submit", "prompt": "已获用户授权，但参考资产清单为空时是否允许提交？（允许/不允许）", "expected": "不允许"},
 ]
 
 CHALLENGE_SAMPLE = 3

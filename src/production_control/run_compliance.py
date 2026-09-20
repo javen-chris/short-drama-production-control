@@ -23,9 +23,9 @@ STEP_PROTOCOL_REQUIREMENTS = {
     "short-drama-storyboard-planner": ["08_故事本生产与QA规范_v3.0.md", "12_真人短剧Prompt与故事本弹性标准_v3.0.md"],
     "short-drama-prompt-compiler": ["12_真人短剧Prompt与故事本弹性标准_v3.0.md"],
     "short-drama-production-qa": ["04_QA与文件治理_v3.0.md"],
-    "runninghub-local-adapter": ["13_模型执行前硬门禁_v3.0.md"],
-    "xiaoyunque-local-adapter": ["13_模型执行前硬门禁_v3.0.md"],
-    "libtv-local-adapter": ["13_模型执行前硬门禁_v3.0.md"],
+    "runninghub-local-adapter": ["13_模型执行前硬门禁_v3.0.md", "19_视频提交前确认报告与授权范围规则_v3.0.md"],
+    "xiaoyunque-local-adapter": ["13_模型执行前硬门禁_v3.0.md", "19_视频提交前确认报告与授权范围规则_v3.0.md"],
+    "libtv-local-adapter": ["13_模型执行前硬门禁_v3.0.md", "19_视频提交前确认报告与授权范围规则_v3.0.md"],
 }
 
 
