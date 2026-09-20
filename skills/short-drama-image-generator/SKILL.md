@@ -13,10 +13,13 @@ RunningHub endpoint details and `16_生图渠道规则.md` for the rules.
 
 ## Model is pinned
 
-`gpt-image-2` is the only allowed image model. Never substitute SD, SDXL, Flux,
-Midjourney, DALL·E 3, seedream, or banana-family models for identity assets. A
-model change is never an agent decision; it needs explicit user authorization
-recorded as an exception.
+`gpt-image-2` is the only allowed image model, for every asset class — there is
+no "scenes may use something faster" exception. User ruling 2026-09-20 retires
+`seedream-v5-pro`, `seedream-v4.5`, banana-family and `qwen-image` entirely,
+including scene generation; they survive only as history in
+`14_RH生图渠道与GPT通道现状.md` and must not be called. Any other model change
+is never an agent decision; it needs explicit user authorization recorded as an
+exception.
 
 ## Channel A — local subscription (default)
 
