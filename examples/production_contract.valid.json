@@ -5,7 +5,7 @@
   "current_gate": "G5",
   "provider": "runninghub",
   "target": {"duration_seconds": 5, "resolution": "720p", "aspect_ratio": "9:16"},
-  "authorization": {"video_submission_authorized": false, "max_submissions": 0, "allow_retry": false, "allow_model_switch": false, "allow_publish": false, "allow_master_overwrite": false},
+  "authorization": {"video_submission_authorized": false, "max_submissions": 0, "allow_retry": false, "allow_model_switch": false, "allow_publish": false, "allow_master_overwrite": false, "allow_tail_frame_generation": false, "allow_storyboard_generation": false},
   "assets": [
     {"role": "character_master", "path": "D:/项目/角色MASTER.png", "purpose": "锁定女主身份、发型、服装"},
     {"role": "scene_master", "path": "D:/项目/书房MASTER.png", "purpose": "锁定书桌与空间锚点"}

@@ -22,14 +22,16 @@
     },
     "authorization": {
       "type": "object", "additionalProperties": false,
-      "required": ["video_submission_authorized", "max_submissions", "allow_retry", "allow_model_switch", "allow_publish", "allow_master_overwrite"],
+      "required": ["video_submission_authorized", "max_submissions", "allow_retry", "allow_model_switch", "allow_publish", "allow_master_overwrite", "allow_tail_frame_generation", "allow_storyboard_generation"],
       "properties": {
         "video_submission_authorized": {"type": "boolean"},
         "max_submissions": {"type": "integer", "minimum": 0},
         "allow_retry": {"const": false},
         "allow_model_switch": {"const": false},
         "allow_publish": {"const": false},
-        "allow_master_overwrite": {"const": false}
+        "allow_master_overwrite": {"const": false},
+        "allow_tail_frame_generation": {"type": "boolean"},
+        "allow_storyboard_generation": {"type": "boolean"}
       }
     },
     "assets": {
@@ -44,7 +46,7 @@
         }
       }
     },
-    "storyboard_mode": {"enum": ["direct_prompt", "keyframe_assisted", "storyboard_required"]},
+    "storyboard_mode": {"enum": ["direct_prompt", "keyframe_assisted", "storyboard_required", "degraded_direct"]},
     "prompt_unit": {"$ref": "prompt_unit.schema.json"}
   }
 }

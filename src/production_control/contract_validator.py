@@ -52,14 +52,24 @@ def policy_errors(contract: dict) -> list[str]:
     if not auth.get("video_submission_authorized") and auth.get("max_submissions", 0) != 0:
         errors.append("max_submissions must be 0 when video submission is not authorized")
     complex_flags = {"physical_contact", "multi_character_choreography", "complex_prop_handoff", "cross_space_continuity", "complex_vfx_path"}
-    if risk_flags & complex_flags and mode != "storyboard_required":
-        errors.append("complex risk flags require storyboard_required mode")
+    if risk_flags & complex_flags and mode not in {"storyboard_required", "degraded_direct"}:
+        errors.append("complex risk flags require storyboard_required mode or degraded_direct fallback")
+    if mode == "storyboard_required" and not auth.get("allow_storyboard_generation"):
+        errors.append("storyboard_required mode requires authorization.allow_storyboard_generation")
     if mode == "storyboard_required" and "storyboard_composite" not in roles:
         errors.append("storyboard_required mode needs one storyboard_composite asset, never individual storyboard frames")
+    if mode == "degraded_direct":
+        if auth.get("allow_storyboard_generation"):
+            errors.append("degraded_direct must not be used when storyboard generation is authorized")
+        if not risk_flags & complex_flags:
+            errors.append("degraded_direct fallback only applies to complex risk flags")
     if mode == "keyframe_assisted" and "keyframe" not in roles:
         errors.append("keyframe_assisted mode needs at least one keyframe asset")
-    if "real_tail_frame_required" in risk_flags and "real_tail_frame" not in roles:
-        errors.append("real_tail_frame_required needs a real_tail_frame asset")
+    if "real_tail_frame_required" in risk_flags:
+        if auth.get("allow_tail_frame_generation") and "real_tail_frame" not in roles:
+            errors.append("real_tail_frame_required with tail-frame generation authorized needs a real_tail_frame asset")
+    # No real_tail_frame and generation not authorized -> allowed to continue degraded;
+    # the degradation is recorded by asset_decider.fallback_notes, never a blocking error.
     if "none" in risk_flags and len(risk_flags) != 1:
         errors.append("risk_flags may contain none only by itself")
     return errors

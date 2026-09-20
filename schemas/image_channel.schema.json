@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/image_channel.schema.json",
+  "title": "Image channel provenance record",
+  "description": "Every generated or edited image asset must record which GPT-Image-2 channel produced it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["asset_role", "image_channel", "model", "evidence"],
+  "properties": {
+    "asset_role": {"enum": ["character_master", "face_identity_master", "wardrobe_body_master", "scene_master", "prop_master", "keyframe", "storyboard_composite"]},
+    "image_channel": {"enum": ["gpt_image2_local_subscription", "gpt_image2_runninghub_workflow"]},
+    "model": {"const": "gpt-image-2"},
+    "backend": {"enum": ["web", "codex"]},
+    "fallback_reason": {"enum": ["subscription_quota_exhausted", "local_channel_unavailable", "reference_slot_limit", "none"]},
+    "workflow_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "conversation_url": {"type": "string", "minLength": 1},
+    "cost_cny": {"type": "number", "minimum": 0},
+    "reference_count": {"type": "integer", "minimum": 0},
+    "authorized": {"type": "boolean"},
+    "evidence": {"type": "string", "minLength": 1}
+  }
+}

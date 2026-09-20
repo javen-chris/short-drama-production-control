@@ -5,7 +5,7 @@ description: Review a confirmed short-drama script and shot units for hook, beat
 
 # Short-drama Script Reviewer
 
-Read `D:\短剧制作核心协议\09_脚本优化与分镜拆解规范.md`, the confirmed script, and the complete objects produced by `short-drama-script-breakdown`. Review independently; do not generate or repair the reviewed objects in place. This Skill may identify problems and propose candidates, but must not silently rewrite confirmed plot, character relationships, world setting, or permissions.
+Read `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议\09_脚本优化与分镜拆解规范.md`, the confirmed script, and the complete objects produced by `short-drama-script-breakdown`. Review independently; do not generate or repair the reviewed objects in place. This Skill may identify problems and propose candidates, but must not silently rewrite confirmed plot, character relationships, world setting, or permissions.
 
 ## Required review record
 

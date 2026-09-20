@@ -5,7 +5,7 @@ description: Convert a confirmed short-drama script segment into ScriptBreakdown
 
 # Script breakdown
 
-Read the confirmed script and `D:\短剧制作核心协议\09_脚本优化与分镜拆解规范.md`. Quote source line/paragraph IDs in the evidence; do not silently rewrite confirmed plot, dialogue, relationships, world rules, or assets.
+Read the confirmed script and `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议\09_脚本优化与分镜拆解规范.md`. Quote source line/paragraph IDs in the evidence; do not silently rewrite confirmed plot, dialogue, relationships, world rules, or assets.
 
 Produce, in order:
 

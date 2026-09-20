@@ -5,7 +5,7 @@ description: Plan L2 short-drama storyboards and L1 key-state sequences from app
 
 # Storyboard planner
 
-Use only after asset routing selects L2, or use its key-state subset for L1. Read `D:\短剧制作核心协议\08_故事本生产与QA规范.md`, `12_真人短剧Prompt与故事本弹性标准.md`, and `13_故事本图片与视频生成参考资产选择准则.md`.
+Use only after asset routing selects L2, or use its key-state subset for L1. Read `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议\08_故事本生产与QA规范.md`, `12_真人短剧Prompt与故事本弹性标准.md`, and `13_故事本图片与视频生成参考资产选择准则.md`.
 
 Create one plan per production unit. Each cell has one visible state/action, time range, purpose, viewer focus, character blocking, prop/contact state, asset-role mapping, input state, output state, and causal link to the next cell. Choose the minimum useful count; do not force nine cells.
 

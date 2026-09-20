@@ -25,7 +25,8 @@ This control plane addresses each of those with explicit contracts, gates, and g
 - checks consecutive shot-language reuse and requires a stated reason when repetition is intentional;
 - implements a source-controlled Skill chain for routing, breakdown, independent script review, scene continuity, adaptive assets, conditional storyboards, neutral prompts, pre/post QA, and three local provider adapters;
 - persists confirmed workflow decisions in `docs/decisions/` and adaptive asset routing in `docs/architecture/`;
-- provides task state, asset decisions, provider capabilities, unified QA checks, provenance hashing, payload compilation, and PR security scanning;
+- pins every image asset to one declared model and channel, with the paid fallback used only on a recorded reason and explicit authorization;
+- keeps task state, asset decisions, provider capabilities, unified QA checks, provenance hashing, payload compilation, and PR security scanning;
 - keeps a dated AIGC production benchmark and reuse boundary in `docs/research/`;
 - treats prompts as the default path and storyboards as a risk-triggered exception;
 - keeps validation offline; provider credentials and actual submissions stay local.

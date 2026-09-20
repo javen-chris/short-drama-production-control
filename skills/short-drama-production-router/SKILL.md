@@ -5,7 +5,7 @@ description: Route an authorized D-drive short-drama task through the current Ga
 
 # Short-drama production router
 
-Read `D:\短剧制作核心协议\00_自动化生产唯一入口.md`, `AGENTS.md`, the core package, current project entry, `TASK_CURRENT.md`, contract, confirmed script, and asset index. Run Bootstrap when the task card does not yet exist.
+Read `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议\00_自动化生产唯一入口.md`, `AGENTS.md`, the core package, current project entry, `TASK_CURRENT.md`, contract, confirmed script, and asset index. Run Bootstrap when the task card does not yet exist.
 
 Identify the current Gate and invoke only its Skill. Persist every input path, output path, status, evidence, exception, task ID, cost, and next step. Never rely on chat memory as production state.
 
