@@ -2,7 +2,7 @@ import hashlib
 import json
 
 from production_control.protocol_attestation import verdict
-from tools.protocol_fingerprint import build_manifest
+from production_control.protocol_fingerprint import build_manifest
 
 CORE = ["00_入口.md", "01_总则.md"]
 BANK = [
