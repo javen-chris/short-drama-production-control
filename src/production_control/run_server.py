@@ -147,16 +147,43 @@ def make_handler(project_root: str | Path):
     return Handler
 
 
-def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = True) -> ThreadingHTTPServer:
+def port_candidates(preferred: int, auto_port: bool = True) -> list[int]:
+    """Ports to try, in order. 0 means 'any free port' and is never walked."""
+    if not auto_port or preferred == 0:
+        return [preferred]
+    return [preferred] + list(range(preferred + 1, preferred + 11))
+
+
+def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = True,
+          auto_port: bool = True) -> ThreadingHTTPServer:
+    """Start the local report server.
+
+    auto_port walks forward if the preferred port is taken (a second window, or
+    an earlier run left running), so double-clicking start twice still works
+    instead of failing with "address already in use".
+    """
     root = Path(project_root)
     if not (root / "workflow" / "run_index.json").is_file():
         raise SystemExit(
             f"没有找到 {root / 'workflow' / 'run_index.json'}：该项目还没有运行轨迹。"
             "先用编排器跑一段（orchestrator.start(project_root=...)）再来查看。"
         )
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(root))
+    candidates = port_candidates(port, auto_port)
+    last_error: OSError | None = None
+    httpd: ThreadingHTTPServer | None = None
+    for candidate in candidates:
+        try:
+            httpd = ThreadingHTTPServer(("127.0.0.1", candidate), make_handler(root))
+            port = candidate
+            break
+        except OSError as exc:
+            last_error = exc
+    if httpd is None:
+        raise SystemExit(f"端口 {candidates[0]}–{candidates[-1]} 都被占用，无法启动：{last_error}")
     url = f"http://127.0.0.1:{port}/"
     print(f"运行总表（实时）：{url}")
+    if port != candidates[0]:
+        print(f"（{candidates[0]} 被占用，已自动改用 {port}）")
     print("刷新按钮与自动刷新都会重新读取磁盘；Ctrl+C 结束服务。")
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()

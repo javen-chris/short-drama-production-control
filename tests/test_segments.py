@@ -165,3 +165,13 @@ def test_live_page_contains_the_editor_and_static_page_does_not(tmp_path):
     static = render_project_html(run_server.current_view(root), live=False)
     assert "保存段清单" not in static
     assert "静态快照无法写回磁盘" in static
+
+
+def test_port_candidates_walk_forward_but_respect_port_zero():
+    """Double-clicking the launcher twice must not fail with 'address in use'."""
+    from production_control.run_server import port_candidates
+
+    assert port_candidates(8765)[0] == 8765
+    assert port_candidates(8765)[1] == 8766
+    assert port_candidates(8765, auto_port=False) == [8765]
+    assert port_candidates(0) == [0]  # 'any free port' must not be walked
