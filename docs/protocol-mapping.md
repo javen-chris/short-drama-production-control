@@ -1,5 +1,7 @@
 # Protocol mapping
 
+> **对应协议版本：3.0**（2026-09-20 定版）。协议升版时本文件需同步复核；协议文件名的 `_v3.0` 后缀变更必须同时更新 `protocol_fingerprint.REQUIRED_CORE_FILES` 与 `run_compliance.STEP_PROTOCOL_REQUIREMENTS`。
+
 Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议`. This repository implements offline checks only.
 
 | D-drive rule | First-release implementation |

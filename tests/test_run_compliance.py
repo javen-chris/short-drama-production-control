@@ -17,10 +17,10 @@ CHAIN = {
     ]
 }
 
-REFS_BREAKDOWN = [{"path": "09_脚本优化与分镜拆解规范.md"}]
-REFS_REVIEWER = [{"path": "09_脚本优化与分镜拆解规范.md"}]
-REFS_IMAGE = [{"path": "16_生图渠道规则.md"}, {"path": "14_RH生图渠道与GPT通道现状.md"}]
-REFS_QA = [{"path": "04_QA与文件治理.md"}]
+REFS_BREAKDOWN = [{"path": "09_脚本优化与分镜拆解规范_v3.0.md"}]
+REFS_REVIEWER = [{"path": "09_脚本优化与分镜拆解规范_v3.0.md"}]
+REFS_IMAGE = [{"path": "16_生图渠道规则_v3.0.md"}, {"path": "14_RH生图渠道与GPT通道现状_v3.0.md"}]
+REFS_QA = [{"path": "04_QA与文件治理_v3.0.md"}]
 
 
 def _result(step, refs, **extra):
@@ -79,20 +79,20 @@ def test_missing_required_protocol_read_is_a_named_gap(tmp_path):
     tampered = copy.deepcopy(state)
     for event in tampered["events"]:
         if event["step"] == "short-drama-image-generator":
-            event["protocol_refs"] = [{"path": "16_生图渠道规则.md"}]
+            event["protocol_refs"] = [{"path": "16_生图渠道规则_v3.0.md"}]
     gaps = compliance_gaps(tampered, CHAIN)
-    assert any("did not record reading 14_RH生图渠道与GPT通道现状.md" in g for g in gaps)
+    assert any("did not record reading 14_RH生图渠道与GPT通道现状_v3.0.md" in g for g in gaps)
 
 
 def test_stale_protocol_hash_is_reported(tmp_path):
     state = _run(tmp_path / "run.json", _handlers(), set(orchestrator.plan_steps(CHAIN)))
-    manifest = {"files": [{"path": "16_生图渠道规则.md", "sha256": "a" * 64}]}
+    manifest = {"files": [{"path": "16_生图渠道规则_v3.0.md", "sha256": "a" * 64}]}
     tampered = copy.deepcopy(state)
     for event in tampered["events"]:
         if event["step"] == "short-drama-image-generator":
             event["protocol_refs"] = [
-                {"path": "16_生图渠道规则.md", "sha256": "b" * 64},
-                {"path": "14_RH生图渠道与GPT通道现状.md"},
+                {"path": "16_生图渠道规则_v3.0.md", "sha256": "b" * 64},
+                {"path": "14_RH生图渠道与GPT通道现状_v3.0.md"},
             ]
     result = verify_run_compliance(tampered, CHAIN, manifest)
     assert any("hash does not match" in e for e in result["errors"])
