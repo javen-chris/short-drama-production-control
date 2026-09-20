@@ -72,6 +72,10 @@ def start(state_path: str | Path, chain: dict, run_id: str, contract_id: str, *,
 
         state_path = run_index.run_path(project_root, run_id)
         Path(state_path).parent.mkdir(parents=True, exist_ok=True)
+        if not segment_title:
+            # Adopt the name the user entered in the segment list, so the trace and
+            # the report never disagree about what this segment is called.
+            segment_title = run_index.segment_title_for(project_root, segment or run_id)
     state = run_state.start_run(state_path, run_id, contract_id, steps[0])
     state["pipeline"] = steps
     state["segment"] = segment or run_id

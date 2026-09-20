@@ -11,7 +11,7 @@
     {
       "step": "short-drama-production-router",
       "outcome": "COMPLETED",
-      "at": "2026-09-20T13:38:15.290907+00:00",
+      "at": "2026-09-20T14:26:43.795224+00:00",
       "evidence": "workflow/qa_reports/short-drama-production-router.json",
       "skill_id": "short-drama-production-router",
       "protocol_refs": [
@@ -25,7 +25,7 @@
       "validator": "contract_validator"
     }
   ],
-  "updated_at": "2026-09-20T13:38:15.293048+00:00",
+  "updated_at": "2026-09-20T14:26:43.796223+00:00",
   "pipeline": [
     "short-drama-production-router",
     "short-drama-script-breakdown",

@@ -347,6 +347,86 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     auto_checked = "checked" if live else ""
     heading = " · ".join(x for x in (view["series"], view["episode"]) if x) or view["project"]
 
+    segments_json = json.dumps(view.get("segments", []), ensure_ascii=False)
+    meta_json = json.dumps(
+        {"project": view.get("project", ""), "series": view.get("series", ""), "episode": view.get("episode", "")},
+        ensure_ascii=False,
+    )
+    segments_source = view.get("segments_source", "workflow/segments.json")
+    editor = (
+        f"""
+  <section class="editor">
+    <h2>段清单 —— 在这里录入，保存后即为权威数据</h2>
+    <div class="sub">
+      保存写入 <code>{escape(segments_source)}</code>；Agent 启动每一段时读取同一份文件取段名，两边不会各叫一个名字。
+    </div>
+    <table id="segTable">
+      <thead><tr><th style="width:90px">段号</th><th>段名（例：B-2A（物理格斗））</th><th>备注</th><th style="width:44px"></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="editorbar">
+      <button type="button" onclick="addSeg()">+ 添加一段</button>
+      <button type="button" class="primary" onclick="saveSegs()">保存段清单</button>
+      <span id="segMsg" class="dim"></span>
+    </div>
+  </section>
+
+  <script>
+    var SEGS = {segments_json};
+    var META = {meta_json};
+    var tbody = document.querySelector('#segTable tbody');
+    var msg = document.getElementById('segMsg');
+
+    function renderSegs() {{
+      tbody.innerHTML = SEGS.map(function (row, i) {{
+        return '<tr>' +
+          '<td><input value="' + (row.segment || '').replace(/"/g, '&quot;') + '" data-k="segment" data-i="' + i + '" placeholder="U01"></td>' +
+          '<td><input value="' + (row.title || '').replace(/"/g, '&quot;') + '" data-k="title" data-i="' + i + '" placeholder="B-2A（物理格斗）"></td>' +
+          '<td><input value="' + (row.note || '').replace(/"/g, '&quot;') + '" data-k="note" data-i="' + i + '"></td>' +
+          '<td><button type="button" onclick="delSeg(' + i + ')">✕</button></td>' +
+        '</tr>';
+      }}).join('');
+    }}
+
+    function collect() {{
+      var rows = {{}};
+      document.querySelectorAll('#segTable input').forEach(function (input) {{
+        var i = Number(input.dataset.i);
+        rows[i] = rows[i] || {{ segment: '', title: '', note: '' }};
+        rows[i][input.dataset.k] = input.value.trim();
+      }});
+      return Object.keys(rows).sort(function (a, b) {{ return a - b; }}).map(function (i) {{ return rows[i]; }});
+    }}
+
+    function addSeg() {{ SEGS = collect(); SEGS.push({{ segment: '', title: '', note: '' }}); renderSegs(); }}
+    function delSeg(i) {{ SEGS = collect(); SEGS.splice(i, 1); renderSegs(); }}
+
+    async function saveSegs() {{
+      var payload = Object.assign({{}}, META, {{ segments: collect().filter(function (r) {{ return r.segment; }}) }});
+      msg.textContent = '保存中…';
+      try {{
+        var res = await fetch('/api/segments', {{
+          method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(payload),
+        }});
+        var data = await res.json();
+        if (data.ok) {{ msg.textContent = '已保存到 ' + data.path + '，正在刷新…'; setTimeout(function () {{ location.reload(); }}, 400); }}
+        else {{ msg.textContent = '保存失败：' + data.error; }}
+      }} catch (err) {{ msg.textContent = '保存失败：' + err; }}
+    }}
+
+    renderSegs();
+  </script>
+"""
+        if live
+        else """
+  <section class="editor readonly">
+    <h2>段清单（只读）</h2>
+    <div class="sub">静态快照无法写回磁盘。要录入/修改段名，用实时模式：
+      <code>python -m production_control.run_report &lt;项目目录&gt; --serve</code></div>
+  </section>
+"""
+    )
+
     rows = []
     for row in view["runs"]:
         detail = ""
@@ -437,6 +517,16 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .title {{ color:var(--muted); font-size:12px; margin-top:2px; }}
   .now {{ font-size:13px; }}
   .now strong {{ font-size:14.5px; }}
+  .editor {{ border:1px solid var(--line); border-radius:10px; padding:14px; margin-top:22px; background:var(--card); }}
+  .editor h2 {{ margin-bottom:6px; }}
+  .editor table {{ background:var(--bg); border-radius:8px; margin-top:10px; }}
+  .editor input {{ width:100%; font:inherit; font-size:13.5px; padding:5px 8px; border:1px solid var(--line);
+                   border-radius:6px; background:var(--bg); color:var(--fg); }}
+  .editorbar {{ display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }}
+  .editorbar button {{ font:inherit; font-size:13.5px; padding:5px 12px; border-radius:8px; cursor:pointer;
+                       border:1px solid var(--line); background:var(--bg); color:var(--fg); }}
+  .editorbar button.primary {{ background:#1f6feb; border-color:#1f6feb; color:#fff; font-weight:600; }}
+  .editor.readonly {{ opacity:.85; }}
   .problems {{ background:var(--card); border:1px solid rgba(207,34,46,.5); border-radius:10px; padding:12px 14px; margin-bottom:16px; }}
   .problems ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
   footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
@@ -466,6 +556,8 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     <thead><tr><th>段 / 运行</th><th>状态</th><th>进度</th><th>当前步骤 / 待决定</th><th>最后事件</th></tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
+
+  {editor}
 
   <footer>
     数据来源：<code>{escape(view['data_source'] or 'workflow/run_index.json')}</code> ·
