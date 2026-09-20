@@ -42,7 +42,7 @@ def validate_chain(path: Path = SKILLS / "skill-chain.json") -> list[str]:
     required = {
         "short-drama-production-router", "short-drama-script-breakdown",
         "short-drama-script-reviewer", "short-drama-scene-continuity",
-        "short-drama-asset-router", "short-drama-storyboard-planner",
+        "short-drama-asset-router", "short-drama-image-generator", "short-drama-storyboard-planner",
         "short-drama-prompt-compiler", "short-drama-production-qa",
         "runninghub-local-adapter", "xiaoyunque-local-adapter",
         "libtv-local-adapter",
