@@ -34,7 +34,8 @@ Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及�
 | Pipeline can pause, wait for approval, and resume from a checkpoint | `orchestrator.py`, `run_state.py`, `run_state.schema.json` |
 | Provider limits declared, not guessed | `capabilities/providers.json` with `provider_capability.schema.json` |
 | Agents must prove they read the current core protocol before producing | `tools/protocol_fingerprint.py`, `protocol_attestation.py`, `protocol_attestation.schema.json` |
-| Image assets exist only via GPT-Image-2, subscription channel first | `short-drama-image-generator` Skill, `image_channel.py`, `image_channel.schema.json` |
+| Image assets exist only via GPT-Image-2, subscription channel first; seedream, banana, and qwen-image retired by user ruling 2026-09-20 | `short-drama-image-generator` Skill, `image_channel.py`, `image_channel.schema.json` |
+| Image generation itself requires prior user confirmation | `requires_user_confirmation` gate on the local `gpt-image-use-channel` Skill |
 
 The complete order is machine-checked from `skills/skill-chain.json`; CI must fail when a declared Skill is missing or a dependency appears after its consumer.
 
