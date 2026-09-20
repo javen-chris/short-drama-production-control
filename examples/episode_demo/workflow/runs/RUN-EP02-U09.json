@@ -6,7 +6,7 @@
   "checkpoint": "short-drama-production-router",
   "completed_steps": [],
   "events": [],
-  "updated_at": "2026-09-20T13:38:15.435076+00:00",
+  "updated_at": "2026-09-20T14:26:43.935924+00:00",
   "pipeline": [
     "short-drama-production-router",
     "short-drama-script-breakdown",

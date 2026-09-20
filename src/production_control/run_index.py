@@ -23,7 +23,116 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 INDEX_NAME = "run_index.json"
+SEGMENTS_NAME = "segments.json"
 RUNS_DIRNAME = "runs"
+
+
+def segments_path(project_root: str | Path) -> Path:
+    return Path(project_root) / "workflow" / SEGMENTS_NAME
+
+
+def load_segments(project_root: str | Path) -> dict:
+    """The user-owned segment list: what segments exist and what they are called.
+
+    This is the authoritative source for segment names. The user maintains it (in
+    the live page or by hand) and the agent reads it, so a segment is never named
+    one thing in the report and another in the trace.
+    """
+    path = segments_path(project_root)
+    if path.is_file():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {"project": Path(project_root).name, "series": "", "episode": "", "segments": []}
+
+
+def normalize_segments(document: dict) -> dict:
+    """Reject a segment list that would make the project inconsistent."""
+    if not isinstance(document, dict):
+        raise ValueError("segment list must be an object")
+    segments = document.get("segments")
+    if not isinstance(segments, list):
+        raise ValueError("segments must be a list")
+    cleaned = []
+    seen: set[str] = set()
+    for index, item in enumerate(segments):
+        if not isinstance(item, dict):
+            raise ValueError(f"segment {index} must be an object")
+        code = str(item.get("segment", "")).strip()
+        if not code:
+            raise ValueError(f"segment {index} needs a code")
+        if code in seen:
+            raise ValueError(f"duplicate segment code: {code}")
+        seen.add(code)
+        row = {"segment": code, "title": str(item.get("title", "")).strip(), "note": str(item.get("note", "")).strip()}
+        if item.get("planned_seconds"):
+            row["planned_seconds"] = int(item["planned_seconds"])
+        cleaned.append(row)
+    return {
+        "project": str(document.get("project", "")).strip(),
+        "series": str(document.get("series", "")).strip(),
+        "episode": str(document.get("episode", "")).strip(),
+        "updated_at": _now(),
+        "segments": cleaned,
+    }
+
+
+def save_segments(project_root: str | Path, document: dict) -> Path:
+    path = segments_path(project_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(normalize_segments(document), ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def segment_run_id(document: dict, code: str) -> str:
+    episode = document.get("episode") or document.get("project") or "SEG"
+    return f"RUN-{episode}-{code}"
+
+
+def apply_segments(index: dict, document: dict) -> dict:
+    """Merge the user's segment list into the index.
+
+    Segments that exist in the list but have no run yet appear as not-started rows,
+    so filling in 20 segments immediately shows 20 named rows. Existing runs keep
+    their state and only take the name from the list (the user's list wins on
+    naming, the trace wins on status).
+    """
+    rows = {row.get("run_id"): row for row in index.get("runs", [])}
+    by_segment = {row.get("segment"): row for row in index.get("runs", [])}
+    for item in document.get("segments", []):
+        code = item.get("segment", "")
+        existing = by_segment.get(code)
+        if existing:
+            if item.get("title"):
+                existing["segment_title"] = item["title"]
+            continue
+        run_id = segment_run_id(document, code)
+        if run_id in rows:
+            continue
+        rows[run_id] = {
+            "run_id": run_id,
+            "segment": code,
+            "segment_title": item.get("title", ""),
+            "status": "",
+            "current_step": "",
+            "pending_decision": "",
+            "progress": {"completed": 0, "total": 0},
+            "path": f"{RUNS_DIRNAME}/{run_id}.json",
+            "last_event_at": "",
+            "updated_at": _now(),
+        }
+    index["runs"] = sorted(rows.values(), key=lambda r: r.get("run_id", ""))
+    for key in ("project", "series", "episode"):
+        if document.get(key) and not index.get(key):
+            index[key] = document[key]
+    return index
+
+
+def segment_title_for(project_root: str | Path, segment: str) -> str:
+    """What the user called this segment, so the agent can adopt the same name."""
+    document = load_segments(project_root)
+    for item in document.get("segments", []):
+        if item.get("segment") == segment:
+            return item.get("title", "")
+    return ""
 
 
 def index_path(project_root: str | Path) -> Path:

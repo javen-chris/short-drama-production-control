@@ -37,11 +37,21 @@ from .run_report import (
 
 
 def current_view(project_root: str | Path, *, with_details: bool = True) -> dict:
-    """Read the project from disk and build the overview. No caching, on purpose."""
+    """Read the project from disk and build the overview. No caching, on purpose.
+
+    Merges two sources: the segment trace files (state) and the user's segment
+    list (names). Filling in the list on the page immediately shows the rows.
+    """
     root = Path(project_root)
     index = run_index.load_index(root)
     index = run_index.sync_index(root, index)
-    return summarize_project(index, root, with_details=with_details)
+    document = run_index.load_segments(root)
+    if document.get("segments"):
+        index = run_index.apply_segments(index, document)
+    view = summarize_project(index, root, with_details=with_details)
+    view["segments"] = document.get("segments", [])
+    view["segments_source"] = str(run_index.segments_path(root))
+    return view
 
 
 def make_handler(project_root: str | Path):
@@ -66,6 +76,10 @@ def make_handler(project_root: str | Path):
                     self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
                 elif path == "/data":
                     body = json.dumps(current_view(root), ensure_ascii=False).encode("utf-8")
+                    self._send(200, "application/json; charset=utf-8", body)
+                elif path == "/api/segments":
+                    document = run_index.load_segments(root)
+                    body = json.dumps(document, ensure_ascii=False).encode("utf-8")
                     self._send(200, "application/json; charset=utf-8", body)
                 elif path == "/text":
                     text = render_project_text(current_view(root)).encode("utf-8")
@@ -94,6 +108,41 @@ def make_handler(project_root: str | Path):
 
         def log_message(self, *args) -> None:  # quiet console
             return
+
+        def do_POST(self) -> None:  # noqa: N802 - stdlib naming
+            """Accept the user's segment list from the page.
+
+            This is the one write path: the user edits names/notes on the page and
+            saves, and the same file the agent reads is what gets written. Bound to
+            127.0.0.1, so only this machine can reach it.
+            """
+            path = unquote(self.path.split("?", 1)[0])
+            if path != "/api/segments":
+                self._send(404, "text/plain; charset=utf-8", b"not found")
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                document = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                payload = json.dumps({"ok": False, "error": f"JSON 解析失败：{exc}"}, ensure_ascii=False)
+                self._send(400, "application/json; charset=utf-8", payload.encode("utf-8"))
+                return
+            try:
+                saved = run_index.save_segments(root, document)
+                index = run_index.load_index(root)
+                index = run_index.sync_index(root, index)
+                index = run_index.apply_segments(index, run_index.load_segments(root))
+                run_index.save_index(root, index)
+            except (ValueError, OSError) as exc:
+                payload = json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                self._send(400, "application/json; charset=utf-8", payload.encode("utf-8"))
+                return
+            payload = json.dumps(
+                {"ok": True, "path": str(saved), "segments": run_index.load_segments(root)["segments"]},
+                ensure_ascii=False,
+            )
+            self._send(200, "application/json; charset=utf-8", payload.encode("utf-8"))
 
     return Handler
 

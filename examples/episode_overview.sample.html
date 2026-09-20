@@ -54,6 +54,16 @@
   .title { color:var(--muted); font-size:12px; margin-top:2px; }
   .now { font-size:13px; }
   .now strong { font-size:14.5px; }
+  .editor { border:1px solid var(--line); border-radius:10px; padding:14px; margin-top:22px; background:var(--card); }
+  .editor h2 { margin-bottom:6px; }
+  .editor table { background:var(--bg); border-radius:8px; margin-top:10px; }
+  .editor input { width:100%; font:inherit; font-size:13.5px; padding:5px 8px; border:1px solid var(--line);
+                   border-radius:6px; background:var(--bg); color:var(--fg); }
+  .editorbar { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  .editorbar button { font:inherit; font-size:13.5px; padding:5px 12px; border-radius:8px; cursor:pointer;
+                       border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  .editorbar button.primary { background:#1f6feb; border-color:#1f6feb; color:#fff; font-weight:600; }
+  .editor.readonly { opacity:.85; }
   .problems { background:var(--card); border:1px solid rgba(207,34,46,.5); border-radius:10px; padding:12px 14px; margin-bottom:16px; }
   .problems ul { margin:0; padding-left:20px; font-size:13.5px; }
   footer { margin-top:28px; color:var(--muted); font-size:12px; }
@@ -71,7 +81,7 @@
     <button type="button" onclick="location.reload()">🔄 立即刷新</button>
     <label><input type="checkbox" id="auto" > 自动刷新（每 5 秒）</label>
     <span class="dim">静态快照：数据为生成时状态，需重新运行命令才会更新</span>
-    <span class="dim">本次渲染：2026-09-20T13:38:17.087947+00:00</span>
+    <span class="dim">本次渲染：2026-09-20T14:26:45.389038+00:00</span>
   </div>
 
   <div class="cards"><div class="card"><div class="k">段数</div><div class="v">20</div></div><div class="card"><div class="k">已完成</div><div class="v">4</div></div><div class="card"><div class="k">进行中</div><div class="v">1</div></div><div class="card"><div class="k">等待批准</div><div class="v">0</div></div><div class="card"><div class="k">挂起 / 阻断</div><div class="v">1</div></div><div class="card"><div class="k">未开始</div><div class="v">14</div></div></div>
@@ -88,7 +98,7 @@
         <td><span class="badge" style="--c:#1a7f37">已完成</span></td>
         <td><div class="bar"><i style="width:100%"></i></div><span class="dim">100%</span></td>
         <td><code class="dim">runninghub-local-adapter</code></td>
-        <td class="dim">2026-09-20T13:38:14.548777+00:00</td>
+        <td class="dim">2026-09-20T14:26:43.119617+00:00</td>
       </tr>
       <tr class="detailrow"><td colspan="5"></td></tr>
       <tr class="">
@@ -97,7 +107,7 @@
         <td><span class="badge" style="--c:#1a7f37">已完成</span></td>
         <td><div class="bar"><i style="width:100%"></i></div><span class="dim">100%</span></td>
         <td><code class="dim">runninghub-local-adapter</code></td>
-        <td class="dim">2026-09-20T13:38:14.707109+00:00</td>
+        <td class="dim">2026-09-20T14:26:43.260132+00:00</td>
       </tr>
       <tr class="detailrow"><td colspan="5"></td></tr>
       <tr class="">
@@ -106,7 +116,7 @@
         <td><span class="badge" style="--c:#1a7f37">已完成</span></td>
         <td><div class="bar"><i style="width:100%"></i></div><span class="dim">100%</span></td>
         <td><code class="dim">runninghub-local-adapter</code></td>
-        <td class="dim">2026-09-20T13:38:14.859722+00:00</td>
+        <td class="dim">2026-09-20T14:26:43.409052+00:00</td>
       </tr>
       <tr class="detailrow"><td colspan="5"></td></tr>
       <tr class="">
@@ -115,7 +125,7 @@
         <td><span class="badge" style="--c:#1a7f37">已完成</span></td>
         <td><div class="bar"><i style="width:100%"></i></div><span class="dim">100%</span></td>
         <td><code class="dim">runninghub-local-adapter</code></td>
-        <td class="dim">2026-09-20T13:38:15.010469+00:00</td>
+        <td class="dim">2026-09-20T14:26:43.572775+00:00</td>
       </tr>
       <tr class="detailrow"><td colspan="5"></td></tr>
       <tr class="">
@@ -124,7 +134,7 @@
         <td><span class="badge" style="--c:#bc4c00">已挂起</span></td>
         <td><div class="bar"><i style="width:67%"></i></div><span class="dim">67%</span></td>
         <td><code class="dim">short-drama-production-qa</code><div class="reason">待决定：第 2 格角色手部结构异常，判定 FAIL</div></td>
-        <td class="dim">2026-09-20T13:38:15.198368+00:00</td>
+        <td class="dim">2026-09-20T14:26:43.725488+00:00</td>
       </tr>
       <tr class="detailrow"><td colspan="5"></td></tr>
       <tr class="active">
@@ -133,7 +143,7 @@
         <td><span class="badge" style="--c:#0969da">进行中</span></td>
         <td><div class="bar"><i style="width:17%"></i></div><span class="dim">17%</span></td>
         <td><code class="dim">short-drama-script-breakdown</code></td>
-        <td class="dim">2026-09-20T13:38:15.290907+00:00</td>
+        <td class="dim">2026-09-20T14:26:43.795224+00:00</td>
       </tr>
       <tr class="detailrow"><td colspan="5"></td></tr>
       <tr class="">
@@ -264,9 +274,17 @@
       <tr class="detailrow"><td colspan="5"></td></tr></tbody>
   </table>
 
+  
+  <section class="editor readonly">
+    <h2>段清单（只读）</h2>
+    <div class="sub">静态快照无法写回磁盘。要录入/修改段名，用实时模式：
+      <code>python -m production_control.run_report &lt;项目目录&gt; --serve</code></div>
+  </section>
+
+
   <footer>
     数据来源：<code><项目根>\workflow\run_index.json</code> ·
-    索引更新：2026-09-20T13:38:16.119633+00:00 · 最新段落事件：2026-09-20T13:38:15.290907+00:00<br>
+    索引更新：2026-09-20T14:26:44.589731+00:00 · 最新段落事件：2026-09-20T14:26:43.795224+00:00<br>
     刷新方式：重新执行渲染命令（无缓存，始终反映磁盘上的最新状态）。
   </footer>
 </div>
