@@ -1,0 +1,23 @@
+{
+  "run_id": "RUN-EP02-U16",
+  "contract_id": "DRAGONTRAIN-EP02",
+  "current_step": "short-drama-production-router",
+  "status": "RUNNING",
+  "checkpoint": "short-drama-production-router",
+  "completed_steps": [],
+  "events": [],
+  "updated_at": "2026-09-20T13:38:15.841764+00:00",
+  "pipeline": [
+    "short-drama-production-router",
+    "short-drama-script-breakdown",
+    "short-drama-script-reviewer",
+    "short-drama-image-generator",
+    "short-drama-production-qa",
+    "runninghub-local-adapter"
+  ],
+  "segment": "U16",
+  "segment_title": "（待拆解）",
+  "series": "龙骨列车",
+  "episode": "EP02",
+  "project_root": "D:\\AIGC短剧本地工作流规则及协议\\短剧生产线控制台\\examples\\episode_demo"
+}

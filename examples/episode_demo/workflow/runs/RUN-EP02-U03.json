@@ -1,0 +1,115 @@
+{
+  "run_id": "RUN-EP02-U03",
+  "contract_id": "DRAGONTRAIN-EP02",
+  "current_step": "runninghub-local-adapter",
+  "status": "COMPLETED",
+  "checkpoint": "runninghub-local-adapter",
+  "completed_steps": [
+    "short-drama-production-router",
+    "short-drama-script-breakdown",
+    "short-drama-script-reviewer",
+    "short-drama-image-generator",
+    "short-drama-production-qa",
+    "runninghub-local-adapter"
+  ],
+  "events": [
+    {
+      "step": "short-drama-production-router",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:14.769846+00:00",
+      "evidence": "workflow/qa_reports/short-drama-production-router.json",
+      "skill_id": "short-drama-production-router",
+      "protocol_refs": [
+        {
+          "path": "00_自动化生产唯一入口_v3.0.md"
+        },
+        {
+          "path": "核心自动化生产包/02_任务路由与Gate_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-script-breakdown",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:14.786191+00:00",
+      "evidence": "workflow/qa_reports/short-drama-script-breakdown.json",
+      "skill_id": "short-drama-script-breakdown",
+      "protocol_refs": [
+        {
+          "path": "09_脚本优化与分镜拆解规范_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-script-reviewer",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:14.806088+00:00",
+      "evidence": "workflow/qa_reports/short-drama-script-reviewer.json",
+      "skill_id": "short-drama-script-reviewer",
+      "protocol_refs": [
+        {
+          "path": "09_脚本优化与分镜拆解规范_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-image-generator",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:14.822383+00:00",
+      "evidence": "workflow/qa_reports/short-drama-image-generator.json",
+      "skill_id": "short-drama-image-generator",
+      "protocol_refs": [
+        {
+          "path": "16_生图渠道规则_v3.0.md"
+        },
+        {
+          "path": "14_RH生图渠道与GPT通道现状_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "short-drama-production-qa",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:14.841797+00:00",
+      "evidence": "workflow/qa_reports/short-drama-production-qa.json",
+      "skill_id": "short-drama-production-qa",
+      "protocol_refs": [
+        {
+          "path": "04_QA与文件治理_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    },
+    {
+      "step": "runninghub-local-adapter",
+      "outcome": "COMPLETED",
+      "at": "2026-09-20T13:38:14.859722+00:00",
+      "evidence": "workflow/qa_reports/runninghub-local-adapter.json",
+      "skill_id": "runninghub-local-adapter",
+      "protocol_refs": [
+        {
+          "path": "13_模型执行前硬门禁_v3.0.md"
+        }
+      ],
+      "validator": "contract_validator"
+    }
+  ],
+  "updated_at": "2026-09-20T13:38:14.861778+00:00",
+  "pipeline": [
+    "short-drama-production-router",
+    "short-drama-script-breakdown",
+    "short-drama-script-reviewer",
+    "short-drama-image-generator",
+    "short-drama-production-qa",
+    "runninghub-local-adapter"
+  ],
+  "segment": "U03",
+  "segment_title": "B-3A（追逐）",
+  "series": "龙骨列车",
+  "episode": "EP02",
+  "project_root": "D:\\AIGC短剧本地工作流规则及协议\\短剧生产线控制台\\examples\\episode_demo"
+}

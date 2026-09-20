@@ -55,15 +55,67 @@ def load_chain(path: str | Path = SKILL_CHAIN) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def start(state_path: str | Path, chain: dict, run_id: str, contract_id: str) -> dict:
+def start(state_path: str | Path, chain: dict, run_id: str, contract_id: str, *,
+          project_root: str | Path | None = None, segment: str = "", segment_title: str = "",
+          series: str = "", episode: str = "") -> dict:
+    """Begin one segment run.
+
+    With project_root set, the run file lands in <project>/workflow/runs/<run_id>.json
+    and the project index is updated, so a 20-segment episode stays navigable.
+
+    segment_title is the human-readable name shown in reports, e.g.
+    "B-2A（物理格斗）" rather than a bare code.
+    """
     steps = plan_steps(chain)
+    if project_root:
+        from . import run_index
+
+        state_path = run_index.run_path(project_root, run_id)
+        Path(state_path).parent.mkdir(parents=True, exist_ok=True)
     state = run_state.start_run(state_path, run_id, contract_id, steps[0])
     state["pipeline"] = steps
+    state["segment"] = segment or run_id
+    state["segment_title"] = segment_title
+    state["series"] = series
+    state["episode"] = episode
+    if project_root:
+        state["project_root"] = str(project_root)
     run_state.write_task(state_path, state)
+    _persist(state)
     return run_state.read_task(state_path)
 
 
+def _persist(state: dict) -> None:
+    """Write the run file and refresh the project index after every move.
+
+    The report is only as good as what is on disk, so persistence happens inside
+    the orchestrator rather than relying on a caller to remember.
+    """
+    root = state.get("project_root")
+    if not root:
+        return
+    from . import run_index
+
+    path = run_index.run_path(root, state.get("run_id", "RUN-UNKNOWN"))
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    run_state.write_task(path, state)
+
+    index = run_index.load_index(root, series=state.get("series", ""), episode=state.get("episode", ""))
+    # Only a segment that actually advanced takes over the active marker:
+    # pre-creating later segments must not steal it from the one in progress.
+    has_progress = bool(state.get("events"))
+    run_index.register_run(index, state, make_active=has_progress or not index.get("active_run_id"))
+    run_index.save_index(root, index)
+
+
 def advance(state: dict, handlers: dict, approvals: set[str] | None = None) -> dict:
+    """Run exactly one step, persist the result, then return."""
+    state = _advance(state, handlers, approvals)
+    _persist(state)
+    return state
+
+
+def _advance(state: dict, handlers: dict, approvals: set[str] | None = None) -> dict:
     """Run exactly one step, then return. Stops at approvals, exceptions, or the end."""
     approvals = approvals or set()
     steps = state.get("pipeline") or []

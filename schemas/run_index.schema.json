@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/run_index.schema.json",
+  "title": "Project run index",
+  "description": "One index per project. It maps every segment run (one file per segment under workflow/runs/) and records which one is active, so a 20-segment episode is readable as one picture.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "runs"],
+  "properties": {
+    "project": {"type": "string", "minLength": 1},
+    "series": {"type": "string"},
+    "episode": {"type": "string"},
+    "active_run_id": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["run_id", "status"],
+        "properties": {
+          "run_id": {"type": "string", "minLength": 1},
+          "segment": {"type": "string"},
+          "segment_title": {"type": "string", "description": "Human-readable segment name, e.g. B-2A（物理格斗）. Displayed instead of a bare code."},
+          "status": {"enum": ["RUNNING", "WAITING_APPROVAL", "PAUSED_EXCEPTION", "COMPLETED", "BLOCKED", ""]},
+          "current_step": {"type": "string"},
+          "pending_decision": {"type": "string"},
+          "progress": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"completed": {"type": "integer", "minimum": 0}, "total": {"type": "integer", "minimum": 0}}
+          },
+          "path": {"type": "string"},
+          "last_event_at": {"type": "string"},
+          "updated_at": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>项目运行总表 · episode_demo</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#1f2328; --line:#d1d9e0; --muted:#59636e; --card:#f6f8fa; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
+         font:15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  h3 { font-size:15px; margin:0; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .cards { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+  .card { flex:1 1 110px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card .k { color:var(--muted); font-size:12px; }
+  .card .v { font-size:18px; font-weight:600; margin-top:2px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tr.active td { background:rgba(9,105,218,.08); }
+  tr.detailrow td { padding:0 10px 12px; }
+  .rid { white-space:nowrap; }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; min-width:80px; margin-bottom:2px; }
+  .bar > i { display:block; height:100%; background:#1a7f37; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; color:#fff; background:var(--c,#6e7781); }
+  .dim { color:var(--muted); }
+  .step { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; }
+  .step.done { border-left:3px solid #1a7f37; }
+  .step header { display:flex; align-items:center; gap:8px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--c,#6e7781); flex:none; }
+  .meta { color:var(--muted); font-size:12.5px; margin:6px 0 4px; }
+  .reason { margin:6px 0; padding:6px 10px; background:var(--card); border-radius:6px; font-size:12.5px; }
+  .reads { list-style:none; margin:6px 0 0; padding:0; font-size:13px; }
+  .reads li { padding:2px 0 2px 18px; position:relative; }
+  .reads li::before { position:absolute; left:0; }
+  .reads li.ok::before { content:"✓"; color:#1a7f37; }
+  .reads li.miss::before { content:"✗"; color:#cf222e; }
+  .reads li.dim::before { content:"·"; color:var(--muted); }
+  .reads li.miss { color:#cf222e; }
+  .more summary { cursor:pointer; color:var(--muted); font-size:12.5px; }
+  .toolbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px;
+              padding:10px 14px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  .toolbar button { font:inherit; font-size:13.5px; padding:5px 14px; border-radius:8px; cursor:pointer;
+                     border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  .toolbar button:hover { border-color:var(--muted); }
+  .toolbar label { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .title { color:var(--muted); font-size:12px; margin-top:2px; }
+  .now { font-size:13px; }
+  .now strong { font-size:14.5px; }
+  .problems { background:var(--card); border:1px solid rgba(207,34,46,.5); border-radius:10px; padding:12px 14px; margin-bottom:16px; }
+  .problems ul { margin:0; padding-left:20px; font-size:13.5px; }
+  footer { margin-top:28px; color:var(--muted); font-size:12px; }
+  code { font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>龙骨列车 · EP02 运行总表</h1>
+  <div class="sub">
+    项目 <code>episode_demo</code> · 系列 龙骨列车 · 集 EP02
+  </div>
+
+  <div class="toolbar">
+    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
+    <label><input type="checkbox" id="auto" > 自动刷新（每 5 秒）</label>
+    <span class="dim">静态快照：数据为生成时状态，需重新运行命令才会更新</span>
+    <span class="dim">本次渲染：2026-09-20T13:38:17.087947+00:00</span>
+  </div>
+
+  <div class="cards"><div class="card"><div class="k">段数</div><div class="v">20</div></div><div class="card"><div class="k">已完成</div><div class="v">4</div></div><div class="card"><div class="k">进行中</div><div class="v">1</div></div><div class="card"><div class="k">等待批准</div><div class="v">0</div></div><div class="card"><div class="k">挂起 / 阻断</div><div class="v">1</div></div><div class="card"><div class="k">未开始</div><div class="v">14</div></div></div>
+
+  <div class="now">当前进行到：<strong>B-3D（人物躲避爆炸）</strong> <span class="dim">RUN-EP02-U06 · 进行中 · short-drama-script-breakdown</span></div>
+  
+
+  <table>
+    <thead><tr><th>段 / 运行</th><th>状态</th><th>进度</th><th>当前步骤 / 待决定</th><th>最后事件</th></tr></thead>
+    <tbody>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U01</code>
+          <div class="title">B-2A（物理格斗）</div></td>
+        <td><span class="badge" style="--c:#1a7f37">已完成</span></td>
+        <td><div class="bar"><i style="width:100%"></i></div><span class="dim">100%</span></td>
+        <td><code class="dim">runninghub-local-adapter</code></td>
+        <td class="dim">2026-09-20T13:38:14.548777+00:00</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U02</code>
+          <div class="title">B-2B（近身压制）</div></td>
+        <td><span class="badge" style="--c:#1a7f37">已完成</span></td>
+        <td><div class="bar"><i style="width:100%"></i></div><span class="dim">100%</span></td>
+        <td><code class="dim">runninghub-local-adapter</code></td>
+        <td class="dim">2026-09-20T13:38:14.707109+00:00</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U03</code>
+          <div class="title">B-3A（追逐）</div></td>
+        <td><span class="badge" style="--c:#1a7f37">已完成</span></td>
+        <td><div class="bar"><i style="width:100%"></i></div><span class="dim">100%</span></td>
+        <td><code class="dim">runninghub-local-adapter</code></td>
+        <td class="dim">2026-09-20T13:38:14.859722+00:00</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U04</code>
+          <div class="title">B-3B（对峙）</div></td>
+        <td><span class="badge" style="--c:#1a7f37">已完成</span></td>
+        <td><div class="bar"><i style="width:100%"></i></div><span class="dim">100%</span></td>
+        <td><code class="dim">runninghub-local-adapter</code></td>
+        <td class="dim">2026-09-20T13:38:15.010469+00:00</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U05</code>
+          <div class="title">B-3C（反击）</div></td>
+        <td><span class="badge" style="--c:#bc4c00">已挂起</span></td>
+        <td><div class="bar"><i style="width:67%"></i></div><span class="dim">67%</span></td>
+        <td><code class="dim">short-drama-production-qa</code><div class="reason">待决定：第 2 格角色手部结构异常，判定 FAIL</div></td>
+        <td class="dim">2026-09-20T13:38:15.198368+00:00</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="active">
+        <td class="rid">▶ <code>RUN-EP02-U06</code>
+          <div class="title">B-3D（人物躲避爆炸）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:17%"></i></div><span class="dim">17%</span></td>
+        <td><code class="dim">short-drama-script-breakdown</code></td>
+        <td class="dim">2026-09-20T13:38:15.290907+00:00</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U07</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U08</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U09</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U10</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U11</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U12</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U13</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U14</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U15</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U16</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U17</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U18</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U19</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr>
+      <tr class="">
+        <td class="rid"><code>RUN-EP02-U20</code>
+          <div class="title">（待拆解）</div></td>
+        <td><span class="badge" style="--c:#0969da">进行中</span></td>
+        <td><div class="bar"><i style="width:0%"></i></div><span class="dim">0%</span></td>
+        <td><code class="dim">short-drama-production-router</code></td>
+        <td class="dim">-</td>
+      </tr>
+      <tr class="detailrow"><td colspan="5"></td></tr></tbody>
+  </table>
+
+  <footer>
+    数据来源：<code><项目根>\workflow\run_index.json</code> ·
+    索引更新：2026-09-20T13:38:16.119633+00:00 · 最新段落事件：2026-09-20T13:38:15.290907+00:00<br>
+    刷新方式：重新执行渲染命令（无缓存，始终反映磁盘上的最新状态）。
+  </footer>
+</div>
+<script>
+  var box = document.getElementById('auto');
+  var timer = null;
+  function applyAuto() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (box && box.checked) { timer = setTimeout(function () { location.reload(); }, 5000); }
+  }
+  if (box) { box.addEventListener('change', applyAuto); applyAuto(); }
+</script>
+</body>
+</html>
