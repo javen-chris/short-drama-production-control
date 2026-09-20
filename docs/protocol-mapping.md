@@ -33,6 +33,7 @@ Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及�
 | Exception queue and edit candidate pool | `exception_queue.schema.json`, `edit_candidate.schema.json` |
 | Pipeline can pause, wait for approval, and resume from a checkpoint | `orchestrator.py`, `run_state.py`, `run_state.schema.json` |
 | Provider limits declared, not guessed | `capabilities/providers.json` with `provider_capability.schema.json` |
+| Agents must prove they read the current core protocol before producing | `tools/protocol_fingerprint.py`, `protocol_attestation.py`, `protocol_attestation.schema.json` |
 
 The complete order is machine-checked from `skills/skill-chain.json`; CI must fail when a declared Skill is missing or a dependency appears after its consumer.
 
