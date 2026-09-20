@@ -148,23 +148,36 @@ def test_page_reports_a_bad_list_instead_of_writing_it(tmp_path):
         httpd.server_close()
 
 
-def test_live_page_contains_the_editor_and_static_page_does_not(tmp_path):
+def test_live_page_shows_the_current_segment_and_static_page_does_not(tmp_path):
+    """Primary view is the segment in progress, with a picker - not a 20-row table."""
     root = _project(tmp_path)
+    run_index.save_segments(root, {"project": "P", "episode": "EP02",
+                                   "segments": [{"segment": "U01", "title": "B-2A（物理格斗）"},
+                                                {"segment": "U02", "title": "B-3D（人物躲避爆炸）"}]})
     orchestrator.start(None, CHAIN, "RUN-EP02-U01", "C1", project_root=root, segment="U01")
     httpd, port = _serve(root)
     try:
         live = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10).read().decode("utf-8")
-        assert "保存段清单" in live
-        assert "/api/segments" in live
+        assert "B-2A（物理格斗）" in live          # the current segment, front and centre
+        assert "查看段" in live                      # picker instead of a second page
+        assert "不会重启服务" in live                # refresh is not a restart
+        assert "/overview" in live                  # the full list is one link away
+        assert "保存段清单" not in live              # editing lives on the overview page
+
+        overview = urllib.request.urlopen(f"http://127.0.0.1:{port}/overview", timeout=10).read().decode("utf-8")
+        assert "保存段清单" in overview
+        assert "B-3D（人物躲避爆炸）" in overview
+
+        picked = urllib.request.urlopen(f"http://127.0.0.1:{port}/?run=RUN-EP02-U02", timeout=10).read().decode("utf-8")
+        assert "B-3D（人物躲避爆炸）" in picked
     finally:
         httpd.shutdown()
         httpd.server_close()
 
-    from production_control.run_report import render_project_html
+    from production_control.run_report import render_html
 
-    static = render_project_html(run_server.current_view(root), live=False)
-    assert "保存段清单" not in static
-    assert "静态快照无法写回磁盘" in static
+    static = render_html(run_server.build_report(run_index.run_path(root, "RUN-EP02-U01")))
+    assert "查看段" not in static
 
 
 def test_port_candidates_walk_forward_but_respect_port_zero():
