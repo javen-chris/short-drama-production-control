@@ -12,19 +12,20 @@ from .orchestrator import plan_steps
 
 # The documents each step is expected to have actually open. Kept explicit so a
 # missing read is a named failure, not a vague "did not follow protocol".
+# Protocol 3.0 (2026-09-20) added the _v3.0 file-name suffix.
 STEP_PROTOCOL_REQUIREMENTS = {
-    "short-drama-production-router": ["00_自动化生产唯一入口.md", "核心自动化生产包/02_任务路由与Gate.md"],
-    "short-drama-script-breakdown": ["09_脚本优化与分镜拆解规范.md"],
-    "short-drama-script-reviewer": ["09_脚本优化与分镜拆解规范.md"],
-    "short-drama-scene-continuity": ["03_资产与连续性规则.md"],
-    "short-drama-asset-router": ["核心自动化生产包/03_生产与资产规则.md"],
-    "short-drama-image-generator": ["16_生图渠道规则.md", "14_RH生图渠道与GPT通道现状.md"],
-    "short-drama-storyboard-planner": ["08_故事本生产与QA规范.md", "12_真人短剧Prompt与故事本弹性标准.md"],
-    "short-drama-prompt-compiler": ["12_真人短剧Prompt与故事本弹性标准.md"],
-    "short-drama-production-qa": ["04_QA与文件治理.md"],
-    "runninghub-local-adapter": ["13_模型执行前硬门禁.md"],
-    "xiaoyunque-local-adapter": ["13_模型执行前硬门禁.md"],
-    "libtv-local-adapter": ["13_模型执行前硬门禁.md"],
+    "short-drama-production-router": ["00_自动化生产唯一入口_v3.0.md", "核心自动化生产包/02_任务路由与Gate_v3.0.md"],
+    "short-drama-script-breakdown": ["09_脚本优化与分镜拆解规范_v3.0.md"],
+    "short-drama-script-reviewer": ["09_脚本优化与分镜拆解规范_v3.0.md"],
+    "short-drama-scene-continuity": ["03_资产与连续性规则_v3.0.md"],
+    "short-drama-asset-router": ["核心自动化生产包/03_生产与资产规则_v3.0.md"],
+    "short-drama-image-generator": ["16_生图渠道规则_v3.0.md", "14_RH生图渠道与GPT通道现状_v3.0.md"],
+    "short-drama-storyboard-planner": ["08_故事本生产与QA规范_v3.0.md", "12_真人短剧Prompt与故事本弹性标准_v3.0.md"],
+    "short-drama-prompt-compiler": ["12_真人短剧Prompt与故事本弹性标准_v3.0.md"],
+    "short-drama-production-qa": ["04_QA与文件治理_v3.0.md"],
+    "runninghub-local-adapter": ["13_模型执行前硬门禁_v3.0.md"],
+    "xiaoyunque-local-adapter": ["13_模型执行前硬门禁_v3.0.md"],
+    "libtv-local-adapter": ["13_模型执行前硬门禁_v3.0.md"],
 }
 
 
