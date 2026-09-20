@@ -38,7 +38,8 @@ REQUIRED_CORE_FILES = [
 CHALLENGE_BANK = [
     {"id": "image-model", "prompt": "本协议下生图唯一允许的图像模型是什么？", "expected": "gpt-image-2"},
     {"id": "image-fallback", "prompt": "订阅额度耗尽且已授权时的生图兜底通道枚举值是什么？", "expected": "gpt_image2_runninghub_workflow"},
-    {"id": "image-unauthorized", "prompt": "未经用户明确确认时，Agent 是否可以执行生图（MASTER/关键帧/故事本）？（是/否）", "expected": "否"},
+    {"id": "image-unauthorized", "prompt": "常规（非全自动）模式下，Agent 是否可以自行执行生图？（是/否）", "expected": "否"},
+    {"id": "autonomous-asset-fill", "prompt": "全自动目标模式下资产评估发现缺 MASTER 时，Agent 应当？（填：立即生成 或 停下请示）", "expected": "立即生成"},
     {"id": "degraded-route", "prompt": "复杂风险但未授权制作故事本时，生产单元走的路线枚举值是什么？", "expected": "degraded_direct"},
     {"id": "master-gate", "prompt": "角色/场景/道具 MASTER 缺失时，生产停在哪个 Gate？（如 G5）", "expected": "g3"},
     {"id": "tail-frame-blocking", "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）", "expected": "否"},
