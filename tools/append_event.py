@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from production_control.outcomes import OUTCOMES  # noqa: E402
 from production_control.progress import append_event  # noqa: E402
 
 
@@ -31,8 +32,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skill", default="", help="实际执行的 Skill（默认同 --step）")
     parser.add_argument("--protocol", action="append", default=[], help="这一步读过的协议文件（可重复）")
     parser.add_argument("--evidence", default="", help="证据文件路径（相对项目根）")
-    parser.add_argument("--outcome", default="COMPLETED",
-                        choices=["COMPLETED", "WAITING_APPROVAL", "PAUSED_EXCEPTION", "BLOCKED"])
+    parser.add_argument("--outcome", default="COMPLETED", choices=list(OUTCOMES),
+                        help="这一步的结果；合法值由 production_control.outcomes 统一定义")
     parser.add_argument("--reason", default="", help="暂停/异常的原因")
     parser.add_argument("--validator", default="", help="使用的校验器")
     parser.add_argument("--allow-missing-evidence", action="store_true",

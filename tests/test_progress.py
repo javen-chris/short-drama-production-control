@@ -123,3 +123,52 @@ def test_the_cli_records_a_step(tmp_path):
     assert "1/3 步" in result.stdout
     state = json.loads(run_index.run_path(root, "RUN-EP02-N3-A2").read_text(encoding="utf-8"))
     assert state["completed_steps"] == ["short-drama-production-router"]
+
+
+def test_a_submitted_step_moves_the_segment_instead_of_being_ignored(tmp_path):
+    """SUBMITTED_IN_PROGRESS used to be silently dropped: event written, status stuck."""
+    root = _project(tmp_path)
+    (root / "workflow" / "report.md").write_text("# 提交确认报告", encoding="utf-8")
+    state = append_event(root, "RUN-EP02-N3-A2", step="model-execution",
+                         evidence="workflow/report.md", outcome="SUBMITTED_IN_PROGRESS")
+    assert state["status"] == "SUBMITTED_IN_PROGRESS"
+    assert state["events"][-1]["outcome"] == "SUBMITTED_IN_PROGRESS"
+
+
+def test_finishing_with_a_caveat_completes_but_keeps_the_caveat(tmp_path):
+    root = _project(tmp_path)
+    for step in ("short-drama-production-router", "short-drama-image-generator"):
+        (root / "workflow" / f"{step}.md").write_text("# 证据", encoding="utf-8")
+        append_event(root, "RUN-EP02-N3-A2", step=step, evidence=f"workflow/{step}.md")
+    (root / "workflow" / "qa.md").write_text("# QA", encoding="utf-8")
+    state = append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-qa",
+                         evidence="workflow/qa.md",
+                         outcome="COMPLETED_WITH_CONTINUITY_CAVEAT")
+    assert state["completed_steps"] == ["short-drama-production-router",
+                                        "short-drama-image-generator",
+                                        "short-drama-production-qa"]
+    # Completed, but the caveat must survive rather than collapsing to COMPLETED.
+    assert state["status"] == "COMPLETED_WITH_CONTINUITY_CAVEAT"
+
+
+def test_an_outcome_nobody_recognises_is_refused(tmp_path):
+    root = _project(tmp_path)
+    with pytest.raises(ValueError) as exc:
+        append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router",
+                     outcome="MADE_THIS_UP")
+    assert "未知的 outcome" in str(exc.value)
+
+
+def test_the_cli_accepts_a_submitted_outcome(tmp_path):
+    root = _project(tmp_path)
+    (root / "workflow" / "rep.md").write_text("# 报告", encoding="utf-8")
+    tools = Path(__file__).resolve().parents[1] / "tools" / "append_event.py"
+    result = subprocess.run(
+        [sys.executable, str(tools), str(root), "--run", "RUN-EP02-N3-A2",
+         "--step", "model-execution", "--evidence", "workflow/rep.md",
+         "--outcome", "SUBMITTED_IN_PROGRESS"],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert result.returncode == 0, result.stderr
+    state = json.loads(run_index.run_path(root, "RUN-EP02-N3-A2").read_text(encoding="utf-8"))
+    assert state["events"][-1]["outcome"] == "SUBMITTED_IN_PROGRESS"
