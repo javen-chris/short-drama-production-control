@@ -1,0 +1,4 @@
+# 复制一份改名为 start-run-board.roots.txt（去掉 .example），再按自己的机器改。
+# 每行写一个要自动扫描的根目录，支持中文路径。
+# 扫描深度 3 层，只挑里面带 workflow\run_index.json 的项目文件夹。
+D:\你的素材盘\你的项目总目录
