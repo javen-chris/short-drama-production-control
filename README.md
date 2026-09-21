@@ -72,6 +72,55 @@ pytest
 
 See [docs/protocol-mapping.md](docs/protocol-mapping.md) for the mapping to the local authority protocol documents.
 
+## 运行总表：前台审查工具（中文）
+
+日常用得最多的入口。完整操作手册：[docs/运行审查工具_操作手册.md](docs/运行审查工具_操作手册.md)。
+
+### 启动方式
+
+| 方式 | 命令 / 动作 |
+|---|---|
+| 双击（推荐） | `tools\start-run-board.cmd` — 把项目文件夹拖进黑窗口回车；直接回车看仓库自带示例 |
+| 命令行起实时服务 | `python tools/render_run_report.py "<项目目录>" --serve` |
+| 等价的模块写法 | `python -m production_control.run_server "<项目目录>"` |
+| 只看一次，不起服务 | `python tools/render_run_report.py "<项目目录>"` |
+| 导出静态快照归档 | `python tools/render_run_report.py "<项目目录>" --html 快照.html` |
+
+服务只绑定 `127.0.0.1`，默认端口 **8765**（被占用会自动试到 8775，以黑窗口里实际打印的网址为准）。
+关掉黑窗口＝停止服务。页面每次刷新都重新读取磁盘上的轨迹文件，所以永远是最新状态，Agent 正在跑也看得到。
+
+`<target>` 可以是三种东西，工具会自动识别：项目目录（整局总表）、`<项目>/workflow/run_index.json`（同上）、
+`<项目>/workflow/runs/<某个>.json`（单段明细）。
+
+### 页面入口
+
+| 地址 | 内容 |
+|---|---|
+| `/` | 当前段视图（`?run=<run_id>` 可切段） |
+| `/overview` | 全剧总览；可编辑并保存段清单 |
+| `/run/<run_id>` | 单段明细 |
+| `/data`、`/text` | JSON / 纯文本总表（给脚本消费） |
+| `/api/segments` | GET 读段清单；**POST 是唯一的写入通道** |
+| `/health` | `{"status":"ok"}` — 排查时先敲它 |
+
+### Agent 侧：记一步
+
+```powershell
+python tools/append_event.py "<项目目录>" --run RUN-EP02-N3-A2 --step <skill> ^
+  --protocol <协议文件> --evidence <证据文件> --outcome COMPLETED
+```
+
+两条硬约束：`--evidence` 指向的文件**必须真实存在**（拒绝指向不存在的证据）；
+`--outcome` 只有 8 个合法值，定义在 `src/production_control/outcomes.py`，未知值直接报错而非静默吞掉。
+
+### 本机跑测试
+
+终端里若设了 `HTTP_PROXY`，访问 `127.0.0.1` 的测试会被发给代理而假死（表现为跑完不退出）。先清掉再跑：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy no_proxy=127.0.0.1,localhost pytest
+```
+
 ## Design notes
 
 - **Contract-first.** Nothing reaches a provider adapter without a validated contract.
