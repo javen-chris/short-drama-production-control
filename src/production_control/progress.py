@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import run_index, run_state
+from .outcomes import COMPLETING_OUTCOMES, validate_outcome
 
 
 def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: str = "",
@@ -45,6 +46,8 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
 
     state = json.loads(path.read_text(encoding="utf-8"))
 
+    validate_outcome(outcome)
+
     event = {
         "step": step,
         "outcome": outcome,
@@ -60,16 +63,19 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     state.setdefault("events", []).append(event)
 
     pipeline = state.get("pipeline") or []
-    if outcome == "COMPLETED":
+    if outcome in COMPLETING_OUTCOMES:
         completed = state.setdefault("completed_steps", [])
         if step not in completed:
             completed.append(step)
         remaining = [s for s in pipeline if s not in completed]
         state["current_step"] = remaining[0] if remaining else ""
-        state["status"] = "COMPLETED" if not remaining else "RUNNING"
+        # Once everything has run, keep whatever the outcome says: COMPLETED is a
+        # clean finish, COMPLETED_WITH_CONTINUITY_CAVEAT finishes with a caveat.
+        state["status"] = outcome if not remaining else "RUNNING"
         state.pop("pending_decision", None)
-    elif outcome in {"WAITING_APPROVAL", "PAUSED_EXCEPTION", "BLOCKED"}:
-        state["status"] = outcome if outcome != "WAITING_APPROVAL" else "WAITING_APPROVAL"
+    else:
+        # Waiting, blocked, submitted, failed: the segment state IS the outcome.
+        state["status"] = outcome
         state["current_step"] = step
         if reason:
             state["pending_decision"] = reason

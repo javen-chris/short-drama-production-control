@@ -18,15 +18,8 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
+from .outcomes import OUTCOME_LABELS
 from .run_compliance import STEP_PROTOCOL_REQUIREMENTS, verify_run_compliance
-
-OUTCOME_LABELS = {
-    "COMPLETED": "已完成",
-    "WAITING_APPROVAL": "等待你批准",
-    "PAUSED_EXCEPTION": "已挂起（异常）",
-    "BLOCKED": "已阻断",
-    "FAILED": "失败",
-}
 
 
 def _events_by_step(state: dict) -> dict[str, dict]:
