@@ -130,12 +130,19 @@ def choose(project: Path) -> None:
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    args = argv if argv is not None else sys.argv[1:]
+    wants_last = "--last" in args
+
     print()
     print("  实时运行总表 —— 查看进度 / 录入段清单")
     print("  ============================================================")
     projects = find_projects(read_roots())
     last = load_last()
+
+    if wants_last and last is not None:
+        choose(last)
+        return 0
 
     if not projects:
         print("  在已知的目录里没有找到带运行轨迹的项目。")
