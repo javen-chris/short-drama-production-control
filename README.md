@@ -80,7 +80,8 @@ See [docs/protocol-mapping.md](docs/protocol-mapping.md) for the mapping to the 
 
 | 方式 | 命令 / 动作 |
 |---|---|
-| 双击（推荐） | `tools\start-run-board.cmd` — 把项目文件夹拖进黑窗口回车；直接回车看仓库自带示例 |
+| 双击（推荐） | `tools\start-run-board.cmd` — 自动扫描出所有项目，输入序号回车即可，无需拖文件夹 |
+| 命令行起实时服务 | `python tools/render_run_report.py "<项目目录>" --serve` |
 | 命令行起实时服务 | `python tools/render_run_report.py "<项目目录>" --serve` |
 | 等价的模块写法 | `python -m production_control.run_server "<项目目录>"` |
 | 只看一次，不起服务 | `python tools/render_run_report.py "<项目目录>"` |
