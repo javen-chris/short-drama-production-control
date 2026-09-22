@@ -19,8 +19,5 @@ assets/
 *.jpeg
 *.webp
 
-# Local personal Skill copied into the work tree; it is not part of this control plane.
-skills/gpt-image-use-channel/
-
 # Per-machine roots for the run board launcher (copy the example next to it)
 tools/start-run-board.roots.txt
