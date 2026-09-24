@@ -116,7 +116,7 @@ def apply_segments(index: dict, document: dict) -> dict:
             "current_step": "",
             "pending_decision": "",
             "progress": {"completed": 0, "total": 0},
-            "path": f"{RUNS_DIRNAME}/{run_id}.json",
+            "path": f"workflow/{RUNS_DIRNAME}/{run_id}.json",
             "last_event_at": "",
             "updated_at": _now(),
         }
@@ -181,6 +181,22 @@ def run_path(project_root: str | Path, run_id: str) -> Path:
     return runs_dir(project_root) / f"{run_id}.json"
 
 
+def resolve_run_path(project_root: str | Path, run_id: str, hint: str = "") -> Path:
+    """Find a run file, however the index happens to spell it.
+
+    Rows used to store "runs/RUN-x.json" while the file actually lives under
+    workflow/runs/, so every per-step detail silently failed to load and the
+    table looked like nothing had happened. Read tolerantly instead of trusting
+    the stored spelling, so old indexes keep working.
+    """
+    root = Path(project_root)
+    if hint:
+        for candidate in (root / hint, root / "workflow" / hint):
+            if candidate.is_file():
+                return candidate
+    return run_path(root, run_id)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -211,7 +227,10 @@ def save_index(project_root: str | Path, index: dict) -> Path:
 def run_summary(run_id: str, state: dict, *, path: str = "") -> dict:
     """The per-run row stored in the index. Kept small on purpose."""
     steps = state.get("pipeline") or []
-    completed = set(state.get("completed_steps", []) or [])
+    completed = list(state.get("completed_steps", []) or [])
+    # Counting only the steps that appear in the pipeline reported 0/12 for a
+    # run that had finished seven steps under Gate names. Count them all.
+    custom = [s for s in completed if s not in steps]
     return {
         "run_id": run_id,
         "segment": state.get("segment", ""),
@@ -219,8 +238,8 @@ def run_summary(run_id: str, state: dict, *, path: str = "") -> dict:
         "status": state.get("status", ""),
         "current_step": state.get("current_step", ""),
         "pending_decision": state.get("pending_decision", ""),
-        "progress": {"completed": len(completed & set(steps)), "total": len(steps)},
-        "path": path or f"{RUNS_DIRNAME}/{run_id}.json",
+        "progress": {"completed": len(completed), "total": len(steps) + len(custom)},
+        "path": path or f"workflow/{RUNS_DIRNAME}/{run_id}.json",
         "last_event_at": (state.get("events") or [{}])[-1].get("at", ""),
         "updated_at": _now(),
     }
@@ -265,7 +284,7 @@ def discover_runs(project_root: str | Path) -> list[dict]:
         except (json.JSONDecodeError, UnicodeDecodeError):
             continue
         if state.get("run_id"):
-            rows.append(run_summary(state["run_id"], state, path=f"{RUNS_DIRNAME}/{file.name}"))
+            rows.append(run_summary(state["run_id"], state, path=f"workflow/{RUNS_DIRNAME}/{file.name}"))
     return rows
 
 

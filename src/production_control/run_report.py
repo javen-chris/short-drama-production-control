@@ -112,12 +112,36 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         "status": state.get("status", ""),
         "pending_decision": state.get("pending_decision", ""),
         "current_step": state.get("current_step", ""),
-        "progress": {"completed": len(completed & set(steps)), "total": len(steps)},
+        "progress": {"completed": step_accounting(state)["completed"],
+                     "total": step_accounting(state)["total"]},
+        "custom_steps": step_accounting(state)["custom_steps"],
         "steps": rendered,
         "pending": [s for s in steps if s not in completed],
         "compliance": compliance,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def step_accounting(state: dict) -> dict:
+    """How far along this run actually is.
+
+    Progress used to be `completed_steps ∩ pipeline`, which silently reported
+    zero whenever a window recorded its work under Gate names (G2-shot-confirm,
+    G3-local-assets, G5-prompt) instead of the twelve skill names. EP03/A1 had
+    finished seven steps and the board showed 0/12 - a run that was visibly
+    moving looked untouched, which is worse than showing nothing.
+
+    So count every completed step, and add the off-pipeline ones to the
+    denominator so the percentage stays honest. The off-pipeline names are
+    reported separately: they are worth seeing (they are how a window really
+    worked) but they are also a compliance question.
+    """
+    pipeline = list(state.get("pipeline") or [])
+    completed = [s for s in (state.get("completed_steps") or [])]
+    custom = [s for s in completed if s not in pipeline]
+    total = len(pipeline) + len(custom)
+    return {"completed": len(completed), "total": total,
+            "pipeline_total": len(pipeline), "custom_steps": custom}
 
 
 def render_text(summary: dict) -> str:
@@ -284,7 +308,7 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         item["percent"] = 0 if not total else round(100 * (progress.get("completed") or 0) / total)
         item["detail"] = None
         if with_details and root:
-            candidate = root / (row.get("path") or "")
+            candidate = run_index.resolve_run_path(root, row.get("run_id", ""), row.get("path") or "")
             if candidate.is_file():
                 try:
                     item["detail"] = summarize(json.loads(candidate.read_text(encoding="utf-8")))
@@ -432,7 +456,15 @@ def gate_token_block(tokens: list[dict]) -> str:
     token means the gate was skipped, not passed.
     """
     if not tokens:
-        return ""
+        return """
+  <section class="pstate">
+    <h2>建节点前置门禁令牌（workflow/gates/）</h2>
+    <div class="sub">令牌由 <code>tools/gate_token.py</code> 校验后产出，不由 Agent 手写。
+      它比对的是<strong>合同声明集合 == 平台绑定集合</strong>（按 role + sha256 配对），
+      不是"传够几张"。合同若被改动，令牌自动失效。</div>
+    <div class="reason">⚠️ <strong>没有任何令牌</strong>——说明这段<strong>从未通过</strong>建节点前置门禁。
+      门禁没通过不等于门禁通过了：空列表是"没走"，不是"没问题"。</div>
+  </section>"""
     rows = []
     for token in tokens:
         ok = token.get("still_valid")
@@ -462,7 +494,16 @@ def skill_audit_block(audits: list[dict]) -> str:
     that is visible before generate is clicked, not discovered afterwards.
     """
     if not audits:
-        return ""
+        return """
+  <section class="pstate">
+    <h2>G5.1 模型 Skill 审计（workflow/skill_audits/）</h2>
+    <div class="sub">未跑（<code>NOT_RUN</code>）、不确定（<code>UNCERTAIN</code>）、
+      无证据的 PASS —— 一律按阻断处理，<strong>不允许先建节点再补 Skill</strong>。
+      Prompt 改一句就要递增版本并重新审计。</div>
+    <div class="reason">⚠️ <strong>没有任何审计记录</strong>——说明这批 Prompt
+      <strong>从未跑过 Skill</strong>。这是 G5.1 最严重的状态：内容看起来写好了，
+      但没有任何一项经过校验。</div>
+  </section>"""
     rows = []
     for item in audits:
         ok = item.get("ok")
@@ -633,6 +674,15 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
             if row.get("pending_decision")
             else ""
         )
+        detail = row.get("detail") or {}
+        custom = detail.get("custom_steps") or []
+        offbook = (
+            f'<div class="reason">⚠️ 已完成 {len(custom)} 步<span class="dim">不在 12 步流水线内</span>：'
+            f'{escape("、".join(custom))}<br>'
+            f'<span class="dim">这些步骤已计入进度，但它们不是协议声明的 skill，需要确认是否被跳过或替换。</span></div>'
+            if custom
+            else ""
+        )
         rows.append(
             f"""
       <tr class="{'active' if row['active'] else ''}">
@@ -640,7 +690,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
           {f'<div class="title">{escape(row.get("segment_title",""))}</div>' if row.get("segment_title") else ''}</td>
         <td>{_badge(row.get('status','') or '', row['state_label'])}</td>
         <td><div class="bar"><i style="width:{row['percent']}%"></i></div><span class="dim">{row['percent']}%</span></td>
-        <td><code class="dim">{escape(row.get('current_step','') or '-')}</code>{decision}</td>
+        <td><code class="dim">{escape(row.get('current_step','') or '-')}</code>{decision}{offbook}</td>
         <td class="dim">{escape(row.get('last_event_at','') or '-')}</td>
       </tr>
       <tr class="detailrow"><td colspan="5">{detail}</td></tr>"""
