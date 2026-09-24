@@ -18,16 +18,56 @@ from . import run_index, run_state
 from .outcomes import COMPLETING_OUTCOMES, validate_outcome
 
 
+def _refuse_self_qa(state: dict, event: dict) -> None:
+    """A QA event may not be signed by the model that produced the work.
+
+    Independence is not something a later audit can recover - either two models
+    were involved or they were not. So it is refused at write time, which is the
+    only moment the actor is known for certain.
+    """
+    if event.get("outcome") != "COMPLETED":
+        return
+    step = event.get("step")
+    qa_actor = (event.get("actor") or event.get("validator") or "").strip()
+    if not qa_actor:
+        return
+
+    from .step_audit import QA_MODES, declared_steps
+
+    qa_steps = {row["step"] for row in declared_steps() if set(row["modes"]) & QA_MODES}
+    if not qa_steps:
+        qa_steps = {"short-drama-production-qa"}
+    if step not in qa_steps:
+        return
+
+    for earlier in reversed(state.get("events", []) or []):
+        if earlier.get("step") in qa_steps or earlier.get("outcome") != "COMPLETED":
+            continue
+        producer = (earlier.get("actor") or "").strip()
+        if producer and producer == qa_actor:
+            raise ValueError(
+                f"SELF_QA_VIOLATION：QA 步骤 {step} 的执行模型 {qa_actor}，与产出该步骤的 "
+                f"{earlier.get('step')} 是同一个模型。协议要求 QA 由不同模型执行。"
+                "确实需要自审时，显式传 allow_self_qa=True。"
+            )
+        return
+
+
 def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: str = "",
                  protocol_refs: list[str] | None = None, evidence: str = "",
                  outcome: str = "COMPLETED", reason: str = "", validator: str = "",
-                 at: str = "", allow_missing_evidence: bool = False) -> dict:
+                 actor: str = "", at: str = "", allow_missing_evidence: bool = False,
+                 allow_self_qa: bool = False) -> dict:
     """Append one event and return the updated state.
 
     If an evidence path is given it must exist: pointing at a file that is not
     there is how a trace starts claiming work it cannot show. Write the evidence
     first, then record the step. Use allow_missing_evidence only when the step
     genuinely has no artefact of its own.
+
+    `actor` names the model that did the step. It is what makes QA independence
+    checkable: a QA event whose actor matches the one that produced the work is a
+    model grading its own homework, and is refused unless allow_self_qa is set.
     """
     root = Path(project_root)
     path = run_index.run_path(root, run_id)
@@ -59,6 +99,11 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     }
     if reason:
         event["reason"] = reason
+    if actor:
+        event["actor"] = actor
+
+    if not allow_self_qa:
+        _refuse_self_qa(state, event)
 
     state.setdefault("events", []).append(event)
 
