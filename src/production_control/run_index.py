@@ -24,6 +24,7 @@ from pathlib import Path
 
 INDEX_NAME = "run_index.json"
 SEGMENTS_NAME = "segments.json"
+PROJECT_STATE_NAME = "project_state.json"
 RUNS_DIRNAME = "runs"
 
 
@@ -133,6 +134,39 @@ def segment_title_for(project_root: str | Path, segment: str) -> str:
         if item.get("segment") == segment:
             return item.get("title", "")
     return ""
+
+
+def project_state_path(project_root: str | Path) -> Path:
+    return Path(project_root) / "workflow" / PROJECT_STATE_NAME
+
+
+def load_project_state(project_root: str | Path) -> dict:
+    """The agent's own status file, if it wrote one.
+
+    Windows that drive production often keep their own `workflow/project_state.json`
+    (stage, blockers, per-segment status). The board used to ignore it entirely, so
+    a project could be visibly moving while the table still showed zero progress.
+    Reading it is read-only and optional: a missing or broken file is just `{}`.
+    """
+    path = project_state_path(project_root)
+    if not path.is_file():
+        return {}
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    return document if isinstance(document, dict) else {}
+
+
+def project_state_mtime(project_root: str | Path) -> float:
+    """When the producing window last touched its status file.
+
+    ISO timestamps inside that file are often date-only ("2026-09-24"), which
+    reads as midnight and makes a busy project look hours stale. The file's own
+    mtime is what actually tells you it is still alive.
+    """
+    path = project_state_path(project_root)
+    return path.stat().st_mtime if path.is_file() else 0.0
 
 
 def index_path(project_root: str | Path) -> Path:
@@ -246,4 +280,34 @@ def sync_index(project_root: str | Path, index: dict) -> dict:
     if not index.get("active_run_id") and index["runs"]:
         unfinished = [r for r in index["runs"] if r.get("status") not in {"COMPLETED"}]
         index["active_run_id"] = (unfinished or index["runs"])[-1]["run_id"]
+    return index
+
+
+def has_trace(project_root: str | Path) -> bool:
+    """Is this folder a board project at all?
+
+    A project is recognised by its index **or** its segment list. Requiring the
+    index alone made the launcher reject a project that had only filled in its
+    segment list - and the list can only be filled in on the page, which the
+    launcher refused to open. That loop is the point of this check.
+    """
+    root = Path(project_root)
+    return index_path(root).is_file() or segments_path(root).is_file()
+
+
+def project_index(project_root: str | Path, *, project: str = "", series: str = "",
+                  episode: str = "") -> dict:
+    """The one way to read a project: on-disk runs + the user's segment list.
+
+    Every consumer must go through here. Calling `load_index`/`sync_index` alone
+    is what produced three different segment counts in three places (menu, static
+    export, live page), because `apply_segments` was only ever called by the live
+    page. Returns a merged index; callers may render it but must not assume it was
+    persisted (the not-started rows are derived, never written).
+    """
+    index = load_index(project_root, project=project, series=series, episode=episode)
+    index = sync_index(project_root, index)
+    document = load_segments(project_root)
+    if document.get("segments"):
+        index = apply_segments(index, document)
     return index
