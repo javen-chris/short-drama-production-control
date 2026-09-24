@@ -7,7 +7,6 @@ has to drag a folder into a black window.
 """
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -15,6 +14,10 @@ from pathlib import Path
 
 CONSOLE = Path(__file__).resolve().parents[1]
 TOOLS = CONSOLE / "tools"
+sys.path.insert(0, str(CONSOLE / "src"))
+
+from production_control import run_index  # noqa: E402
+
 ROOTS_FILE = TOOLS / "start-run-board.roots.txt"
 STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "short-drama-board"
 LAST_FILE = STATE_DIR / "last_project.txt"
@@ -57,15 +60,27 @@ def _subdirs(base: Path):
             yield candidate
 
 
+def _trace_mtime(project: Path) -> float:
+    stamps = [p.stat().st_mtime for p in (project / "workflow" / "run_index.json",
+                                          project / "workflow" / "segments.json") if p.is_file()]
+    return max(stamps, default=0.0)
+
+
 def _describe(project: Path) -> str:
+    """Name the project and count its segments the way the page does.
+
+    Counting `run_index.json` runs alone showed "共 2 段" next to a page listing
+    fourteen: the segment list is a first-class source, so read it here too.
+    """
     try:
-        index = json.loads((project / "workflow" / "run_index.json").read_text(encoding="utf-8"))
+        index = run_index.project_index(project)
     except (OSError, ValueError):
         return "（轨迹文件读不出来）"
     series = index.get("series") or index.get("project") or "未命名"
     episode = index.get("episode") or "-"
     runs = index.get("runs") or []
-    return f"{series} {episode} · 共 {len(runs)} 段"
+    started = sum(1 for row in runs if row.get("status") or row.get("last_event_at"))
+    return f"{series} {episode} · 共 {len(runs)} 段（已开始 {started}）"
 
 
 def find_projects(roots: list[Path]) -> list[Path]:
@@ -73,14 +88,14 @@ def find_projects(roots: list[Path]) -> list[Path]:
     found: list[Path] = []
     for root in roots:
         for candidate in _subdirs(root):
-            if not (candidate / "workflow" / "run_index.json").is_file():
+            if not run_index.has_trace(candidate):
                 continue
             key = str(candidate.resolve()).lower()
             if key in seen:
                 continue
             seen.add(key)
             found.append(candidate)
-    found.sort(key=lambda p: (p / "workflow" / "run_index.json").stat().st_mtime, reverse=True)
+    found.sort(key=_trace_mtime, reverse=True)
     return found
 
 
@@ -90,7 +105,7 @@ def load_last() -> Path | None:
     except OSError:
         return None
     path = Path(text)
-    return path if (path / "workflow" / "run_index.json").is_file() else None
+    return path if run_index.has_trace(path) else None
 
 
 def remember(project: Path) -> None:
@@ -130,10 +145,36 @@ def choose(project: Path) -> None:
     )
 
 
+def fix_windows_console() -> None:
+    """Make Chinese render in the black window instead of mojibake.
+
+    cmd.exe starts on code page 936 (GBK) while Python prints UTF-8, so every
+    project name came out as garbage. Switching the console itself to 65001 and
+    re-pointing stdout at UTF-8 fixes both display and input. Done from Python,
+    never from the .cmd: a `chcp` line in a batch file shifts cmd's read pointer
+    and tears the rest of the script apart.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        ctypes.windll.kernel32.SetConsoleCP(65001)
+    except Exception:
+        pass
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     args = argv if argv is not None else sys.argv[1:]
     wants_last = "--last" in args
 
+    fix_windows_console()
     print()
     print("  实时运行总表 —— 查看进度 / 录入段清单")
     print("  ============================================================")
@@ -175,8 +216,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     project = Path(answer)
-    if not (project / "workflow" / "run_index.json").is_file():
-        print(f"  这个目录下没有运行轨迹：{project}\\workflow\\run_index.json")
+    if not run_index.has_trace(project):
+        print(f"  这个目录下没有运行轨迹：{project}\\workflow\\run_index.json（也没有 segments.json）")
         return 1
     choose(project)
     return 0

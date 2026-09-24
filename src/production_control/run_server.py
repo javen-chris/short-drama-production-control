@@ -21,6 +21,7 @@ import json
 import sys
 import threading
 import webbrowser
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote
@@ -43,15 +44,36 @@ def current_view(project_root: str | Path, *, with_details: bool = True) -> dict
     list (names). Filling in the list on the page immediately shows the rows.
     """
     root = Path(project_root)
-    index = run_index.load_index(root)
-    index = run_index.sync_index(root, index)
+    index = run_index.project_index(root)
     document = run_index.load_segments(root)
-    if document.get("segments"):
-        index = run_index.apply_segments(index, document)
     view = summarize_project(index, root, with_details=with_details)
     view["segments"] = document.get("segments", [])
     view["segments_source"] = str(run_index.segments_path(root))
     return view
+
+
+def view_for_placeholder(root: Path) -> dict:
+    """Just the render timestamp - a placeholder page needs nothing else."""
+    return {"generated_at": datetime.now(timezone.utc).isoformat()}
+
+
+def placeholder_summary(run_id: str, row: dict, view: dict) -> dict:
+    """A row that exists in the segment list but has no trace file yet.
+
+    This used to be a bare 404 ("unknown run"), which read as a broken board: the
+    table lists fourteen segments and clicking any unstarted one said "not found".
+    An unstarted segment is a normal state, not an error, so it gets a page that
+    says so.
+    """
+    return {
+        "run_id": run_id, "contract_id": "", "segment": row.get("segment", ""),
+        "segment_title": row.get("segment_title", ""), "status": "",
+        "pending_decision": "", "current_step": "", "steps": [], "pending": [],
+        "progress": {"completed": 0, "total": 0},
+        "compliance": {"status": "NOT_STARTED", "errors": []},
+        "generated_at": view.get("generated_at", ""),
+        "not_started": True,
+    }
 
 
 def make_handler(project_root: str | Path):
@@ -89,17 +111,14 @@ def make_handler(project_root: str | Path):
                     if run_file.is_file():
                         summary = build_report(run_file)
                     else:
-                        summary = {
-                            "run_id": target, "contract_id": "", "segment": rows.get(target, {}).get("segment", ""),
-                            "segment_title": rows.get(target, {}).get("segment_title", ""), "status": "",
-                            "pending_decision": "", "current_step": "", "steps": [], "pending": [],
-                            "progress": {"completed": 0, "total": 0},
-                            "compliance": {"status": "NOT_STARTED", "errors": []},
-                            "generated_at": view["generated_at"],
-                        }
-                    page = render_html(summary, live=True, siblings=view["runs"],
-                                       project_meta={"project": view["project"], "series": view["series"],
-                                                     "episode": view["episode"]})
+                        summary = placeholder_summary(target, rows.get(target, {}), view)
+                    page = render_html(
+                        summary, live=True, siblings=view["runs"],
+                        project_meta={"project": view["project"], "series": view["series"],
+                                      "episode": view["episode"],
+                                      "reporting": view.get("reporting"),
+                                      "newest_event_at": view.get("newest_event_at", ""),
+                                      "project_state": view.get("project_state")})
                     self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
                 elif path in ("/overview", "/all"):
                     html = render_project_html(current_view(root), live=True)
@@ -119,7 +138,19 @@ def make_handler(project_root: str | Path):
                     run_id, _, tail = rest.partition("/")
                     run_file = run_index.run_path(root, run_id)
                     if not run_file.is_file():
-                        self._send(404, "text/plain; charset=utf-8", f"unknown run: {run_id}".encode("utf-8"))
+                        # Known but not started (it is in the segment list) is a
+                        # state, not a 404. Anything else really is unknown.
+                        rows = {row["run_id"]: row for row in current_view(root, with_details=False)["runs"]}
+                        if run_id not in rows:
+                            self._send(404, "text/plain; charset=utf-8", f"unknown run: {run_id}".encode("utf-8"))
+                            return
+                        summary = placeholder_summary(run_id, rows[run_id], view_for_placeholder(root))
+                        if tail == "data":
+                            self._send(200, "application/json; charset=utf-8",
+                                       json.dumps(summary, ensure_ascii=False).encode("utf-8"))
+                        else:
+                            self._send(200, "text/html; charset=utf-8",
+                                       render_html(summary, live=True).encode("utf-8"))
                         return
                     if tail == "data":
                         summary = build_report(run_file)
@@ -193,9 +224,9 @@ def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = Tr
     instead of failing with "address already in use".
     """
     root = Path(project_root)
-    if not (root / "workflow" / "run_index.json").is_file():
+    if not run_index.has_trace(root):
         raise SystemExit(
-            f"没有找到 {root / 'workflow' / 'run_index.json'}：该项目还没有运行轨迹。"
+            f"没有找到 {root / 'workflow' / 'run_index.json'}（也没有 segments.json）：该项目还没有运行轨迹。"
             "先用编排器跑一段（orchestrator.start(project_root=...)）再来查看。"
         )
     candidates = port_candidates(port, auto_port)

@@ -13,13 +13,20 @@ digging through raw logs.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
+from . import run_index
 from .outcomes import OUTCOME_LABELS
 from .run_compliance import STEP_PROTOCOL_REQUIREMENTS, verify_run_compliance
+
+# How long a project may go without a single reported step before the board calls
+# it out. The board cannot force an agent to report, but it can make silence
+# impossible to miss - which is the whole point of replacing log-reading.
+STALE_MINUTES = int(os.environ.get("RUN_BOARD_STALE_MINUTES", "15"))
 
 
 def _events_by_step(state: dict) -> dict[str, dict]:
@@ -224,6 +231,46 @@ RUN_STATUS_LABELS = {
 }
 
 
+def minutes_since(iso: str) -> int | None:
+    """Whole minutes since an ISO timestamp, or None when there is no timestamp."""
+    if not iso:
+        return None
+    text = iso.strip().replace("Z", "+00:00")
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return int((datetime.now(timezone.utc) - moment).total_seconds() // 60)
+
+
+def reporting_state(idle_minutes: int | None, *, threshold: int = STALE_MINUTES,
+                    started: int = 0) -> dict:
+    """Is the agent still reporting, or has it gone quiet?
+
+    `level` is one of: ok (recent report), stale (quiet too long), none (never
+    reported anything), idle (nothing is running, so silence is expected).
+    """
+    threshold = threshold or STALE_MINUTES
+    if idle_minutes is None:
+        level = "none" if started else "idle"
+        label = "还没有任何回传" if started else "无进行中的段"
+        hint = ("Agent 尚未通过 append_event.py 回传任何一步。" if started
+                else "当前没有进行中的段，无需回传。")
+    elif idle_minutes <= threshold:
+        level = "ok"
+        label = "正常"
+        hint = f"最近一次回传在 {idle_minutes} 分钟前（阈值 {threshold} 分钟）。"
+    else:
+        level = "stale"
+        label = f"已 {idle_minutes} 分钟没有回传"
+        hint = (f"超过 {threshold} 分钟没有新的步骤回传，疑似卡住或窗口已停。"
+                "检查生产窗口是否还在跑，或让 Agent 用 append_event.py 补回报。")
+    return {"level": level, "label": label, "hint": hint,
+            "idle_minutes": idle_minutes, "stale_after_minutes": threshold}
+
+
 def summarize_project(index: dict, project_root: str | Path | None = None, *, with_details: bool = True) -> dict:
     """Build the episode-wide view: one row per segment, optionally with detail."""
     root = Path(project_root) if project_root else None
@@ -267,6 +314,15 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         candidate = root / "workflow" / "run_index.json"
         if candidate.is_file():
             source = str(candidate)
+    project_state = run_index.load_project_state(root) if root else {}
+    if not newest_event and root and project_state:
+        # The agent may only ever write its own status file. Treat that file as a
+        # heartbeat too (by mtime, not by its date-only "updated" field), or a
+        # project that is visibly moving still reads as "never reported".
+        stamp = run_index.project_state_mtime(root)
+        if stamp:
+            newest_event = datetime.fromtimestamp(stamp, timezone.utc).isoformat()
+    idle_minutes = minutes_since(newest_event)
     return {
         "project": index.get("project", ""),
         "series": index.get("series", ""),
@@ -279,6 +335,9 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         "newest_event_at": newest_event,
         "stale": bool(newest_event and index_time and newest_event > index_time),
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "project_state": project_state,
+        "idle_minutes": idle_minutes,
+        "reporting": reporting_state(idle_minutes, started=counts["running"] + counts["waiting"] + counts["blocked"]),
     }
 
 
@@ -310,6 +369,58 @@ def render_project_text(view: dict) -> str:
             for error in detail["compliance"].get("errors", []):
                 lines.append(f"        - {error}")
     return "\n".join(lines)
+
+
+def heartbeat_block(reporting: dict, newest_event_at: str = "") -> str:
+    """Is the agent still reporting? Shown on both the episode page and a segment.
+
+    The board cannot force a window to report, but it can make silence loud. One
+    block, same wording everywhere, so "is it still alive" is never a log-dig.
+    """
+    if not reporting:
+        return ""
+    return f"""
+  <div class="heartbeat {reporting.get('level', 'idle')}">
+    <div class="hbline">
+      <strong>Agent 实时回传：{escape(reporting.get('label', ''))}</strong>
+      <span class="dim">最后回传：{escape(newest_event_at or '从未回传')}</span>
+    </div>
+    <div class="dim">{escape(reporting.get('hint', ''))}</div>
+    <div class="dim">回传契约：每完成一步必须 <code>append_event.py</code> 写入轨迹；
+      被阻断 / 等待批准 / 挂起也要立刻回报，不允许只在最后写总结。</div>
+  </div>"""
+
+
+def project_state_block(state: dict) -> str:
+    """What the producing window says about itself, read-only."""
+    if not state:
+        return ""
+    facts = "".join(
+        f"<span>{escape(key)}：<code>{escape(str(state[key]))}</code></span>"
+        for key in ("stage", "status", "owner", "updated") if state.get(key)
+    )
+    blocks = [
+        f'<div class="psbox"><h3>{escape(label)}</h3><ul>'
+        + "".join(f"<li>{escape(str(item))}</li>" for item in (state.get(key) or []))
+        + "</ul></div>"
+        for key, label in (("blockers", "阻断项"), ("artifacts", "已产出文件")) if state.get(key)
+    ]
+    extras = "".join(
+        f"<div class='psrow'><span>{escape(key)}</span>"
+        f"<code>{escape(json.dumps(value, ensure_ascii=False))}</code></div>"
+        for key, value in state.items()
+        if key not in {"stage", "status", "owner", "updated", "blockers", "artifacts"}
+        and isinstance(value, (dict, list))
+    )
+    return f"""
+  <section class="pstate">
+    <h2>生产窗口自报状态（workflow/project_state.json）</h2>
+    <div class="sub">这个文件由生产窗口自己写；看板只读不写，用来兜底——
+      即便它没有走 append_event 通道，你也能在这里看到它做到哪一步。</div>
+    <div class="psfacts">{facts}</div>
+    {''.join(blocks)}
+    {extras}
+  </section>"""
 
 
 def render_project_html(view: dict, *, live: bool = False) -> str:
@@ -344,6 +455,10 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
         active_line = '<span class="dim">尚无进行中的段</span>'
     live_hint = "实时模式：每次刷新都重新读取磁盘上的最新状态" if live else "静态快照：数据为生成时状态，需重新运行命令才会更新"
     auto_checked = "checked" if live else ""
+
+    reporting = view.get("reporting") or reporting_state(view.get("idle_minutes"))
+    heartbeat = heartbeat_block(reporting, view.get("newest_event_at", ""))
+    state_card = project_state_block(view.get("project_state") or {})
     heading = " · ".join(x for x in (view["series"], view["episode"]) if x) or view["project"]
     # A static export has no backend: any control that navigates or reloads would
     # fail (and look like a broken app). Only the live server gets real controls.
@@ -540,6 +655,22 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .editorbar button.primary {{ background:#1f6feb; border-color:#1f6feb; color:#fff; font-weight:600; }}
   .editor.readonly {{ opacity:.85; }}
   .problems {{ background:var(--card); border:1px solid rgba(207,34,46,.5); border-radius:10px; padding:12px 14px; margin-bottom:16px; }}
+  .heartbeat {{ border:1px solid var(--line); border-left:4px solid var(--hb,#6e7781); border-radius:10px;
+                padding:10px 14px; margin-bottom:16px; background:var(--card); }}
+  .heartbeat .hbline {{ display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }}
+  .heartbeat.ok {{ --hb:#1a7f37; }}
+  .heartbeat.stale {{ --hb:#cf222e; background:rgba(207,34,46,.10); }}
+  .heartbeat.none {{ --hb:#bf8700; }}
+  .heartbeat.idle {{ --hb:#6e7781; }}
+  .heartbeat.stale strong {{ color:#cf222e; }}
+  .heartbeat div {{ font-size:13px; }}
+  .pstate {{ border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:16px 0; background:var(--card); }}
+  .pstate h2 {{ margin-bottom:6px; }}
+  .psfacts {{ display:flex; gap:14px; flex-wrap:wrap; font-size:13px; margin-bottom:8px; }}
+  .psbox h3 {{ font-size:13px; margin-top:8px; color:var(--muted); }}
+  .psbox ul {{ margin:4px 0 0; padding-left:20px; font-size:13px; }}
+  .psrow {{ display:flex; gap:10px; font-size:12.5px; margin-top:4px; }}
+  .psrow span {{ color:var(--muted); flex:none; }}
   .problems ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
   footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
   code {{ font-family: ui-monospace, Consolas, monospace; }}
@@ -556,10 +687,13 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     <span class="dim">本次渲染：{escape(view['generated_at'])}</span>
   </div>
 
+  {heartbeat}
+
   <div class="cards">{cards}</div>
 
   <div class="now">当前进行到：{active_line}</div>
   {stale}
+  {state_card}
 
   <table>
     <thead><tr><th>段 / 运行</th><th>状态</th><th>进度</th><th>当前步骤 / 待决定</th><th>最后事件</th></tr></thead>
@@ -655,9 +789,20 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         if summary.get("pending_decision")
         else ""
     )
+    not_started_block = (
+        f'<div class="notstarted"><h2>这一段还没有开始生产</h2>'
+        f'<p>段清单里已经有 <code>{escape(summary["run_id"])}</code>，但轨迹文件 '
+        f'<code>workflow/runs/{escape(summary["run_id"])}.json</code> 还没创建。'
+        f'这不是错误——等 Agent 起这一段（<code>tools/start_run.py</code>）之后，'
+        f'这里会自动出现逐步明细。</p></div>'
+        if summary.get("not_started")
+        else ""
+    )
     progress_pct = 0 if not summary["progress"]["total"] else round(
         100 * summary["progress"]["completed"] / summary["progress"]["total"]
     )
+    heartbeat = heartbeat_block(meta.get("reporting") or {}, meta.get("newest_event_at", ""))
+    state_card = project_state_block(meta.get("project_state") or {})
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -708,6 +853,25 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
                          padding:12px 14px; margin-top:16px; }}
   .problems {{ border-color:rgba(207,34,46,.5); }}
   .problems ul, .pending ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
+  .notstarted {{ margin-top:16px; padding:12px 14px; border-radius:10px; background:var(--card);
+                 border:1px dashed var(--line); font-size:13.5px; }}
+  .notstarted h2 {{ margin-bottom:6px; }}
+  .heartbeat {{ border:1px solid var(--line); border-left:4px solid var(--hb,#6e7781); border-radius:10px;
+                padding:10px 14px; margin-bottom:16px; background:var(--card); }}
+  .heartbeat .hbline {{ display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }}
+  .heartbeat.ok {{ --hb:#1a7f37; }}
+  .heartbeat.stale {{ --hb:#cf222e; background:rgba(207,34,46,.10); }}
+  .heartbeat.none {{ --hb:#bf8700; }}
+  .heartbeat.idle {{ --hb:#6e7781; }}
+  .heartbeat.stale strong {{ color:#cf222e; }}
+  .heartbeat div {{ font-size:13px; }}
+  .pstate {{ border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:16px 0; background:var(--card); }}
+  .pstate h2 {{ margin-bottom:6px; }}
+  .psfacts {{ display:flex; gap:14px; flex-wrap:wrap; font-size:13px; margin-bottom:8px; }}
+  .psbox h3 {{ font-size:13px; margin-top:8px; color:var(--muted); }}
+  .psbox ul {{ margin:4px 0 0; padding-left:20px; font-size:13px; }}
+  .psrow {{ display:flex; gap:10px; font-size:12.5px; margin-top:4px; }}
+  .psrow span {{ color:var(--muted); flex:none; }}
   .halt {{ margin-top:16px; padding:10px 14px; border-radius:10px; background:rgba(154,103,0,.12);
            border:1px solid rgba(154,103,0,.4); }}
   .toolbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px;
@@ -733,6 +897,9 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 
   {toolbar}
 
+  {heartbeat}
+  {state_card}
+
   <div class="cards">
     <div class="card"><div class="k">状态</div><div class="v">{escape(summary['status'] or '-')}</div></div>
     <div class="card"><div class="k">进度</div><div class="v">{summary['progress']['completed']} / {summary['progress']['total']}</div>
@@ -742,6 +909,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   </div>
 
   {halt}
+  {not_started_block}
 
   <h2>协议读取与执行过程（{len(summary['steps'])} 步）</h2>
   {''.join(rows)}
@@ -776,11 +944,12 @@ def resolve_input(path_str: str) -> tuple[str, Path | None, Path | None]:
     """
     path = Path(path_str)
     if path.is_dir():
-        for candidate in (path / "workflow" / "run_index.json", path / "run_index.json"):
+        for candidate in (path / "workflow" / "run_index.json", path / "run_index.json",
+                          path / "workflow" / "segments.json", path / "segments.json"):
             if candidate.is_file():
                 return "project", candidate, candidate.parent.parent if candidate.parent.name == "workflow" else candidate.parent
         return "unknown", None, None
-    if path.name == "run_index.json":
+    if path.name in ("run_index.json", "segments.json"):
         root = path.parent.parent if path.parent.name == "workflow" else path.parent
         return "project", path, root
     if path.is_file():
@@ -826,10 +995,10 @@ def main() -> int:
         return 0
 
     if kind == "project":
-        index = json.loads(target.read_text(encoding="utf-8"))
-        # Merge whatever is on disk before rendering: a window that wrote its run
-        # file but not the index must not make the report look stale.
-        index = run_index.sync_index(root, index)
+        # One read path for every consumer: on-disk runs + the user's segment list.
+        # Reading the index file directly was why the static export showed fewer
+        # rows than the live page.
+        index = run_index.project_index(root)
         view = summarize_project(index, root, with_details=not args.no_details)
         payload = view
         text = render_project_text(view)
