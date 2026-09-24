@@ -34,6 +34,18 @@ CHAIN_RELPATH = "skills/skill-chain.json"
 # the chain does not silently stop being audited.
 QA_MODES = {"pre_generation", "post_generation"}
 
+#: Outcomes a producer may record for a step it is handing over. COMPLETED is in
+#: this set only for traces written before write-authority separation existed -
+#: a producer can no longer write it, and such an event is treated as a claim
+#: that was never QA'd, not as a pass.
+PRODUCER_OUTCOMES = frozenset({
+    "SUBMITTED_FOR_QA", "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT",
+    "USABLE_WITH_SCENE_CONTINUITY_FAIL",
+})
+QA_PASS_OUTCOMES = frozenset({
+    "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT", "USABLE_WITH_SCENE_CONTINUITY_FAIL",
+})
+
 OK = "OK"
 CLAIMED_NO_EVIDENCE = "CLAIMED_NO_EVIDENCE"
 CLAIMED_NO_READ = "CLAIMED_NO_READ"
@@ -44,6 +56,17 @@ INDEPENDENT = "INDEPENDENT"
 SELF_QA_VIOLATION = "SELF_QA_VIOLATION"
 QA_ACTOR_UNKNOWN = "QA_ACTOR_UNKNOWN"
 QA_NOT_RUN = "QA_NOT_RUN"
+NOT_SUBMITTED = "NOT_SUBMITTED"
+AWAITING_QA = "AWAITING_QA"
+QA_PASSED = "QA_PASSED"
+QA_FAILED = "QA_FAILED"
+
+QA_STEP_LABELS = {
+    NOT_SUBMITTED: "未提交",
+    AWAITING_QA: "已提交，等待 QA",
+    QA_PASSED: "QA 通过",
+    QA_FAILED: "QA 不通过",
+}
 
 PASS = "PASS"
 NON_COMPLIANT = "NON_COMPLIANT"
@@ -108,6 +131,31 @@ def _completed_event(state: dict, step: str) -> dict | None:
     return None
 
 
+def _producer_event(state: dict, step: str) -> dict | None:
+    """The event where the producing model handed this step over."""
+    from . import qa_policy
+
+    for event in reversed(state.get("events") or []):
+        if event.get("step") != step:
+            continue
+        if (event.get("role") or qa_policy.PRODUCER) == qa_policy.QA:
+            continue
+        return event
+    return None
+
+
+def _qa_event(state: dict, step: str) -> dict | None:
+    """The event where a different model recorded a verdict on this step."""
+    from . import qa_policy
+
+    for event in reversed(state.get("events") or []):
+        if event.get("step") != step:
+            continue
+        if (event.get("role") or qa_policy.PRODUCER) == qa_policy.QA:
+            return event
+    return None
+
+
 def _any_event(state: dict, step: str) -> dict | None:
     for event in reversed(state.get("events", []) or []):
         if event.get("step") == step:
@@ -145,38 +193,45 @@ def audit_steps(state: dict, project_root: str | Path | None = None,
 
     for item in declared:
         step = item["step"]
-        event = _completed_event(state, step)
-        claimed = event is not None
-        if not claimed and _any_event(state, step) is not None:
-            # Reported, but not as COMPLETED. Still worth showing - a BLOCKED
-            # step is progress information, not silence.
-            event = _any_event(state, step)
+        producer = _producer_event(state, step)
+        reviewer = _qa_event(state, step)
+        claimed = producer is not None and producer.get("outcome") in PRODUCER_OUTCOMES
 
         row = {
             "step": step,
             "modes": item["modes"],
             "claimed": claimed,
-            "outcome": (event or {}).get("outcome", ""),
-            "at": (event or {}).get("at", ""),
-            "evidence": (event or {}).get("evidence", ""),
-            "actor": (event or {}).get("actor", ""),
-            "validator": (event or {}).get("validator", ""),
+            "outcome": (producer or {}).get("outcome", ""),
+            "at": (producer or {}).get("at", ""),
+            "evidence": (producer or {}).get("evidence", ""),
+            "actor": (producer or {}).get("actor", ""),
+            "validator": (producer or {}).get("validator", ""),
+            # A step is only "passed" when someone other than the producer says
+            # so. A producer's own COMPLETED is a claim, and stays a claim.
+            "qa_passed": bool(reviewer and reviewer.get("outcome") in QA_PASS_OUTCOMES),
+            "qa_failed": bool(reviewer and reviewer.get("outcome") == "FAILED"),
+            "qa_actor": (reviewer or {}).get("actor", ""),
+            "gate": (producer or {}).get("gate", "") or (reviewer or {}).get("gate", ""),
             "missing_reads": [],
         }
 
         if not claimed:
+            # Blocked or waiting: not a claim, but still progress information.
+            if producer is None:
+                producer = _any_event(state, step)
             row["verdict"] = NOT_CLAIMED
+            row["outcome"] = (producer or {}).get("outcome", row["outcome"])
             rows.append(row)
             continue
 
-        if not _evidence_ok(event, root):
+        if not _evidence_ok(producer, root):
             row["verdict"] = CLAIMED_NO_EVIDENCE
             row["evidence_ok"] = False
             rows.append(row)
             continue
 
         row["evidence_ok"] = True
-        recorded = _read_paths(event)
+        recorded = _read_paths(producer)
         required = set(STEP_PROTOCOL_REQUIREMENTS.get(step, []))
         row["missing_reads"] = sorted(required - recorded)
         row["verdict"] = CLAIMED_NO_READ if row["missing_reads"] else OK
@@ -228,7 +283,7 @@ def audit_qa_independence(state: dict, chain: dict | None = None) -> dict:
         for earlier in reversed(events[:index]):
             if earlier.get("step") in qa_steps:
                 continue
-            if earlier.get("outcome") != "COMPLETED":
+            if earlier.get("outcome") not in PRODUCER_OUTCOMES:
                 continue
             producer_step = earlier.get("step", "")
             producer_actor = (earlier.get("actor") or "").strip()
@@ -257,6 +312,62 @@ def audit_qa_independence(state: dict, chain: dict | None = None) -> dict:
             break
     return {"status": worst, "label": QA_LABELS[worst], "rounds": rounds,
             "independent": worst == INDEPENDENT}
+
+
+def audit_qa_passes(state: dict, project_root: str | Path | None = None,
+                    policy: dict | None = None) -> dict:
+    """Per-step QA state: submitted, passed, failed, or never handed over.
+
+    A step only counts as passed when a *different* model recorded the verdict.
+    A COMPLETED written by the producer is not a pass - it is a claim, and it is
+    shown as one. That distinction is the reason this module exists: the board
+    used to treat the claim as the outcome.
+    """
+    from . import qa_policy
+
+    policy = policy if policy is not None else qa_policy.load_policy()
+    by_step: dict[str, dict] = {}
+    order: list[str] = []
+
+    for event in state.get("events", []) or []:
+        step = event.get("step")
+        if not step:
+            continue
+        if step not in by_step:
+            order.append(step)
+            by_step[step] = {"step": step, "producer_actor": "", "qa_actor": "",
+                             "gate": "", "at": "", "qa_at": "", "state": NOT_SUBMITTED}
+        row = by_step[step]
+        role = event.get("role") or qa_policy.PRODUCER
+        outcome = event.get("outcome") or ""
+
+        if role == qa_policy.QA:
+            if outcome == "FAILED":
+                row["state"], row["qa_actor"] = "QA_FAILED", event.get("actor", "")
+                row["qa_at"], row["gate"] = event.get("at", ""), event.get("gate", "") or row["gate"]
+            elif outcome in ("PASS", "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT",
+                             "USABLE_WITH_SCENE_CONTINUITY_FAIL"):
+                row["state"], row["qa_actor"] = "QA_PASSED", event.get("actor", "")
+                row["qa_at"], row["gate"] = event.get("at", ""), event.get("gate", "") or row["gate"]
+            continue
+
+        # producer side: anything that claims the step got somewhere
+        if outcome in ("SUBMITTED_FOR_QA",) or outcome in (
+                "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT", "USABLE_WITH_SCENE_CONTINUITY_FAIL"):
+            if row["state"] == NOT_SUBMITTED:
+                row["state"] = "AWAITING_QA"
+            row["producer_actor"] = event.get("actor", "") or row["producer_actor"]
+            row["at"] = event.get("at", "") or row["at"]
+            row["gate"] = event.get("gate", "") or row["gate"]
+
+    rows = [by_step[step] for step in order]
+    return {
+        "rows": rows,
+        "submitted": sum(1 for r in rows if r["state"] != NOT_SUBMITTED),
+        "passed": sum(1 for r in rows if r["state"] == "QA_PASSED"),
+        "failed": sum(1 for r in rows if r["state"] == "QA_FAILED"),
+        "awaiting": sum(1 for r in rows if r["state"] == "AWAITING_QA"),
+    }
 
 
 def audit_run(state: dict, project_root: str | Path | None = None,

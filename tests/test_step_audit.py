@@ -42,6 +42,15 @@ def _write(root: Path, rel: str) -> None:
     target.write_text("x", encoding="utf-8")
 
 
+def _submit(root: Path, step: str, **kw):
+    return append_event(root, "RUN-EP03-A1", step=step, actor="model-A", role="producer", **kw)
+
+
+def _pass(root: Path, step: str, **kw):
+    return append_event(root, "RUN-EP03-A1", step=step, actor="model-B", role="qa",
+                        outcome="COMPLETED", **kw)
+
+
 def _rows(result: dict) -> dict:
     return {row["step"]: row for row in result["steps"]["rows"]}
 
@@ -69,10 +78,12 @@ def test_a_step_claimed_without_its_evidence_is_not_a_pass(tmp_path):
 def test_a_declared_step_nobody_did_is_reported_as_missing(tmp_path):
     root = _project(tmp_path)
     _write(root, "workflow/router_note.md")
-    append_event(root, "RUN-EP03-A1", step="short-drama-production-router",
-                 skill_id="short-drama-production-router", evidence="workflow/router_note.md",
-                 protocol_refs=["00_自动化生产唯一入口_v3.0.md",
-                                "核心自动化生产包/02_任务路由与Gate_v3.0.md"])
+    _submit(root, "short-drama-production-router",
+            skill_id="short-drama-production-router", evidence="workflow/router_note.md",
+            protocol_refs=["00_自动化生产唯一入口_v3.0.md",
+                           "核心自动化生产包/02_任务路由与Gate_v3.0.md"])
+    _pass(root, "short-drama-production-router",
+          skill_id="short-drama-production-router", evidence="workflow/router_note.md")
 
     result = step_audit.audit_steps(_state(root), root, CHAIN)
     rows = _rows({"steps": result})
@@ -85,8 +96,8 @@ def test_evidence_that_exists_but_skipped_its_protocol_read_is_flagged(tmp_path)
     """A real artefact plus no record of reading the governing document is not OK."""
     root = _project(tmp_path)
     _write(root, "workflow/prompt_v1.md")
-    append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
-                 skill_id="short-drama-prompt-compiler", evidence="workflow/prompt_v1.md")
+    _submit(root, "short-drama-prompt-compiler",
+            skill_id="short-drama-prompt-compiler", evidence="workflow/prompt_v1.md")
 
     result = step_audit.audit_steps(_state(root), root, CHAIN)
     row = _rows({"steps": result})["short-drama-prompt-compiler"]
@@ -146,8 +157,9 @@ def test_append_event_refuses_to_write_a_self_review(tmp_path):
                  actor="gpt-5")
 
     with pytest.raises(ValueError, match="SELF_QA_VIOLATION"):
-        append_event(root, "RUN-EP03-A1", step="short-drama-production-qa",
-                     evidence="workflow/prompt_v1.md", actor="gpt-5")
+        append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
+                     evidence="workflow/prompt_v1.md", actor="gpt-5",
+                     role="qa", outcome="COMPLETED")
 
 
 def test_append_event_allows_a_self_review_when_it_is_explicit(tmp_path):
@@ -157,8 +169,9 @@ def test_append_event_allows_a_self_review_when_it_is_explicit(tmp_path):
                  skill_id="short-drama-prompt-compiler", evidence="workflow/prompt_v1.md",
                  actor="gpt-5")
 
-    state = append_event(root, "RUN-EP03-A1", step="short-drama-production-qa",
-                         evidence="workflow/prompt_v1.md", actor="gpt-5", allow_self_qa=True)
+    state = append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
+                         evidence="workflow/prompt_v1.md", actor="gpt-5",
+                         role="qa", outcome="COMPLETED", allow_self_qa=True)
     assert state["events"][-1]["actor"] == "gpt-5"
 
 

@@ -34,7 +34,7 @@ def test_summary_counts_progress_and_states():
     summary = summarize(STATE)
     assert summary["progress"] == {"completed": 2, "total": 3}
     states = {item["step"]: item["state_label"] for item in summary["steps"]}
-    assert states["short-drama-image-generator"] == "已完成"
+    assert states["short-drama-image-generator"] == "已完成（QA 通过）"
     assert states["short-drama-production-qa"] == "已挂起（异常）"
 
 

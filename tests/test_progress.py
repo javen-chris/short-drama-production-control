@@ -24,25 +24,72 @@ def _project(tmp_path: Path) -> Path:
     return root
 
 
-def test_one_call_records_a_step_and_advances_the_trace(tmp_path):
+def _submit(root: Path, run_id: str, step: str, **kw):
+    """The producing model hands a step over. It cannot do more than this."""
+    return append_event(root, run_id, step=step, actor="model-A", role="producer", **kw)
+
+
+def _pass(root: Path, run_id: str, step: str, **kw):
+    """A different model signs the step off. This is what makes it count."""
+    return append_event(root, run_id, step=step, actor="model-B", role="qa",
+                        outcome="COMPLETED", **kw)
+
+
+def _complete(root: Path, run_id: str, step: str, **kw):
+    _submit(root, run_id, step, **kw)
+    return _pass(root, run_id, step, **kw)
+
+
+def test_a_producer_may_submit_but_never_declare_a_step_done(tmp_path):
+    """The rule the whole two-model design rests on."""
     root = _project(tmp_path)
     (root / "workflow" / "G0_上下文锁定.md").write_text("# G0 证据", encoding="utf-8")
     state = append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router",
                          protocol_refs=["00_自动化生产唯一入口_v3.0.md"],
-                         evidence="workflow/G0_上下文锁定.md")
-    assert state["completed_steps"] == ["short-drama-production-router"]
-    assert state["current_step"] == "short-drama-image-generator"
-    assert state["status"] == "RUNNING"
+                         evidence="workflow/G0_上下文锁定.md", actor="model-A")
+    assert state["completed_steps"] == []
+    assert state["status"] == "SUBMITTED_FOR_QA"
     event = state["events"][-1]
     assert event["skill_id"] == "short-drama-production-router"
     assert event["protocol_refs"] == [{"path": "00_自动化生产唯一入口_v3.0.md"}]
-    assert event["at"]  # timestamped automatically
+    assert event["at"]
+    assert event["outcome"] == "SUBMITTED_FOR_QA"
+    assert event["role"] == "producer"
+
+    with pytest.raises(PermissionError, match="WRITE_AUTHORITY_VIOLATION"):
+        append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router",
+                     outcome="COMPLETED", actor="model-A")
+
+
+def test_the_qa_model_is_what_advances_the_segment(tmp_path):
+    root = _project(tmp_path)
+    (root / "workflow" / "G0_上下文锁定.md").write_text("# G0 证据", encoding="utf-8")
+    _submit(root, "RUN-EP02-N3-A2", "short-drama-production-router",
+            evidence="workflow/G0_上下文锁定.md")
+    state = _pass(root, "RUN-EP02-N3-A2", "short-drama-production-router",
+                  evidence="workflow/G0_上下文锁定.md")
+    assert state["completed_steps"] == ["short-drama-production-router"]
+    assert state["current_step"] == "short-drama-image-generator"
+    assert state["status"] == "RUNNING"
+
+
+def test_one_call_records_a_step_and_advances_the_trace(tmp_path):
+    root = _project(tmp_path)
+    (root / "workflow" / "G0.md").write_text("# 证据", encoding="utf-8")
+    state = _complete(root, "RUN-EP02-N3-A2", "short-drama-production-router",
+                      evidence="workflow/G0.md")
+    event = state["events"][-1]
+    assert event["skill_id"] == "short-drama-production-router"
+    assert event["at"]
     assert event["outcome"] == "COMPLETED"
+    assert event["role"] == "qa"
+    # Both halves of the handover are on the trace: submit, then verdict.
+    assert [e["outcome"] for e in state["events"]] == ["SUBMITTED_FOR_QA", "COMPLETED"]
 
 
 def test_index_is_updated_so_the_page_sees_it(tmp_path):
     root = _project(tmp_path)
-    append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router")
+    _complete(root, "RUN-EP02-N3-A2", "short-drama-production-router")
     index = json.loads((root / "workflow" / "run_index.json").read_text(encoding="utf-8"))
     row = next(r for r in index["runs"] if r["run_id"] == "RUN-EP02-N3-A2")
     assert row["progress"]["completed"] == 1
@@ -52,15 +99,16 @@ def test_index_is_updated_so_the_page_sees_it(tmp_path):
 def test_finishing_every_step_completes_the_run(tmp_path):
     root = _project(tmp_path)
     for step in ("short-drama-production-router", "short-drama-image-generator", "short-drama-production-qa"):
-        state = append_event(root, "RUN-EP02-N3-A2", step=step)
+        state = _complete(root, "RUN-EP02-N3-A2", step)
     assert state["status"] == "COMPLETED"
     assert state["current_step"] == ""
 
 
 def test_a_decision_point_is_recorded_as_waiting(tmp_path):
     root = _project(tmp_path)
-    append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router")
+    _complete(root, "RUN-EP02-N3-A2", "short-drama-production-router")
     state = append_event(root, "RUN-EP02-N3-A2", step="short-drama-image-generator",
+                         actor="model-A",
                          outcome="WAITING_APPROVAL", reason="G5 Prompt QA 完成，等待用户审阅")
     assert state["status"] == "WAITING_APPROVAL"
     assert "等待用户审阅" in state["pending_decision"]
@@ -120,9 +168,11 @@ def test_the_cli_records_a_step(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "已记录" in result.stdout
-    assert "1/3 步" in result.stdout
+    assert "0/3 步" in result.stdout  # a submission is not progress yet
+    assert "qa_verdict.py" in result.stdout  # and it says who must sign it off
     state = json.loads(run_index.run_path(root, "RUN-EP02-N3-A2").read_text(encoding="utf-8"))
-    assert state["completed_steps"] == ["short-drama-production-router"]
+    assert state["completed_steps"] == []
+    assert state["events"][-1]["outcome"] == "SUBMITTED_FOR_QA"
 
 
 def test_a_submitted_step_moves_the_segment_instead_of_being_ignored(tmp_path):
@@ -139,10 +189,11 @@ def test_finishing_with_a_caveat_completes_but_keeps_the_caveat(tmp_path):
     root = _project(tmp_path)
     for step in ("short-drama-production-router", "short-drama-image-generator"):
         (root / "workflow" / f"{step}.md").write_text("# 证据", encoding="utf-8")
-        append_event(root, "RUN-EP02-N3-A2", step=step, evidence=f"workflow/{step}.md")
+        _complete(root, "RUN-EP02-N3-A2", step, evidence=f"workflow/{step}.md")
     (root / "workflow" / "qa.md").write_text("# QA", encoding="utf-8")
+    _submit(root, "RUN-EP02-N3-A2", "short-drama-production-qa", evidence="workflow/qa.md")
     state = append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-qa",
-                         evidence="workflow/qa.md",
+                         evidence="workflow/qa.md", actor="model-B", role="qa",
                          outcome="COMPLETED_WITH_CONTINUITY_CAVEAT")
     assert state["completed_steps"] == ["short-drama-production-router",
                                         "short-drama-image-generator",

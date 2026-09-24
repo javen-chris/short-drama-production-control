@@ -106,6 +106,7 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
 
     compliance = verify_run_compliance(state, chain, manifest)
     reconciliation = step_audit.audit_run(state, project_root, chain)
+    qa_passes = step_audit.audit_qa_passes(state, project_root)
     return {
         "run_id": state.get("run_id", ""),
         "contract_id": state.get("contract_id", ""),
@@ -121,6 +122,7 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         "pending": [s for s in steps if s not in completed],
         "compliance": compliance,
         "audit": reconciliation,
+        "qa_passes": qa_passes,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -250,9 +252,11 @@ def _steps_html(summary: dict) -> list[str]:
 
 RUN_STATUS_LABELS = {
     "COMPLETED": "已完成",
+    "SUBMITTED_FOR_QA": "已提交，等待 QA",
     "WAITING_APPROVAL": "等待批准",
     "PAUSED_EXCEPTION": "已挂起",
     "BLOCKED": "已阻断",
+    "FAILED": "失败",
     "RUNNING": "进行中",
     "": "未开始",
 }
@@ -696,6 +700,11 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
                         + "、".join(offchain[:4]) + ("…" if len(offchain) > 4 else "") + "）")
         if qa and not qa.get("independent"):
             bits.append(f"QA：{qa.get('label', '')}")
+        passes = detail.get("qa_passes") or {}
+        if passes.get("submitted"):
+            bits.append(f"QA 通过 {passes.get('passed', 0)}/{passes.get('submitted', 0)}"
+                        + (f"（等待 QA {passes['awaiting']}）" if passes.get("awaiting") else "")
+                        + (f"（不通过 {passes['failed']}）" if passes.get("failed") else ""))
         recon = (
             f'<div class="reason">对账：{" ｜ ".join(bits)}</div>' if bits
             else ('<div class="reason">对账：声明步骤均有实证</div>' if audit else "")
@@ -943,6 +952,49 @@ def step_audit_block(summary: dict) -> str:
   </section>"""
 
 
+def qa_gate_block(summary: dict) -> str:
+    """Who signed off, and whether it was anyone other than the author.
+
+    The board counts a step as passed only when a different model recorded the
+    verdict. A producer's own COMPLETED is a claim, and shown as one - which is
+    the difference between "it says it is done" and "it is done".
+    """
+    qa = summary.get("qa_passes") or {}
+    rows_data = qa.get("rows") or []
+    if not rows_data:
+        return ""
+    mark = {"QA_PASSED": "通过", "QA_FAILED": "不通过",
+            "AWAITING_QA": "等待 QA", "NOT_SUBMITTED": "未提交"}
+    cls = {"QA_PASSED": "ok", "QA_FAILED": "bad", "AWAITING_QA": "warn", "NOT_SUBMITTED": ""}
+    rows = []
+    for row in rows_data:
+        state = row.get("state", "")
+        rows.append(
+            f"<tr><td><code>{escape(row['step'])}</code></td>"
+            f"<td>{escape(row.get('gate') or '-')}</td>"
+            f'<td><span class="verdict {cls.get(state, "")}">{escape(mark.get(state, state))}</span></td>'
+            f"<td><code>{escape(row.get('producer_actor') or '-')}</code></td>"
+            f"<td><code>{escape(row.get('qa_actor') or '-')}</code></td>"
+            f"<td class='dim'>{escape((row.get('qa_at') or row.get('at') or '')[:19] or '-')}</td></tr>"
+        )
+    return f"""
+  <section class="pstate">
+    <h2>QA 写入权与独立性</h2>
+    <div class="sub">生产模型<strong>只能提交</strong>（<code>SUBMITTED_FOR_QA</code>），
+      <strong>无权写「通过」</strong>——写出 COMPLETED 会被拒绝（<code>WRITE_AUTHORITY_VIOLATION</code>）。
+      通过只能由<strong>另一个模型</strong>经 <code>tools/qa_verdict.py</code> 写入。
+      <strong>看板的「通过」只认后面这一种。</strong></div>
+    <div class="pprogress">已提交 <b>{qa.get('submitted', 0)}</b> ·
+      QA 通过 <b>{qa.get('passed', 0)}</b> ·
+      等待 QA <b>{qa.get('awaiting', 0)}</b> ·
+      QA 不通过 <b>{qa.get('failed', 0)}</b></div>
+    <table>
+      <thead><tr><th>步骤</th><th>Gate</th><th>QA 状态</th><th>生产模型</th><th>QA 模型</th><th>时间</th></tr></thead>
+      <tbody>{''.join(rows)}</tbody>
+    </table>
+  </section>"""
+
+
 def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | None = None,
                 project_meta: dict | None = None, all_runs_link: str = "") -> str:
     """One segment, step by step: what it read, what it produced, where it is.
@@ -1025,6 +1077,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     heartbeat = heartbeat_block(meta.get("reporting") or {}, meta.get("newest_event_at", ""))
     state_card = project_state_block(meta.get("project_state") or {})
     audit_block = step_audit_block(summary)
+    qa_block = qa_gate_block(summary)
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -1077,6 +1130,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .verdict {{ font-weight:600; }}
   .verdict.ok {{ color:#1a7f37; }}
   .verdict.bad {{ color:#cf222e; }}
+  .verdict.warn {{ color:#bf8700; }}
+  .pprogress {{ font-size:13.5px; margin:6px 0 10px; }}
   .verdict .dim {{ font-weight:400; }}
   .problems ul, .pending ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
   .notstarted {{ margin-top:16px; padding:12px 14px; border-radius:10px; background:var(--card);
@@ -1137,6 +1192,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   {halt}
   {not_started_block}
 
+  {qa_block}
   {audit_block}
 
   <h2>协议读取与执行过程（{len(summary['steps'])} 步）</h2>
