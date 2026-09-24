@@ -134,3 +134,74 @@ def test_reporting_state_levels():
     assert reporting_state(60)["level"] == "stale"
     assert reporting_state(None, started=1)["level"] == "none"
     assert reporting_state(None, started=0)["level"] == "idle"
+
+
+def test_run_details_load_even_when_the_index_says_runs(tmp_path):
+    """Rows used to store "runs/<id>.json" while files live in workflow/runs/.
+
+    That spelling named a file that exists as one that does not, so every
+    per-step detail silently failed to load and a moving project looked
+    untouched. A stored path is a hint, not an authority.
+    """
+    from production_control.run_report import summarize_project
+
+    root = _project(tmp_path)
+    _write_run(root, "RUN-EP03-A1", minutes_ago=1)
+
+    assert run_index.resolve_run_path(root, "RUN-EP03-A1", "runs/RUN-EP03-A1.json").is_file()
+
+    # A row still carrying the old spelling must still get its details.
+    index = run_index.project_index(root)
+    for row in index["runs"]:
+        row["path"] = f"runs/{row['run_id']}.json"
+    view = summarize_project(index, root, with_details=True)
+    row = next(r for r in view["runs"] if r["run_id"] == "RUN-EP03-A1")
+    assert row["detail"] is not None
+    assert row["detail"]["progress"]["completed"] >= 1
+
+
+def test_progress_counts_steps_written_outside_the_pipeline(tmp_path):
+    """Seven finished steps reported as 0/12 is worse than showing nothing."""
+    root = _project(tmp_path)
+    (root / "workflow" / "runs" / "RUN-EP03-A1.json").write_text(json.dumps({
+        "run_id": "RUN-EP03-A1", "segment": "A1", "status": "BLOCKED",
+        "pipeline": ["short-drama-production-router", "short-drama-production-qa"],
+        "completed_steps": ["protocol-read", "G2-shot-confirm", "G5-prompt"],
+        "events": [{"step": "G5-prompt", "outcome": "COMPLETED", "at": "2026-09-24T10:00:00+00:00"}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    view = run_server.current_view(root)
+    row = next(r for r in view["runs"] if r["run_id"] == "RUN-EP03-A1")
+    assert row["progress"]["completed"] == 3
+    assert row["progress"]["total"] == 5  # 2 pipeline steps + 3 recorded off-pipeline
+    assert row["detail"]["custom_steps"] == ["protocol-read", "G2-shot-confirm", "G5-prompt"]
+
+
+def test_an_empty_gate_or_audit_panel_says_so_instead_of_hiding(tmp_path):
+    """An empty list reads as "nothing wrong" to a human skimming the page.
+
+    It means the opposite: the gate never ran. Hiding the panel made the most
+    dangerous state - nothing was ever checked - the quietest one.
+    """
+    root = _project(tmp_path)
+    _write_run(root, "RUN-EP03-A1", minutes_ago=1)
+
+    view = run_server.current_view(root)
+    assert view["gate_tokens"] == [] and view["skill_audits"] == []
+    page = render_project_html(view, live=True)
+    assert "建节点前置门禁令牌" in page and "从未通过" in page
+    assert "G5.1 模型 Skill 审计" in page and "从未跑过 Skill" in page
+
+
+def test_the_index_is_never_asked_to_carry_a_path_the_file_lacks(tmp_path):
+    """A row written now must resolve without the compatibility fallback."""
+    root = _project(tmp_path)
+    _write_run(root, "RUN-EP03-A1", minutes_ago=1)
+    index = run_index.sync_index(root, run_index.load_index(root))
+    row = next(r for r in index["runs"] if r["run_id"] == "RUN-EP03-A1")
+    assert row["path"].startswith("workflow/")
+    assert (root / row["path"]).is_file()
+    # Round-tripping through the file keeps the resolvable spelling.
+    run_index.save_index(root, index)
+    reloaded = next(r for r in run_index.load_index(root)["runs"] if r["run_id"] == "RUN-EP03-A1")
+    assert (root / reloaded["path"]).is_file()
