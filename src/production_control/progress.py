@@ -107,6 +107,10 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     allowed, refusal = qa_policy.may_write(role, outcome)
     if not allowed:
         raise PermissionError(refusal)
+    if role == qa_policy.PRODUCER:
+        ok_model, why = qa_policy.producer_model_allowed(actor)
+        if not ok_model:
+            raise PermissionError(why)
 
     event = {
         "step": step,

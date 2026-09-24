@@ -25,6 +25,7 @@ SELF_QA_VIOLATION = "SELF_QA_VIOLATION"
 QA_WITHOUT_SUBMISSION = "QA_WITHOUT_SUBMISSION"
 QA_MODEL_NOT_ALLOWED = "QA_MODEL_NOT_ALLOWED"
 QA_MODEL_UNKNOWN = "QA_MODEL_UNKNOWN"
+PRODUCER_MODEL_NOT_ALLOWED = "PRODUCER_MODEL_NOT_ALLOWED"
 
 DEFAULT_PRODUCER_ALLOWED = frozenset({
     "SUBMITTED_FOR_QA", "BLOCKED", "FAILED", "WAITING_APPROVAL",
@@ -108,6 +109,23 @@ def qa_model_allowed(gate: str, model: str, policy: dict | None = None) -> tuple
     allowed = gate_info(gate, policy).get("qa_models") or []
     if allowed and model not in allowed:
         return False, (f"{QA_MODEL_NOT_ALLOWED}：Gate {gate} 的 QA 只允许 "
+                       f"{'、'.join(allowed)}，收到的是 {model}。")
+    return True, ""
+
+
+def producer_model_allowed(model: str, policy: dict | None = None) -> tuple[bool, str]:
+    """Is this model permitted to produce?
+
+    Empty producer_models means the name is not restricted. Filling it pins the
+    producing model too, which only makes sense once the team actually runs one.
+    """
+    policy = policy if policy is not None else load_policy()
+    model = (model or "").strip()
+    allowed = (policy or {}).get("producer_models") or []
+    if not allowed or not model:
+        return True, ""
+    if model not in allowed:
+        return False, (f"{PRODUCER_MODEL_NOT_ALLOWED}：生产模型只允许 "
                        f"{'、'.join(allowed)}，收到的是 {model}。")
     return True, ""
 

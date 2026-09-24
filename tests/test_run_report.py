@@ -79,7 +79,14 @@ def test_html_report_is_self_contained_and_escapes_content():
     assert "&lt;script&gt;" in html
 
 
-def test_html_marks_read_and_missing_rows():
+def test_the_step_table_carries_the_verdict_per_step():
+    """The page's whole job: one line per declared step, verdict included.
+
+    The old per-step "协议读取与执行过程" listing was a second, overlapping view
+    of the same thing and is gone. What replaced it must still say, per step,
+    who produced it, who checked it, and whether anything backs it up.
+    """
     html = render_html(summarize(STATE))
-    assert "已读" in html
-    assert "class=\"step done\"" in html
+    assert "生产模型" in html and "QA 模型" in html
+    assert "协议步骤" in html
+    assert "class=\"vp " in html
