@@ -1,0 +1,45 @@
+{
+  "version": "1.0.0",
+  "authority": "00_自动化生产唯一入口_v3.0.md（人工确认制 Gate 表）+ 04_QA与文件治理_v3.0.md",
+  "principle": "生产者只能提交，不能宣布通过。COMPLETED 的写入权归 QA 模型，且 QA 模型必须与生产者不同。",
+  "roles": {
+    "producer": {
+      "may_write": [
+        "SUBMITTED_FOR_QA",
+        "BLOCKED",
+        "FAILED",
+        "WAITING_APPROVAL",
+        "PAUSED_EXCEPTION",
+        "SUBMITTED_IN_PROGRESS"
+      ]
+    },
+    "qa": {
+      "may_write": [
+        "COMPLETED",
+        "COMPLETED_WITH_CONTINUITY_CAVEAT",
+        "USABLE_WITH_SCENE_CONTINUITY_FAIL",
+        "BLOCKED",
+        "FAILED",
+        "WAITING_APPROVAL",
+        "PAUSED_EXCEPTION"
+      ]
+    }
+  },
+  "gates": {
+    "G0": {"name": "项目接入", "qa_models": []},
+    "G1": {"name": "脚本确认", "qa_models": []},
+    "G2": {"name": "镜头确认", "qa_models": []},
+    "G3": {"name": "资产锁定", "qa_models": []},
+    "G4": {"name": "故事本确认", "qa_models": []},
+    "G5": {"name": "视频 Prompt 确认", "qa_models": []},
+    "G6": {"name": "生成提交", "qa_models": []},
+    "G7": {"name": "审片", "qa_models": []},
+    "G8": {"name": "剪辑发布", "qa_models": []}
+  },
+  "notes": [
+    "gates.<G>.qa_models 为空数组 = 允许任何与生产者不同的模型；填了名字 = 只能用这些模型。",
+    "这道表是给你改的：想让某个 Gate 固定由某个模型 QA，把模型名填进去即可，不用改代码。",
+    "生产模型如果直接写出 COMPLETED，会被 append_event 拒绝（WRITE_AUTHORITY_VIOLATION）。",
+    "同一个模型既生产又 QA，会被拒绝（SELF_QA_VIOLATION）。"
+  ]
+}

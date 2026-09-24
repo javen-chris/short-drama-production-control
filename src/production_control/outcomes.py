@@ -23,8 +23,9 @@ COMPLETING_OUTCOMES = frozenset({
 })
 
 OUTCOME_LABELS = {
-    "COMPLETED": "已完成",
-    "COMPLETED_WITH_CONTINUITY_CAVEAT": "已完成（连续性存疑）",
+    "SUBMITTED_FOR_QA": "已提交，等待 QA",
+    "COMPLETED": "已完成（QA 通过）",
+    "COMPLETED_WITH_CONTINUITY_CAVEAT": "已完成（连续性存疑，QA 通过）",
     "USABLE_WITH_SCENE_CONTINUITY_FAIL": "可用（场景连续性未过）",
     "SUBMITTED_IN_PROGRESS": "已提交，等待回执",
     "WAITING_APPROVAL": "等待你批准",
