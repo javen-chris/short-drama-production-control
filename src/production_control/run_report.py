@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from . import gate_token, run_index, skill_audit
+from . import gate_token, run_index, skill_audit, step_audit
 from .outcomes import OUTCOME_LABELS
 from .run_compliance import STEP_PROTOCOL_REQUIREMENTS, verify_run_compliance
 
@@ -48,7 +48,8 @@ def _ref_map(event: dict) -> dict[str, str | None]:
     return refs
 
 
-def summarize(state: dict, chain: dict | None = None, manifest: dict | None = None) -> dict:
+def summarize(state: dict, chain: dict | None = None, manifest: dict | None = None,
+              project_root: str | Path | None = None) -> dict:
     """Build the intermediate structure both renderers consume."""
     steps = state.get("pipeline") or []
     completed = set(state.get("completed_steps", []) or [])
@@ -104,6 +105,7 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         )
 
     compliance = verify_run_compliance(state, chain, manifest)
+    reconciliation = step_audit.audit_run(state, project_root, chain)
     return {
         "run_id": state.get("run_id", ""),
         "contract_id": state.get("contract_id", ""),
@@ -118,6 +120,7 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         "steps": rendered,
         "pending": [s for s in steps if s not in completed],
         "compliance": compliance,
+        "audit": reconciliation,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -311,7 +314,8 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
             candidate = run_index.resolve_run_path(root, row.get("run_id", ""), row.get("path") or "")
             if candidate.is_file():
                 try:
-                    item["detail"] = summarize(json.loads(candidate.read_text(encoding="utf-8")))
+                    item["detail"] = summarize(json.loads(candidate.read_text(encoding="utf-8")),
+                                               project_root=root)
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     item["detail"] = None
         rows.append(item)
@@ -676,6 +680,26 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
         )
         detail = row.get("detail") or {}
         custom = detail.get("custom_steps") or []
+        audit = detail.get("audit") or {}
+        counts_a = (audit.get("steps") or {}).get("counts") or {}
+        qa = audit.get("qa") or {}
+        bits = []
+        if counts_a.get(step_audit.CLAIMED_NO_EVIDENCE):
+            bits.append(f"❌ {counts_a[step_audit.CLAIMED_NO_EVIDENCE]} 步声称完成但无实证")
+        if counts_a.get(step_audit.NOT_CLAIMED):
+            bits.append(f"{counts_a[step_audit.NOT_CLAIMED]} 步协议要求未做")
+        if counts_a.get(step_audit.CLAIMED_NO_READ):
+            bits.append(f"⚠️ {counts_a[step_audit.CLAIMED_NO_READ]} 步未记录协议读取")
+        if counts_a.get(step_audit.EXTRA):
+            offchain = audit.get("out_of_chain_steps") or []
+            bits.append(f"❌ {counts_a[step_audit.EXTRA]} 步不在协议链内（"
+                        + "、".join(offchain[:4]) + ("…" if len(offchain) > 4 else "") + "）")
+        if qa and not qa.get("independent"):
+            bits.append(f"QA：{qa.get('label', '')}")
+        recon = (
+            f'<div class="reason">对账：{" ｜ ".join(bits)}</div>' if bits
+            else ('<div class="reason">对账：声明步骤均有实证</div>' if audit else "")
+        )
         offbook = (
             f'<div class="reason">⚠️ 已完成 {len(custom)} 步<span class="dim">不在 12 步流水线内</span>：'
             f'{escape("、".join(custom))}<br>'
@@ -690,7 +714,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
           {f'<div class="title">{escape(row.get("segment_title",""))}</div>' if row.get("segment_title") else ''}</td>
         <td>{_badge(row.get('status','') or '', row['state_label'])}</td>
         <td><div class="bar"><i style="width:{row['percent']}%"></i></div><span class="dim">{row['percent']}%</span></td>
-        <td><code class="dim">{escape(row.get('current_step','') or '-')}</code>{decision}{offbook}</td>
+        <td><code class="dim">{escape(row.get('current_step','') or '-')}</code>{decision}{offbook}{recon}</td>
         <td class="dim">{escape(row.get('last_event_at','') or '-')}</td>
       </tr>
       <tr class="detailrow"><td colspan="5">{detail}</td></tr>"""
@@ -839,6 +863,86 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
 """
 
 
+def step_audit_block(summary: dict) -> str:
+    """The reconciliation table: what was claimed against what can be proven.
+
+    This answers "did it follow the protocol", as opposed to "did it say it
+    followed the protocol". A row claiming COMPLETED whose evidence file is not
+    on disk is the shape of every incident so far, and it should be visible
+    without opening a single log.
+    """
+    audit = summary.get("audit") or {}
+    steps = audit.get("steps") or {}
+    rows_data = steps.get("rows") or []
+    if not rows_data:
+        return ""
+    counts = steps.get("counts") or {}
+    qa = audit.get("qa") or {}
+
+    marks = {"OK": "OK", "CLAIMED_NO_EVIDENCE": "不通过", "CLAIMED_NO_READ": "不完整",
+             "NOT_CLAIMED": "未做", "EXTRA": "额外"}
+
+    def badge(verdict: str) -> str:
+        cls = "ok" if verdict == step_audit.OK else "bad"
+        return (f'<span class="verdict {cls}">{escape(marks.get(verdict, verdict))}'
+                f'<span class="dim"> {escape(step_audit.VERDICT_LABELS.get(verdict, ""))}</span></span>')
+
+    rows = []
+    for row in rows_data:
+        note = ""
+        if row.get("missing_reads"):
+            note = "未记录读取：" + "、".join(row["missing_reads"])
+        elif row.get("verdict") == step_audit.CLAIMED_NO_EVIDENCE:
+            note = "证据文件不存在：" + (row.get("evidence") or "未填写 evidence")
+        elif not row.get("claimed"):
+            note = "协议要求这一步，轨迹里没有它"
+        rows.append(
+            f"<tr><td><code>{escape(row['step'])}</code></td>"
+            f"<td>{badge(row['verdict'])}</td>"
+            f"<td>{'是' if row.get('claimed') else '否'}</td>"
+            f"<td class='dim'>{escape(row.get('evidence') or '-')}</td>"
+            f"<td class='dim'>{escape((row.get('at') or '')[:19] or '-')}</td>"
+            f"<td class='dim'>{escape(note)}</td></tr>"
+        )
+
+    pairs = "".join(
+        f'<div class="dim">生产者 <code>{escape(r.get("producer_actor") or "未记录")}</code>'
+        f'（{escape(r.get("producer_step") or "-")}） → QA '
+        f'<code>{escape(r.get("qa_actor") or "未记录")}</code></div>'
+        for r in (qa.get("rounds") or [])
+    ) or '<div class="dim">轨迹里没有任何 QA 事件。</div>'
+    qa_cls = "clean" if qa.get("independent") else "problems"
+    qa_block = (
+        f'<div class="{qa_cls}"><h3>QA 独立性：{escape(qa.get("label", ""))}</h3>'
+        f'<div class="dim">协议要求 QA 由<strong>不同模型</strong>执行：同一模型自审不算 QA，'
+        f'未记录执行模型也不算。</div>{pairs}</div>'
+    )
+
+    summary_line = " · ".join(
+        f"{escape(step_audit.VERDICT_LABELS.get(k, k))} {v}" for k, v in counts.items()
+    )
+    audit_errors = audit.get("errors") or []
+    error_block = (
+        '<div class="problems"><h3>对账失败项（%d）</h3><ul>%s</ul></div>'
+        % (len(audit_errors), "".join(f"<li>{escape(e)}</li>" for e in audit_errors))
+        if audit_errors
+        else '<div class="clean">对账通过：协议声明的每一步都有实证，且没有链外步骤。</div>'
+    )
+    return f"""
+  <section class="pstate">
+    <h2>协议步骤对账（协议声明 {steps.get('declared_total', 0)} 项）</h2>
+    <div class="sub">这是「有没有按协议走」的答案，而不是「有没有说自己按协议走了」。
+      <strong>声称完成但磁盘上没有证据的那一行，就是被跳过的那一步。</strong></div>
+    <div class="dim">{summary_line}</div>
+    {error_block}
+    {qa_block}
+    <table>
+      <thead><tr><th>协议步骤</th><th>对账结论</th><th>自报</th><th>证据</th><th>时间</th><th>说明</th></tr></thead>
+      <tbody>{''.join(rows)}</tbody>
+    </table>
+  </section>"""
+
+
 def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | None = None,
                 project_meta: dict | None = None, all_runs_link: str = "") -> str:
     """One segment, step by step: what it read, what it produced, where it is.
@@ -920,6 +1024,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     )
     heartbeat = heartbeat_block(meta.get("reporting") or {}, meta.get("newest_event_at", ""))
     state_card = project_state_block(meta.get("project_state") or {})
+    audit_block = step_audit_block(summary)
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -969,6 +1074,10 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .problems, .pending {{ background:var(--card); border:1px solid var(--line); border-radius:10px;
                          padding:12px 14px; margin-top:16px; }}
   .problems {{ border-color:rgba(207,34,46,.5); }}
+  .verdict {{ font-weight:600; }}
+  .verdict.ok {{ color:#1a7f37; }}
+  .verdict.bad {{ color:#cf222e; }}
+  .verdict .dim {{ font-weight:400; }}
   .problems ul, .pending ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
   .notstarted {{ margin-top:16px; padding:12px 14px; border-radius:10px; background:var(--card);
                  border:1px dashed var(--line); font-size:13.5px; }}
@@ -1028,6 +1137,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   {halt}
   {not_started_block}
 
+  {audit_block}
+
   <h2>协议读取与执行过程（{len(summary['steps'])} 步）</h2>
   {''.join(rows)}
 
@@ -1045,12 +1156,15 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 
 
 def build_report(run_state_path: str | Path, chain: dict | None = None, manifest: dict | None = None) -> dict:
-    state = json.loads(Path(run_state_path).read_text(encoding="utf-8"))
+    run_file = Path(run_state_path)
+    state = json.loads(run_file.read_text(encoding="utf-8"))
     if manifest is None:
-        manifest_path = Path(run_state_path).with_name("protocol_manifest.json")
+        manifest_path = run_file.with_name("protocol_manifest.json")
         if manifest_path.is_file():
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    return summarize(state, chain, manifest)
+    # <project>/workflow/runs/<id>.json -> <project>
+    project_root = run_file.parent.parent.parent if run_file.parent.name == "runs" else None
+    return summarize(state, chain, manifest, project_root)
 
 
 def resolve_input(path_str: str) -> tuple[str, Path | None, Path | None]:
