@@ -75,7 +75,7 @@ def test_quiet_agent_is_flagged_on_the_page(tmp_path):
     view = run_server.current_view(root)
     assert view["reporting"]["level"] == "stale"
     page = render_project_html(view, live=True)
-    assert "实时回传" in page
+    assert "最后回传" in page
     assert "分钟没有回传" in page
 
 
@@ -99,7 +99,8 @@ def test_project_state_file_surfaces_as_a_heartbeat(tmp_path):
     view = run_server.current_view(root)
     assert view["project_state"]["stage"] == "A1生产前准备完成"
     page = render_project_html(view, live=True)
-    assert "A1生产前准备完成" in page
+    # The stage and the blockers used to be a standalone panel; they are now a
+    # line in the global alert list, which is the only place they still matter.
     assert "libtv Token 无效" in page
     assert view["reporting"]["level"] != "none"
 
@@ -177,11 +178,12 @@ def test_progress_counts_steps_written_outside_the_pipeline(tmp_path):
     assert row["detail"]["custom_steps"] == ["protocol-read", "G2-shot-confirm", "G5-prompt"]
 
 
-def test_an_empty_gate_or_audit_panel_says_so_instead_of_hiding(tmp_path):
+def test_an_empty_gate_or_audit_state_is_still_visible(tmp_path):
     """An empty list reads as "nothing wrong" to a human skimming the page.
 
-    It means the opposite: the gate never ran. Hiding the panel made the most
-    dangerous state - nothing was ever checked - the quietest one.
+    It means the opposite: nothing was ever checked. That used to be two
+    standalone panels and is now two lines in the alert list - but the rule
+    stands: absence must be stated, never left blank.
     """
     root = _project(tmp_path)
     _write_run(root, "RUN-EP03-A1", minutes_ago=1)
@@ -189,8 +191,9 @@ def test_an_empty_gate_or_audit_panel_says_so_instead_of_hiding(tmp_path):
     view = run_server.current_view(root)
     assert view["gate_tokens"] == [] and view["skill_audits"] == []
     page = render_project_html(view, live=True)
-    assert "建节点前置门禁令牌" in page and "从未通过" in page
-    assert "G5.1 模型 Skill 审计" in page and "从未跑过 Skill" in page
+    assert "一条都没有" in page
+    assert "没有任何一段通过过建节点前置门禁" in page
+    assert "没有任何 Prompt 跑过 G5.1 审计" in page
 
 
 def test_the_index_is_never_asked_to_carry_a_path_the_file_lacks(tmp_path):

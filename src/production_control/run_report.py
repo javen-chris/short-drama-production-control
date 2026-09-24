@@ -543,37 +543,50 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     (live=False) is a snapshot and says so.
     """
     counts = view["counts"]
-    cards = "".join(
-        f'<div class="card"><div class="k">{label}</div><div class="v">{value}</div></div>'
-        for label, value in (
-            ("段数", counts["total"]),
-            ("已完成", counts["completed"]),
-            ("进行中", counts["running"]),
-            ("等待批准", counts["waiting"]),
-            ("挂起 / 阻断", counts["blocked"]),
-            ("未开始", counts["not_started"]),
-        )
-    )
-
-    active = next((r for r in view["runs"] if r["active"]), None)
-    if active:
-        active_name = active.get("segment_title") or active.get("segment") or active.get("run_id", "")
-        active_line = (
-            f"<strong>{escape(active_name)}</strong> "
-            f'<span class="dim">{escape(active["run_id"])} · {escape(active["state_label"])} · '
-            f'{escape(active.get("current_step", "") or "-")}</span>'
-        )
-    else:
-        active_line = '<span class="dim">尚无进行中的段</span>'
     live_hint = "实时模式：每次刷新都重新读取磁盘上的最新状态" if live else "静态快照：数据为生成时状态，需重新运行命令才会更新"
     auto_checked = "checked" if live else ""
 
     reporting = view.get("reporting") or reporting_state(view.get("idle_minutes"))
     heartbeat = heartbeat_block(reporting, view.get("newest_event_at", ""))
-    state_card = project_state_block(view.get("project_state") or {})
-    token_card = gate_token_block(view.get("gate_tokens") or [])
-    audit_card = skill_audit_block(view.get("skill_audits") or [])
     heading = " · ".join(x for x in (view["series"], view["episode"]) if x) or view["project"]
+
+    # One line instead of six cards: the numbers that change a decision, and
+    # nothing else. Per-segment detail lives in the table below.
+    tot_passed = sum((r.get("detail") or {}).get("qa_passes", {}).get("passed", 0) for r in view["runs"])
+    tot_submitted = sum((r.get("detail") or {}).get("qa_passes", {}).get("submitted", 0) for r in view["runs"])
+    active = next((r for r in view["runs"] if r["active"]), None)
+    strip_bits = [
+        f'段 <b>{counts["total"]}</b>',
+        f'QA 通过 <b class="{"ok" if tot_passed else ""}">{tot_passed}</b> / 已提交 <b>{tot_submitted}</b>',
+        f'进行中 <b>{counts["running"] + counts["waiting"]}</b>',
+        f'阻断 <b class="{"stale" if counts["blocked"] else ""}">{counts["blocked"]}</b>',
+        f'未开始 <b>{counts["not_started"]}</b>',
+    ]
+    if active:
+        strip_bits.append("当前 <b>" + escape(active.get("segment_title") or active.get("segment")
+                                             or active["run_id"]) + "</b>")
+    strip_bits.append(f'最后回传 <b class="{escape(reporting.get("level") or "")}">'
+                      f'{escape(reporting.get("label") or "从未回传")}</b>')
+    strip = ' <span class="sep">·</span> '.join(strip_bits)
+
+    # Global warnings only. The standalone gate-token / skill-audit / self-report
+    # panels said the same thing three times over a mostly-empty page; their
+    # conclusions now ride along per segment in the table.
+    alerts = []
+    if reporting.get("level") in ("stale", "none"):
+        alerts.append(f'<li>{escape(reporting.get("label") or "")}——{escape(reporting.get("hint") or "")}</li>')
+    state = view.get("project_state") or {}
+    for key, label in (("blockers", "阻断项"),):
+        for item in (state.get(key) or []):
+            alerts.append(f"<li>{escape(label)}：{escape(str(item))}</li>")
+    if not view.get("gate_tokens"):
+        alerts.append("<li>门禁令牌：<strong>一条都没有</strong>——没有任何一段通过过建节点前置门禁。</li>")
+    if not view.get("skill_audits"):
+        alerts.append("<li>Skill 审计：<strong>一条都没有</strong>——没有任何 Prompt 跑过 G5.1 审计。</li>")
+    alert_card = (
+        f'<div class="problems"><h3>全局告警</h3><ul>{"".join(alerts)}</ul></div>'
+        if alerts else ""
+    )
     # A static export has no backend: any control that navigates or reloads would
     # fail (and look like a broken app). Only the live server gets real controls.
     toolbar_controls = (
@@ -670,63 +683,61 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
 
     rows = []
     for row in view["runs"]:
-        detail = ""
+        expand = ""
         if row.get("detail"):
-            detail = (
-                '<details class="more"><summary>展开该段逐步明细（'
-                f"{row['detail']['progress']['completed']}/{row['detail']['progress']['total']} 步）</summary>"
+            expand = (
+                '<details class="more"><summary>逐步明细</summary>'
                 f"{''.join(_steps_html(row['detail']))}</details>"
             )
-        decision = (
-            f'<div class="reason">待决定：{escape(row.get("pending_decision", ""))}</div>'
-            if row.get("pending_decision")
-            else ""
-        )
         detail = row.get("detail") or {}
-        custom = detail.get("custom_steps") or []
         audit = detail.get("audit") or {}
         counts_a = (audit.get("steps") or {}).get("counts") or {}
-        qa = audit.get("qa") or {}
-        bits = []
-        if counts_a.get(step_audit.CLAIMED_NO_EVIDENCE):
-            bits.append(f"❌ {counts_a[step_audit.CLAIMED_NO_EVIDENCE]} 步声称完成但无实证")
-        if counts_a.get(step_audit.NOT_CLAIMED):
-            bits.append(f"{counts_a[step_audit.NOT_CLAIMED]} 步协议要求未做")
-        if counts_a.get(step_audit.CLAIMED_NO_READ):
-            bits.append(f"⚠️ {counts_a[step_audit.CLAIMED_NO_READ]} 步未记录协议读取")
-        if counts_a.get(step_audit.EXTRA):
-            offchain = audit.get("out_of_chain_steps") or []
-            bits.append(f"❌ {counts_a[step_audit.EXTRA]} 步不在协议链内（"
-                        + "、".join(offchain[:4]) + ("…" if len(offchain) > 4 else "") + "）")
-        if qa and not qa.get("independent"):
-            bits.append(f"QA：{qa.get('label', '')}")
         passes = detail.get("qa_passes") or {}
-        if passes.get("submitted"):
-            bits.append(f"QA 通过 {passes.get('passed', 0)}/{passes.get('submitted', 0)}"
-                        + (f"（等待 QA {passes['awaiting']}）" if passes.get("awaiting") else "")
-                        + (f"（不通过 {passes['failed']}）" if passes.get("failed") else ""))
-        recon = (
-            f'<div class="reason">对账：{" ｜ ".join(bits)}</div>' if bits
-            else ('<div class="reason">对账：声明步骤均有实证</div>' if audit else "")
-        )
-        offbook = (
-            f'<div class="reason">⚠️ 已完成 {len(custom)} 步<span class="dim">不在 12 步流水线内</span>：'
-            f'{escape("、".join(custom))}<br>'
-            f'<span class="dim">这些步骤已计入进度，但它们不是协议声明的 skill，需要确认是否被跳过或替换。</span></div>'
-            if custom
-            else ""
-        )
+        submitted, passed = passes.get("submitted", 0), passes.get("passed", 0)
+
+        # How far the segment really got: passed over submitted. Nine steps
+        # submitted and none passed is not 90% done, and the table must not let
+        # it look that way.
+        if submitted:
+            cls = "ok" if passed == submitted else ("wait" if passed else "wait")
+            qa_cell = f'<span class="vp {cls}">{passed} / {submitted}</span>'
+            if passes.get("awaiting"):
+                qa_cell += f'<div class="note">等待 QA {passes["awaiting"]}</div>'
+            if passes.get("failed"):
+                qa_cell += f'<div class="note bad">不通过 {passes["failed"]}</div>'
+        else:
+            qa_cell = '<span class="vp todo">0 / 0</span>'
+
+        blockers = []
+        if counts_a.get(step_audit.CLAIMED_NO_EVIDENCE):
+            blockers.append(f'{counts_a[step_audit.CLAIMED_NO_EVIDENCE]} 步无实证')
+        if counts_a.get(step_audit.NOT_CLAIMED):
+            blockers.append(f'{counts_a[step_audit.NOT_CLAIMED]} 步未做')
+        if counts_a.get(step_audit.CLAIMED_NO_READ):
+            blockers.append(f'{counts_a[step_audit.CLAIMED_NO_READ]} 步未读协议')
+        if counts_a.get(step_audit.EXTRA):
+            blockers.append(f'{counts_a[step_audit.EXTRA]} 步在协议链外')
+        if passes.get("awaiting"):
+            blockers.append(f'{passes["awaiting"]} 步等待 QA')
+
+        serious = counts_a.get(step_audit.CLAIMED_NO_EVIDENCE) or counts_a.get(step_audit.EXTRA)
+        where = f'<code>{escape(row.get("current_step", "") or "-")}</code>'
+        if row.get("pending_decision"):
+            where += f'<div class="note">{escape(row["pending_decision"])}</div>'
+        if blockers:
+            where += (f'<div class="note{" bad" if serious else ""}">'
+                      + " ｜ ".join(blockers) + "</div>")
         rows.append(
             f"""
       <tr class="{'active' if row['active'] else ''}">
-        <td class="rid">{'▶ ' if row['active'] else ''}<code>{escape(row.get('run_id',''))}</code>
+        <td class="rid">{'▶ ' if row['active'] else ''}<code>{escape(row.get('segment', '') or row.get('run_id',''))}</code>
           {f'<div class="title">{escape(row.get("segment_title",""))}</div>' if row.get("segment_title") else ''}</td>
         <td>{_badge(row.get('status','') or '', row['state_label'])}</td>
-        <td><div class="bar"><i style="width:{row['percent']}%"></i></div><span class="dim">{row['percent']}%</span></td>
-        <td><code class="dim">{escape(row.get('current_step','') or '-')}</code>{decision}{offbook}{recon}</td>
-        <td class="dim">{escape(row.get('last_event_at','') or '-')}</td>
+        <td>{qa_cell}</td>
+        <td>{where}</td>
+        <td class="dim">{escape((row.get('last_event_at','') or '-')[:19])}</td>
       </tr>
-      <tr class="detailrow"><td colspan="5">{detail}</td></tr>"""
+      <tr class="detailrow"><td colspan="5">{expand}</td></tr>"""
         )
 
     stale = (
@@ -820,42 +831,50 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .psrow {{ display:flex; gap:10px; font-size:12.5px; margin-top:4px; }}
   .psrow span {{ color:var(--muted); flex:none; }}
   .problems ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
+  .strip {{ border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:16px;
+            background:var(--card); font-size:13.5px; }}
+  .strip .sep {{ color:var(--muted); }}
+  .strip b {{ font-weight:500; }}
+  .strip b.ok {{ color:#1a7f37; }} .strip b.stale {{ color:#cf222e; }} .strip b.none {{ color:#bf8700; }}
+  .strip .bad {{ color:#cf222e; }} .strip .warn {{ color:#bf8700; }}
+  table td {{ vertical-align:top; }}
+  .vp {{ font-weight:500; white-space:nowrap; }}
+  .vp.ok {{ color:#1a7f37; }} .vp.bad {{ color:#cf222e; }}
+  .vp.warn, .vp.wait {{ color:#bf8700; }} .vp.todo {{ color:var(--muted); }}
+  .note {{ font-size:12px; color:var(--muted); margin-top:2px; }}
+  .note.bad {{ color:#cf222e; }}
+  details.more {{ margin-top:10px; }}
+  details.more summary {{ cursor:pointer; color:var(--muted); font-size:13px; }}
   footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
   code {{ font-family: ui-monospace, Consolas, monospace; }}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>{escape(heading)} 运行总表</h1>
-  <div class="sub">
-    项目 <code>{escape(view['project'])}</code> · 系列 {escape(view['series'] or '-')} · 集 {escape(view['episode'] or '-')}
-  </div>
+  <h1>{escape(heading)} <span class="dim" style="font-size:13px;font-weight:400">运行总表</span></h1>
+  <div class="sub">项目 <code>{escape(view['project'])}</code> · 集 {escape(view['episode'] or '-')}</div>
 
   <div class="toolbar">{toolbar_controls}
     <span class="dim">本次渲染：{escape(view['generated_at'])}</span>
   </div>
 
-  {heartbeat}
-
-  <div class="cards">{cards}</div>
-
-  <div class="now">当前进行到：{active_line}</div>
+  <div class="strip">{strip}</div>
   {stale}
-  {state_card}
-  {token_card}
-  {audit_card}
 
   <table>
-    <thead><tr><th>段 / 运行</th><th>状态</th><th>进度</th><th>当前步骤 / 待决定</th><th>最后事件</th></tr></thead>
+    <thead><tr><th>段</th><th>状态</th><th>QA 通过</th><th>卡在哪</th><th>最后事件</th></tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
 
-  {editor}
+  <details class="more">
+    <summary>展开：段清单录入 / 全局告警</summary>
+    {alert_card}
+    {editor}
+  </details>
 
   <footer>
-    数据来源：<code>{escape(view['data_source'] or 'workflow/run_index.json')}</code> ·
-    索引更新：{escape(view['index_updated_at'] or '-')} · 最新段落事件：{escape(view['newest_event_at'] or '-')}<br>
-    {'实时模式由本地服务提供；真实磁盘状态以 workflow/runs/ 下的段落文件为准。' if live else '刷新方式：重新执行渲染命令（无缓存，始终反映磁盘上的最新状态）。'}
+    <code>{escape(view['data_source'] or 'workflow/run_index.json')}</code> ·
+    索引更新 {escape(view['index_updated_at'] or '-')} · 最新事件 {escape(view['newest_event_at'] or '-')}
   </footer>
 </div>
 <script>
@@ -995,6 +1014,49 @@ def qa_gate_block(summary: dict) -> str:
   </section>"""
 
 
+def _verdict_pill(step_row: dict, qa_row: dict) -> tuple[str, str]:
+    """One word for where a step actually stands. This is the point of the page."""
+    verdict = step_row.get("verdict")
+    if verdict == step_audit.NOT_CLAIMED:
+        return "未做", "todo"
+    if verdict == step_audit.CLAIMED_NO_EVIDENCE:
+        return "无实证", "bad"
+    if verdict == step_audit.CLAIMED_NO_READ:
+        return "未读协议", "warn"
+    if verdict == step_audit.EXTRA:
+        return "链外", "warn"
+    if step_row.get("qa_failed") or qa_row.get("state") == "QA_FAILED":
+        return "QA 不通过", "bad"
+    if step_row.get("qa_passed"):
+        return "通过", "ok"
+    return "等待 QA", "wait"
+
+
+def _unified_step_rows(summary: dict) -> list[dict]:
+    """Merge the reconciliation and the QA verdict into one row per step.
+
+    These were two tables saying overlapping things. A step's story is one line:
+    was it done, by whom, was it proofed, by whom, and does anything back it up.
+    Everything else on the page was noise around that line.
+    """
+    audit_rows = summary.get("audit", {}).get("steps", {}).get("rows") or []
+    qa_rows = {row["step"]: row for row in (summary.get("qa_passes") or {}).get("rows") or []}
+    out = []
+    for row in audit_rows:
+        qa_row = qa_rows.get(row["step"], {})
+        label, cls = _verdict_pill(row, qa_row)
+        note = ""
+        if row.get("missing_reads"):
+            note = "未记录读取：" + "、".join(row["missing_reads"])
+        elif row["verdict"] == step_audit.CLAIMED_NO_EVIDENCE:
+            note = "证据文件不存在"
+        out.append({"step": row["step"], "gate": row.get("gate", ""),
+                    "producer": row.get("actor", ""), "qa_actor": qa_row.get("qa_actor", ""),
+                    "label": label, "cls": cls, "note": note,
+                    "evidence": row.get("evidence", ""), "at": row.get("at", "")})
+    return out
+
+
 def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | None = None,
                 project_meta: dict | None = None, all_runs_link: str = "") -> str:
     """One segment, step by step: what it read, what it produced, where it is.
@@ -1074,10 +1136,43 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     progress_pct = 0 if not summary["progress"]["total"] else round(
         100 * summary["progress"]["completed"] / summary["progress"]["total"]
     )
-    heartbeat = heartbeat_block(meta.get("reporting") or {}, meta.get("newest_event_at", ""))
-    state_card = project_state_block(meta.get("project_state") or {})
-    audit_block = step_audit_block(summary)
-    qa_block = qa_gate_block(summary)
+    unified = _unified_step_rows(summary)
+    declared_total = (summary.get("audit", {}).get("steps", {}) or {}).get("declared_total", 0)
+    offchain = [r["step"] for r in unified if r["label"] == "链外"]
+    offchain_total = len(offchain)
+    total_rows = len(unified)
+    passes = summary.get("qa_passes") or {}
+    hb = meta.get("reporting") or {}
+    hb_level = escape(hb.get("level") or "")
+    strip_bits = [
+        f'已提交 <b>{passes.get("submitted", 0)}</b>',
+        f'QA 通过 <b class="{"ok" if passes.get("passed") else ""}">{passes.get("passed", 0)}</b>',
+        f'等待 QA <b>{passes.get("awaiting", 0)}</b>',
+    ]
+    if passes.get("failed"):
+        strip_bits.append(f'<span class="bad">QA 不通过 <b>{passes["failed"]}</b></span>')
+    if offchain_total:
+        strip_bits.append(f'<span class="warn">链外步骤 <b>{offchain_total}</b></span>')
+    strip_bits.append(f'最后回传 <b class="{hb_level}">{escape(hb.get("label") or "从未回传")}</b>')
+    strip = ' <span class="sep">·</span> '.join(strip_bits)
+
+    rows_html = "".join(
+        f'<tr><td><code>{escape(r["step"])}</code>'
+        + (f'<div class="note">{escape(r["note"])}</div>' if r["note"] else "")
+        + f'</td><td>{escape(r["gate"] or "-")}</td>'
+        + f'<td><code>{escape(r["producer"] or "-")}</code></td>'
+        + f'<td><code>{escape(r["qa_actor"] or "-")}</code></td>'
+        + f'<td><span class="vp {r["cls"]}">{escape(r["label"])}</span></td>'
+        + f'<td class="evidence">{escape(r["evidence"] or "-")}</td></tr>'
+        for r in unified
+    )
+    offchain_note = (
+        '<div class="quiet">链外步骤（协议未声明，已计入进度，需要确认是否替换了协议步骤）：'
+        + "、".join(f"<code>{escape(s)}</code>" for s in offchain) + "</div>"
+        if offchain else ""
+    )
+    status_cls = {"SUBMITTED_FOR_QA": "wait", "BLOCKED": "bad", "FAILED": "bad",
+                  "COMPLETED": "ok", "WAITING_APPROVAL": "warn"}.get(summary["status"], "")
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -1132,6 +1227,26 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .verdict.bad {{ color:#cf222e; }}
   .verdict.warn {{ color:#bf8700; }}
   .pprogress {{ font-size:13.5px; margin:6px 0 10px; }}
+  .strip {{ border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:16px;
+            background:var(--card); font-size:13.5px; }}
+  .strip .sep {{ color:var(--muted); }}
+  .strip b.ok {{ color:#1a7f37; }} .strip b.stale {{ color:#cf222e; }} .strip b.none {{ color:#bf8700; }}
+  .strip .bad {{ color:#cf222e; }} .strip .warn {{ color:#bf8700; }}
+  .pill {{ font-size:12px; font-weight:400; padding:2px 8px; border-radius:999px;
+           border:1px solid var(--line); color:var(--muted); vertical-align:middle; }}
+  .pill.wait, .pill.warn {{ color:#bf8700; border-color:#bf8700; }}
+  .pill.bad {{ color:#cf222e; border-color:#cf222e; }}
+  .pill.ok {{ color:#1a7f37; border-color:#1a7f37; }}
+  table.steps td {{ vertical-align:top; }}
+  .vp {{ font-weight:500; white-space:nowrap; }}
+  .vp.ok {{ color:#1a7f37; }} .vp.bad {{ color:#cf222e; }}
+  .vp.warn, .vp.wait {{ color:#bf8700; }}
+  .vp.todo {{ color:var(--muted); }}
+  .note {{ font-size:12px; color:var(--muted); margin-top:2px; }}
+  .evidence {{ font-size:12px; word-break:break-all; max-width:230px; }}
+  .quiet {{ font-size:12.5px; color:var(--muted); margin:8px 0 16px; }}
+  details.more {{ margin-top:22px; border-top:1px solid var(--line); padding-top:12px; }}
+  details.more summary {{ cursor:pointer; color:var(--muted); font-size:13px; }}
   .verdict .dim {{ font-weight:400; }}
   .problems ul, .pending ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
   .notstarted {{ margin-top:16px; padding:12px 14px; border-radius:10px; background:var(--card);
@@ -1168,42 +1283,36 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 </head>
 <body>
 <div class="wrap">
-  <h1>{escape(segment_title)}</h1>
+  <h1>{escape(segment_title)} <span class="pill {status_cls}">{escape(summary['status'] or '未开始')}</span></h1>
   <div class="sub">
     项目 <code>{escape(meta.get('project') or '-')}</code>
-    · 系列 {escape(meta.get('series') or '-')} · 集 {escape(meta.get('episode') or '-')}
-    · 段 <code>{escape(summary.get('segment') or summary['run_id'])}</code>
+    · 集 {escape(meta.get('episode') or '-')} · 段 <code>{escape(summary.get('segment') or summary['run_id'])}</code>
     · 运行 <code>{escape(summary['run_id'])}</code>
   </div>
 
   {toolbar}
 
-  {heartbeat}
-  {state_card}
-
-  <div class="cards">
-    <div class="card"><div class="k">状态</div><div class="v">{escape(summary['status'] or '-')}</div></div>
-    <div class="card"><div class="k">进度</div><div class="v">{summary['progress']['completed']} / {summary['progress']['total']}</div>
-      <div class="bar"><i style="width:{progress_pct}%"></i></div></div>
-    <div class="card"><div class="k">合规</div><div class="v">{escape(compliance['status'])}</div></div>
-    <div class="card"><div class="k">当前步骤</div><div class="v" style="font-size:14px">{escape(summary['current_step'] or '-')}</div></div>
-  </div>
+  <div class="strip">{strip}</div>
 
   {halt}
   {not_started_block}
 
-  {qa_block}
-  {audit_block}
+  <h2>协议步骤 <span class="dim">协议声明 {declared_total} 项 · 链外 {offchain_total} 项 · 共 {total_rows} 行</span></h2>
+  <table class="steps">
+    <thead><tr><th>步骤</th><th>Gate</th><th>生产模型</th><th>QA 模型</th><th>结论</th><th>证据</th></tr></thead>
+    <tbody>{rows_html}</tbody>
+  </table>
+  {offchain_note}
 
-  <h2>协议读取与执行过程（{len(summary['steps'])} 步）</h2>
-  {''.join(rows)}
-
-  {problem_block}
-  {pending_block}
+  <details class="more">
+    <summary>展开：合规检查 / 尚未执行 / 产出文件</summary>
+    {problem_block}
+    {pending_block}
+  </details>
 
   <footer>
-    {'全部段一览与段清单：<a href="/overview">/overview</a> · ' if live else ''}
-    数据来源：<code>workflow/runs/{escape(summary['run_id'])}.json</code> · 渲染于 {escape(summary['generated_at'])}
+    {'全部段一览：<a href="/overview">/overview</a> · ' if live else ''}
+    <code>workflow/runs/{escape(summary['run_id'])}.json</code> · 渲染于 {escape(summary['generated_at'])}
   </footer>
 </div>
 </body>

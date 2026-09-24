@@ -1,7 +1,8 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "authority": "00_自动化生产唯一入口_v3.0.md（人工确认制 Gate 表）+ 04_QA与文件治理_v3.0.md",
   "principle": "生产者只能提交，不能宣布通过。COMPLETED 的写入权归 QA 模型，且 QA 模型必须与生产者不同。",
+  "producer_models": [],
   "roles": {
     "producer": {
       "may_write": [
@@ -26,20 +27,22 @@
     }
   },
   "gates": {
-    "G0": {"name": "项目接入", "qa_models": []},
-    "G1": {"name": "脚本确认", "qa_models": []},
-    "G2": {"name": "镜头确认", "qa_models": []},
-    "G3": {"name": "资产锁定", "qa_models": []},
-    "G4": {"name": "故事本确认", "qa_models": []},
-    "G5": {"name": "视频 Prompt 确认", "qa_models": []},
-    "G6": {"name": "生成提交", "qa_models": []},
-    "G7": {"name": "审片", "qa_models": []},
-    "G8": {"name": "剪辑发布", "qa_models": []}
+    "G0": {"name": "项目接入", "qa_models": ["glm-flash-5.3"]},
+    "G1": {"name": "脚本确认", "qa_models": ["glm-flash-5.3"]},
+    "G2": {"name": "镜头确认", "qa_models": ["glm-flash-5.3"]},
+    "G3": {"name": "资产锁定", "qa_models": ["glm-flash-5.3"]},
+    "G4": {"name": "故事本确认", "qa_models": ["glm-flash-5.3"]},
+    "G5": {"name": "视频 Prompt 确认", "qa_models": ["glm-flash-5.3"]},
+    "G6": {"name": "生成提交", "qa_models": ["glm-flash-5.3"]},
+    "G7": {"name": "审片", "qa_models": ["glm-flash-5.3"]},
+    "G8": {"name": "剪辑发布", "qa_models": ["glm-flash-5.3"]}
   },
   "notes": [
+    "所有 Gate 的 QA 固定为 glm-flash-5.3（用户 2026-09-25 裁定）。调用 qa_verdict.py 时 --qa-actor 必须写这个字符串，写别的会被 QA_MODEL_NOT_ALLOWED 拒绝。",
+    "producer_models 为空数组 = 不限制生产模型的名字。生产模型必然不可能等于 glm-flash-5.3，所以独立性天然成立。要把生产模型也钉死（例如某个 GPT 版本号），把模型名填进 producer_models 即可，不用改代码。",
     "gates.<G>.qa_models 为空数组 = 允许任何与生产者不同的模型；填了名字 = 只能用这些模型。",
-    "这道表是给你改的：想让某个 Gate 固定由某个模型 QA，把模型名填进去即可，不用改代码。",
     "生产模型如果直接写出 COMPLETED，会被 append_event 拒绝（WRITE_AUTHORITY_VIOLATION）。",
-    "同一个模型既生产又 QA，会被拒绝（SELF_QA_VIOLATION）。"
+    "同一个模型既生产又 QA，会被拒绝（SELF_QA_VIOLATION）。",
+    "这是纯数据文件：改它不需要改代码、不需要重新部署。"
   ]
 }

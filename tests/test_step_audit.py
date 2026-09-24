@@ -184,7 +184,8 @@ def test_append_event_records_the_actor(tmp_path):
     assert state["events"][-1]["actor"] == "gpt-5"
 
 
-def test_the_board_shows_the_reconciliation_table(tmp_path):
+def test_the_board_shows_the_one_table_that_matters(tmp_path):
+    """One row per step: done, by whom, checked, by whom, backed by what."""
     from production_control.run_report import render_html, summarize
 
     root = _project(tmp_path)
@@ -193,9 +194,11 @@ def test_the_board_shows_the_reconciliation_table(tmp_path):
                         "evidence": "workflow/gone.md"}]
     summary = summarize(state, CHAIN, None, root)
     page = render_html(summary)
-    assert "协议步骤对账" in page
-    assert "声称完成但无实证" in page
-    assert "QA 独立性" in page
+    assert "协议步骤" in page
+    assert "无实证" in page          # claimed, nothing behind it
+    assert "QA 模型" in page         # who signed it off is on the same line
+    assert "链外 0 项" in page       # counted in the heading...
+    assert "链外步骤（协议未声明" not in page  # ...and no such row to list
 
 
 def test_a_run_that_invents_its_own_step_names_is_flagged(tmp_path):
