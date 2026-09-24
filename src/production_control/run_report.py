@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from . import gate_token, run_index
+from . import gate_token, run_index, skill_audit
 from .outcomes import OUTCOME_LABELS
 from .run_compliance import STEP_PROTOCOL_REQUIREMENTS, verify_run_compliance
 
@@ -337,6 +337,7 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project_state": project_state,
         "gate_tokens": gate_token.load_tokens(root) if root else [],
+        "skill_audits": skill_audit.load_audits(root) if root else [],
         "idle_minutes": idle_minutes,
         "reporting": reporting_state(idle_minutes, started=counts["running"] + counts["waiting"] + counts["blocked"]),
     }
@@ -454,6 +455,37 @@ def gate_token_block(tokens: list[dict]) -> str:
   </section>"""
 
 
+def skill_audit_block(audits: list[dict]) -> str:
+    """Did the prompt actually go through a Skill, or was it just written?
+
+    EP03 shipped a batch of prompts nobody had audited. This block is here so
+    that is visible before generate is clicked, not discovered afterwards.
+    """
+    if not audits:
+        return ""
+    rows = []
+    for item in audits:
+        ok = item.get("ok")
+        rows.append(
+            f"<tr><td><code>{escape(str(item.get('unit_id') or '-'))}</code></td>"
+            f"<td>{'✅ SKILL_GATE_PASS' if ok else '❌ ' + escape(str(item.get('overall','')))}</td>"
+            f"<td>{item.get('skill_count', 0)}</td>"
+            f"<td><code>{escape(str(item.get('prompt_version') or '-'))}</code></td>"
+            f"<td class='dim'>{escape('；'.join(item.get('errors', []))[:160])}</td></tr>"
+        )
+    return f"""
+  <section class="pstate">
+    <h2>G5.1 模型 Skill 审计（workflow/skill_audits/）</h2>
+    <div class="sub">未跑（<code>NOT_RUN</code>）、不确定（<code>UNCERTAIN</code>）、
+      无证据的 PASS —— 一律按阻断处理，<strong>不允许先建节点再补 Skill</strong>。
+      Prompt 改一句就要递增版本并重新审计。</div>
+    <table>
+      <thead><tr><th>单元</th><th>判定</th><th>skill 项数</th><th>Prompt 版本</th><th>问题</th></tr></thead>
+      <tbody>{''.join(rows)}</tbody>
+    </table>
+  </section>"""
+
+
 def render_project_html(view: dict, *, live: bool = False) -> str:
     """Episode-wide page: every segment on one screen, expandable to per-step detail.
 
@@ -491,6 +523,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     heartbeat = heartbeat_block(reporting, view.get("newest_event_at", ""))
     state_card = project_state_block(view.get("project_state") or {})
     token_card = gate_token_block(view.get("gate_tokens") or [])
+    audit_card = skill_audit_block(view.get("skill_audits") or [])
     heading = " · ".join(x for x in (view["series"], view["episode"]) if x) or view["project"]
     # A static export has no backend: any control that navigates or reloads would
     # fail (and look like a broken app). Only the live server gets real controls.
@@ -727,6 +760,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   {stale}
   {state_card}
   {token_card}
+  {audit_card}
 
   <table>
     <thead><tr><th>段 / 运行</th><th>状态</th><th>进度</th><th>当前步骤 / 待决定</th><th>最后事件</th></tr></thead>
