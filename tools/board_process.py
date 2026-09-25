@@ -146,6 +146,46 @@ def python_processes() -> dict[int, str]:
     return {}
 
 
+def _parent_process_id(pid: int) -> int | None:
+    """Return a process parent, when Windows exposes it.
+
+    The launcher can itself be started through cmd.exe, a shortcut host, or a
+    test runner.  A command-line substring is not enough to distinguish an old
+    launcher from the process tree that is currently starting this launcher.
+    """
+    if os.name != "nt":
+        return None
+    for shell in ("powershell.exe", "pwsh.exe"):
+        try:
+            out = subprocess.run(
+                [shell, "-NoProfile", "-NonInteractive", "-Command",
+                 f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").ParentProcessId"],
+                capture_output=True, text=True, timeout=20,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                return int(out.stdout.strip().splitlines()[-1])
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+    return None
+
+
+def _protected_processes(start_pid: int | None = None) -> set[int]:
+    """PIDs in the current process ancestry that must never be killed."""
+    current = start_pid or os.getpid()
+    protected: set[int] = set()
+    while current and current not in protected:
+        protected.add(current)
+        current = _parent_process_id(current) or 0
+    return protected
+
+
+def _is_stale_launcher(pid: int, command: str, *, protected: set[int] | None = None) -> bool:
+    """Whether a process is an old launcher, not the current launch chain."""
+    if pid in (protected or _protected_processes()):
+        return False
+    return "open_board.py" in command.lower()
+
+
 def stop_stale_launchers() -> str:
     """Kill other launcher processes so this launch is the only one.
 
@@ -157,12 +197,11 @@ def stop_stale_launchers() -> str:
     """
     if os.name != "nt":
         return ""
-    me = os.getpid()
+    protected = _protected_processes()
     stopped: list[str] = []
     for pid, command in python_processes().items():
-        if pid == me:
-            continue
-        if any(marker in command for marker in LAUNCHER_MARKERS):
+        if _is_stale_launcher(pid, command, protected=protected) and any(
+                marker in command for marker in LAUNCHER_MARKERS):
             try:
                 subprocess.run(["taskkill", "/PID", str(pid), "/F"],
                                capture_output=True, text=True, timeout=15)

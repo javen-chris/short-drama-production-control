@@ -278,6 +278,20 @@
       "mode": "post_generation"
     }
   ],
+  "gate_checks": [
+    {"id":"C31","gate":"G3","name_zh":"身份参考返工复核","kind":"rework","activity_names":["g3-reference-rework"],"protocol_refs":["03_资产与连续性规则_v3.0.md"]},
+    {"id":"C51","gate":"G5","name_zh":"G5.1 模型 Skill 与 Prompt 版本审计","kind":"required","activity_names":["seedance-skill-audit"],"protocol_refs":["21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"]},
+    {"id":"C52","gate":"G5","name_zh":"当前 Prompt 返工与重新 QA","kind":"rework","activity_names":["g2-g5-main-prompt-rebuild"],"protocol_refs":["12_真人短剧Prompt与故事本弹性标准_v3.0.md"]},
+    {"id":"C53","gate":"G5","name_zh":"独立 QA 调度","kind":"exception","activity_names":["independent-qa-dispatch-retry","independent-qa-dispatch-retry-2","independent-qa-dispatch-retry-3","independent-qa-route-fix"],"protocol_refs":["04_QA与文件治理_v3.0.md"]},
+    {"id":"C61","gate":"G6","name_zh":"本地参考资产与哈希","kind":"required","activity_names":["g6-reference-integrity"],"protocol_refs":["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
+    {"id":"C62","gate":"G6","name_zh":"目标项目与会话锁定","kind":"required","activity_names":["g6-target-project-lock"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C63","gate":"G6","name_zh":"旧节点隔离与版本核对","kind":"required","activity_names":["g6-stale-node-readback"],"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"]},
+    {"id":"C64","gate":"G6","name_zh":"模型参数与参考预检","kind":"required","activity_names":["g6-seedance25-preflight"],"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C65","gate":"G6","name_zh":"平台参考节点绑定与回读","kind":"required","activity_names":["g6-reference-nodes","g6-node-media-binding-repair"],"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C66","gate":"G6","name_zh":"平台素材合规回写","kind":"required","activity_names":["g6-preflight-11refs","g6-compliance-resourceid-diagnosis"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C67","gate":"G6","name_zh":"当前视频节点配置回读","kind":"required","activity_names":["g6-video-node-build-readback"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C68","gate":"G6","name_zh":"主片生产范围修订","kind":"change","activity_names":["g6-main-unit-only-correction"],"protocol_refs":["19_视频提交前确认报告与授权范围规则_v3.0.md"]}
+  ],
   "markers": [
     {
       "id": "M01",

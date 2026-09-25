@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from production_control import orchestrator, step_audit
-from production_control.progress import append_event
+from production_control.progress import append_event as _append_event
 
 CHAIN = {"steps": [
     {"skill": "short-drama-production-router", "after": []},
@@ -22,6 +22,12 @@ CHAIN = {"steps": [
     {"skill": "short-drama-production-qa", "after": ["short-drama-prompt-compiler"],
      "mode": "pre_generation"},
 ]}
+
+
+def append_event(*args, **kwargs):
+    """Test helper: all trace writes are relayed by the authorized GLM writer."""
+    kwargs.setdefault("writer_model", "glm-5.3-flash")
+    return _append_event(*args, **kwargs)
 
 
 def _project(tmp_path: Path, chain: dict | None = None) -> Path:

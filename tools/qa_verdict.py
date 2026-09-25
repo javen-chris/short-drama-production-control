@@ -101,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             protocol_refs=args.protocol, evidence=args.evidence,
             outcome=VERDICTS[args.verdict], reason=args.reason,
             actor=args.qa_actor, role="qa", gate=args.gate,
+            writer_model=args.qa_actor,
             allow_missing_evidence=not args.evidence,
         )
     except UnknownStepError as exc:

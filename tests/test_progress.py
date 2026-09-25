@@ -6,13 +6,19 @@ from pathlib import Path
 import pytest
 
 from production_control import orchestrator, run_index
-from production_control.progress import MissingEvidenceError, UnknownStepError, append_event
+from production_control.progress import MissingEvidenceError, UnknownStepError, append_event as _append_event
 
 CHAIN = {"steps": [
     {"skill": "short-drama-production-router", "after": []},
     {"skill": "short-drama-image-generator", "after": ["short-drama-production-router"]},
     {"skill": "short-drama-production-qa", "after": ["short-drama-image-generator"]},
 ]}
+
+
+def append_event(*args, **kwargs):
+    """Test helper: simulate GLM relaying every trace write."""
+    kwargs.setdefault("writer_model", "glm-5.3-flash")
+    return _append_event(*args, **kwargs)
 
 
 def _project(tmp_path: Path) -> Path:
@@ -73,6 +79,7 @@ def test_a_producer_may_submit_but_never_declare_a_step_done(tmp_path):
     assert event["at"]
     assert event["outcome"] == "SUBMITTED_FOR_QA"
     assert event["role"] == "producer"
+    assert event["writer_model"] == "glm-5.3-flash"
 
     with pytest.raises(PermissionError, match="WRITE_AUTHORITY_VIOLATION"):
         append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router",
@@ -90,6 +97,14 @@ def test_the_qa_model_is_what_advances_the_segment(tmp_path):
     assert state["completed_steps"] == ["short-drama-production-router"]
     assert state["current_step"] == "short-drama-image-generator"
     assert state["status"] == "RUNNING"
+
+
+def test_non_glm_cannot_write_the_board_trace(tmp_path):
+    root = _project(tmp_path)
+    with pytest.raises(PermissionError, match="WRITER_MODEL_NOT_ALLOWED"):
+        _append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router",
+                      actor="gpt-5", writer_model="gpt-5",
+                      allow_missing_evidence=True)
 
 
 def test_one_call_records_a_step_and_advances_the_trace(tmp_path):
@@ -205,7 +220,7 @@ def test_the_cli_records_a_step(tmp_path):
         [sys.executable, str(tools), str(root), "--run", "RUN-EP02-N3-A2",
          "--step", "short-drama-production-router",
          "--protocol", "00_自动化生产唯一入口_v3.0.md",
-         "--evidence", "workflow/G0.md"],
+         "--evidence", "workflow/G0.md", "--writer-model", "glm-5.3-flash"],
         capture_output=True, text=True, encoding="utf-8",
     )
     assert result.returncode == 0, result.stderr
@@ -260,7 +275,7 @@ def test_the_cli_accepts_a_submitted_outcome(tmp_path):
     result = subprocess.run(
         [sys.executable, str(tools), str(root), "--run", "RUN-EP02-N3-A2",
          "--step", "short-drama-prompt-compiler", "--evidence", "workflow/rep.md",
-         "--outcome", "SUBMITTED_IN_PROGRESS"],
+         "--outcome", "SUBMITTED_IN_PROGRESS", "--writer-model", "glm-5.3-flash"],
         capture_output=True, text=True, encoding="utf-8",
     )
     assert result.returncode == 0, result.stderr

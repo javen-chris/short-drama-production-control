@@ -45,6 +45,12 @@ Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及�
 
 The complete order is machine-checked from `skills/skill-chain.json`; CI must fail when a declared Skill is missing or a dependency appears after its consumer.
 
+## Gate checks and task knowledge (2026-09-25)
+
+The same registry now contains `gate_checks` for auxiliary work. These checks explain the 18 historical EP03/A1 activity names without adding them to the Skill chain: 17 map to Gate checks; `protocol-attestation` remains marker M02. G5.1 Skill audit is a required G5 check under protocol 21. G6 pre-submit checks follow protocols 19 and 20. A check's BLOCKED result can warn on a Gate card, but a submitted check cannot certify a formal step or independent QA PASS.
+
+The implementation and later knowledge-base phases are specified in [任务知识库实施策略.md](任务知识库实施策略.md).
+
 ## Boundary
 
 Passing validation does not mean a video has been generated and does not grant paid submission. It only means that an adapter may be considered after the relevant authority document and user authorization have been checked.

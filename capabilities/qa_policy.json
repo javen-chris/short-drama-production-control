@@ -3,6 +3,7 @@
   "authority": "00_自动化生产唯一入口_v3.0.md（人工确认制 Gate 表）+ 04_QA与文件治理_v3.0.md",
   "principle": "生产者只能提交，不能宣布通过。COMPLETED 的写入权归 QA 模型，且 QA 模型必须与生产者不同。",
   "producer_models": [],
+  "writer_models": ["glm-5.3-flash"],
   "roles": {
     "producer": {
       "may_write": [
@@ -39,6 +40,7 @@
   },
   "notes": [
     "所有 Gate 的 QA 固定为 glm-5.3-flash（用户 2026-09-25 裁定）。官方产品名是 GLM-5.3 Flash；智谱 API 的模型编码惯例是小写连字符（glm-4-flash / glm-4.5-flash），故写作 glm-5.3-flash。调用 qa_verdict.py 时 --qa-actor 必须写这个字符串，写别的会被 QA_MODEL_NOT_ALLOWED 拒绝。",
+    "只有 writer_models 中的模型可以写看板轨迹；actor_model 仍记录实际生产或 QA 模型。生产模型必须通过 --writer-model 明确由 GLM 代写提交审计，不能自行写入。",
     "producer_models 为空数组 = 不限制生产模型的名字。生产模型必然不可能等于 glm-5.3-flash，所以独立性天然成立。要把生产模型也钉死（例如某个 GPT 版本号），把模型名填进 producer_models 即可，不用改代码。",
     "gates.<G>.qa_models 为空数组 = 允许任何与生产者不同的模型；填了名字 = 只能用这些模型。",
     "生产模型如果直接写出 COMPLETED，会被 append_event 拒绝（WRITE_AUTHORITY_VIOLATION）。",

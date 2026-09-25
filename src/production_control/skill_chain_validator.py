@@ -68,6 +68,22 @@ def validate_chain(path: Path = SKILLS / "skill-chain.json") -> list[str]:
             if dependency not in available:
                 errors.append(f"{name}: missing after_any Skill: {dependency}")
 
+    check_ids: set[str] = set()
+    activity_owner: dict[str, str] = {}
+    for check in data.get("gate_checks", []) or []:
+        check_id = check.get("id", "")
+        if not check_id or check_id in check_ids:
+            errors.append(f"duplicate or missing Gate check id: {check_id}")
+        check_ids.add(check_id)
+        if check.get("gate") not in {"G1", "G2", "G3", "G4", "G5", "G6"}:
+            errors.append(f"{check_id}: invalid Gate")
+        if check.get("kind") not in {"required", "rework", "exception", "change"}:
+            errors.append(f"{check_id}: invalid kind")
+        for activity in check.get("activity_names", []) or []:
+            if activity in activity_owner:
+                errors.append(f"{activity}: duplicate activity mapping in {activity_owner[activity]} and {check_id}")
+            activity_owner[activity] = check_id
+
     missing_gates = [g for g in REQUIRED_GATES if g not in gates]
     errors.extend(f"no step declares Gate {g}" for g in missing_gates)
     if "pre_generation" not in modes and "post_generation" not in modes:

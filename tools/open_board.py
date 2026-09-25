@@ -69,7 +69,7 @@ def port_is_live(port: int) -> bool:
         return probe.connect_ex(("127.0.0.1", port)) == 0
 
 
-def wait_for_port(timeout: float = 20.0) -> int | None:
+def wait_for_port(timeout: float = 20.0, proc: subprocess.Popen | None = None) -> int | None:
     """The first port in range that is actually serving, or None.
 
     The launcher must report the URL that works, not the URL it asked for. The
@@ -78,6 +78,8 @@ def wait_for_port(timeout: float = 20.0) -> int | None:
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return None
         for candidate in range(PORT, PORT + PORT_SPAN):
             if port_is_live(candidate):
                 return candidate
@@ -95,10 +97,14 @@ def run_once(project: Path) -> int:
          "--serve", "--port", str(PORT), "--no-open"]
     )
     try:
-        live = wait_for_port()
+        live = wait_for_port(proc=proc)
         if live is None:
             print()
-            print("  [!] 看板在 20 秒内没有起来。")
+            if proc.poll() is not None:
+                print(f"  [!] 看板启动进程已退出（代码 {proc.returncode}）。")
+                print("      请把本窗口中 renderer 的错误信息一并检查。")
+            else:
+                print("  [!] 看板在 20 秒内没有起来。")
             print("      如果你刚改过代码，先看上面的报错信息；")
             print("      也可以把这段黑窗口的内容发出来。")
         else:

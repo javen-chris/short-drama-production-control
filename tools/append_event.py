@@ -58,7 +58,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--evidence", default="", help="证据文件路径（相对项目根）")
     parser.add_argument("--outcome", default="SUBMITTED_FOR_QA", choices=list(OUTCOMES),
                         help="这一步的结果；默认 SUBMITTED_FOR_QA（生产者只能提交待审，不能写 COMPLETED）")
-    parser.add_argument("--actor", default="", help="执行这一步的模型标识，例如 gpt-5")
+    parser.add_argument("--actor", default="", help="实际执行这一步的模型标识，例如 gpt-5")
+    parser.add_argument("--writer-model", default="", help="实际写入看板的模型；当前必须是 glm-5.3-flash")
     parser.add_argument("--gate", default="", help="这一步所属的 Gate，例如 G5")
     parser.add_argument("--reason", default="", help="暂停/异常的原因")
     parser.add_argument("--validator", default="", help="使用的校验器")
@@ -92,7 +93,8 @@ def main(argv: list[str] | None = None) -> int:
             skill_id=args.skill or args.step, protocol_refs=args.protocol,
             evidence=args.evidence, outcome=args.outcome, reason=args.reason,
             validator=args.validator, allow_missing_evidence=args.allow_missing_evidence,
-            actor=args.actor, role="producer", gate=args.gate,
+            actor=args.actor, role="producer", writer_model=args.writer_model,
+            gate=args.gate,
             off_protocol=args.off_protocol,
         )
     except UnknownStepError as exc:

@@ -20,6 +20,7 @@ from html import escape
 from pathlib import Path
 
 from . import (
+    gate_checks,
     gate_map,
     gate_token,
     run_compliance,
@@ -977,6 +978,105 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
 """
 
 
+def gate_flow_block(summary: dict) -> str:
+    """Render the user-facing G1-G6 path without duplicating audit tables."""
+    gate_purposes = {
+        "G1": "把确认剧本拆成可执行镜头与节拍",
+        "G2": "锁定空间、动作和镜头连续性",
+        "G3": "准备角色、场景与关键图像资产",
+        "G4": "确认故事本、首尾状态与关键画面",
+        "G5": "编译视频 Prompt，并完成生成前 QA",
+        "G6": "选择一个平台，提交并启动视频生成",
+    }
+    audit_rows = ((summary.get("audit") or {}).get("steps") or {}).get("rows") or []
+    check_rows, _ = gate_checks.classify(audit_rows)
+    audit_by_step = {row.get("step"): row for row in audit_rows if row.get("step")}
+    qa_rows = {row.get("step"): row for row in (summary.get("qa_passes") or {}).get("rows", [])
+               if row.get("step")}
+    step_rows = {row.get("step"): row for row in summary.get("steps", []) if row.get("step")}
+    gate_order = ("G1", "G2", "G3", "G4", "G5", "G6")
+    cards: list[str] = []
+
+    for gate in gate_order:
+        skills: list[str] = []
+        for step in step_registry.declared():
+            modes = next((row.get("modes") for row in audit_rows if row.get("step") == step.skill), None)
+            if gate in gate_map.gates_for(step.skill, modes):
+                skills.append(step.skill)
+
+        statuses: list[str] = []
+        labels: list[str] = []
+        for skill in skills:
+            item = step_rows.get(skill, {})
+            qa = qa_rows.get(skill, {})
+            audit = audit_by_step.get(skill, {})
+            state = qa.get("state", "")
+            outcome = item.get("outcome") or audit.get("outcome") or ""
+            if state == "QA_PASSED":
+                status, label = "ok", "已通过"
+            elif state == "QA_FAILED" or outcome in {"FAILED", "BLOCKED", "PAUSED_EXCEPTION"}:
+                status, label = "bad", "有风险"
+            elif state == "AWAITING_QA" or outcome in {
+                    "SUBMITTED_FOR_QA", "SUBMITTED_IN_PROGRESS", "WAITING_APPROVAL"}:
+                status, label = "wait", "等待 QA"
+            elif audit.get("claimed") or item.get("started"):
+                status, label = "warn", "处理中"
+            else:
+                status, label = "todo", "未开始"
+            statuses.append(status)
+            labels.append(gate_map.skill_label(skill))
+
+        if "bad" in statuses:
+            card_status, card_label = "bad", "有风险"
+        elif statuses and all(s == "ok" for s in statuses):
+            card_status, card_label = "ok", "已通过"
+        elif "wait" in statuses:
+            card_status, card_label = "wait", "等待 QA"
+        elif "warn" in statuses:
+            card_status, card_label = "warn", "处理中"
+        else:
+            card_status, card_label = "todo", "未开始"
+
+        gate_checks_here = [row for row in check_rows if row["gate"] == gate]
+        active_checks = [row for row in gate_checks_here if row["latest"]]
+        blockers = [row for row in active_checks if row["status"] == "bad"]
+        if blockers:
+            card_status, card_label = "bad", "有阻断"
+        elif card_status == "ok" and any(row["kind"] == "required" and
+                                           row["status"] != "ok" for row in gate_checks_here):
+            card_status, card_label = "warn", "门禁待核验"
+
+        if gate == "G6" and labels:
+            labels = [f"{label}（三选一）" if gate_map.is_alternative(skill) else label
+                      for label, skill in zip(labels, skills)]
+        items = "、".join(labels) if labels else "协议未声明步骤"
+        check_items = "".join(
+            f'<li class="check-{row["status"]}"><span>{escape(row["name"])}'
+            f'{"<small>" + escape(row["latest"].get("reason", "")) + "</small>" if row["latest"] and row["latest"].get("reason") and row["status"] in {"bad", "warn"} else ""}'
+            f'</span>'
+            f'<b>{escape(row["label"])}</b></li>'
+            for row in gate_checks_here
+        )
+        check_summary = (
+            f'<details class="gatechecks" data-persist-key="checks-{gate}">'
+            f'<summary>查看关键检查 · {len(active_checks)} 项有记录'
+            f'{" · " + str(len(blockers)) + " 项阻断" if blockers else ""}</summary>'
+            f'<ul>{check_items}</ul></details>'
+        ) if gate_checks_here else ""
+        cards.append(
+            f'<section class="gatecard {card_status}" data-gate="{gate}">'
+            f'<div class="gatehead"><span class="gateid">{gate}</span>'
+            f'<span class="gatestatus">{card_label}</span></div>'
+            f'<div class="gatename">{escape(gate_map.GATE_NAMES.get(gate, gate))}</div>'
+            f'<div class="gatepurpose">{escape(gate_purposes[gate])}</div>'
+            f'{check_summary}'
+            f'<details class="gateitems" data-persist-key="gate-{gate}">'
+            f'<summary>查看本 Gate 步骤</summary>{escape(items)}</details>'
+            f'</section>'
+        )
+    return f'<section class="gateflow" aria-label="G1 到 G6 主流程">{"".join(cards)}</section>'
+
+
 def step_audit_block(summary: dict) -> str:
     """The reconciliation table: what was claimed against what can be proven.
 
@@ -1340,6 +1440,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 """
     )
 
+    gate_flow = gate_flow_block(summary)
     rows = _steps_html(summary)
     compliance = summary["compliance"]
     problems = "".join(f"<li>{escape(e)}</li>" for e in compliance.get("errors", []))
@@ -1375,6 +1476,11 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     declared_total = (summary.get("audit", {}).get("steps", {}) or {}).get("declared_total", 0)
     offchain = [r["step"] for r in unified if r["label"] == "链外"]
     offchain_total = len(offchain)
+    _, handled_activity = gate_checks.classify(
+        ((summary.get("audit") or {}).get("steps") or {}).get("rows") or []
+    )
+    marker_names = {row.skill for row in step_registry.load() if row.marker}
+    unknown_activity = set(offchain) - handled_activity - marker_names
     total_rows = len(unified)
     passes = summary.get("qa_passes") or {}
     hb = meta.get("reporting") or {}
@@ -1388,7 +1494,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     if passes.get("failed"):
         strip_bits.append(f'<span class="bad">QA 不通过 <b>{passes["failed"]}</b></span>')
     if offchain_total:
-        strip_bits.append(f'<span class="warn">链外步骤 <b>{offchain_total}</b></span>')
+        strip_bits.append(f'<span class="warn">辅助活动 <b>{offchain_total}</b>'
+                          f'{" · 待归类 " + str(len(unknown_activity)) if unknown_activity else ""}</span>')
     strip_bits.append(f'最后回传 <b class="{hb_level}">{escape(hb.get("label") or "从未回传")}</b>')
     strip = ' <span class="sep">·</span> '.join(strip_bits)
 
@@ -1412,23 +1519,19 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         names = "".join(f"<li><code>{escape(s)}</code></li>" for s in shown)
         if len(offchain) > len(shown):
             names += f"<li>…另有 {len(offchain) - len(shown)} 个</li>"
-        # Example ids come from the registry, so this hint cannot go stale.
-        examples = "／".join(
-            f"<code>{escape(s.id)}</code>" for s in step_registry.declared()
-            if s.gate and "G6" in s.gate
-        ) or "<code>S10</code>"
         extra_html = (
             f'<details class="offchain">'
-            f'<summary>⚠ 链外活动 {len(extra_rows)} 条 —— '
-            f'不在协议链内，不计入上面的进度</summary>'
-            f'<div class="osbody">这些事件<strong>已经写进轨迹了</strong>（不是没上报），'
-            f'但它们的步骤名不是协议登记的步骤，看板无法把它们归到任何 G 步骤上，'
-            f'只能单独列在这里。这就是「Agent 一直在干活、看板却不动」的原因。</div>'
+            f'<summary>辅助活动原始记录 {len(extra_rows)} 条 · '
+            f'已归类 {len(set(offchain) & handled_activity)} · '
+            f'标记 {len(set(offchain) & marker_names)} · '
+            f'待归类 {len(unknown_activity)}</summary>'
+            f'<div class="osbody">已归类活动显示在所属 Gate 的门禁中；'
+            f'原始事件在此保留供审计。辅助活动不会直接增加正式步骤进度，'
+            f'通过仍需对应的独立 QA 与证据。</div>'
             f'<ol>{names}</ol>'
-            f'<div class="osfix">怎么修：让 Agent 写轨迹时 <code>--step</code> 用稳定 ID'
-            f'（<code>S01</code>–<code>S13</code>，例如 G6 提交用 {examples}）。'
-            f'大小写、连字符、别名、甚至拼错一两个字母都会自动归位；'
-            f'只有协议里根本没有的名字会被拒绝写入。完整清单见 '
+            f'<div class="osfix">正式生产步骤使用注册表中的稳定 ID；'
+            f'诊断、返工和平台子动作使用 <code>--off-protocol</code> 留痕。'
+            f'子动作的完成不能替代正式步骤和独立 QA。完整清单见 '
             f'<code>看板上报提示词.md</code>。</div>'
             f'<div class="rows">'
             + "".join(_step_row_html(r) for r in extra_rows)
@@ -1454,7 +1557,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   * {{ box-sizing: border-box; }}
   body {{ margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
          font:15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }}
-  .wrap {{ max-width:900px; margin:0 auto; }}
+  .wrap {{ width:min(1220px, calc(100vw - 56px)); margin:0 auto; }}
   h1 {{ font-size:20px; margin:0 0 4px; }}
   h2 {{ font-size:15px; margin:0 0 10px; }}
   h3 {{ font-size:15px; margin:0; }}
@@ -1517,6 +1620,42 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .fbtn:hover {{ border-color:var(--fg); color:var(--fg); }}
   .fbtn.on {{ background:var(--fg); border-color:var(--fg); color:var(--bg); font-weight:600; }}
 
+  .gateflow {{ display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:12px;
+               margin:0 0 22px; }}
+  .gatecard {{ min-width:0; border:1px solid var(--line); border-top:3px solid var(--gate,#6e7781);
+               border-radius:10px; padding:14px 14px 12px; background:var(--card); min-height:174px; }}
+  .gatecard.ok {{ --gate:#1a7f37; }} .gatecard.wait {{ --gate:#0969da; }}
+  .gatecard.warn {{ --gate:#bf8700; }} .gatecard.bad {{ --gate:#cf222e; }}
+  .gatecard.todo {{ --gate:#6e7781; }}
+  .gatecard:has(.gatechecks[open]) {{ grid-column:span 3; }}
+  .gatecard[data-gate="G6"]:has(.gatechecks[open]) {{ grid-column:1 / -1; }}
+  .gatecard[data-gate="G6"] .gatechecks[open] ul {{ display:grid;
+                                  grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 20px; }}
+  .gatehead {{ display:flex; justify-content:space-between; gap:6px; align-items:baseline; }}
+  .gateid {{ font-size:14px; font-weight:700; color:var(--gate); }}
+  .gatestatus {{ font-size:13px; color:var(--gate); white-space:nowrap; }}
+  .gatename {{ font-size:16px; font-weight:700; margin-top:6px; }}
+  .gatepurpose {{ color:var(--fg); font-size:13.5px; line-height:1.55; margin-top:9px; min-height:43px; }}
+  .gatechecks {{ margin-top:11px; font-size:13px; line-height:1.5; }}
+  .gatechecks summary {{ cursor:pointer; color:var(--gate); }}
+  .gatechecks ul {{ list-style:none; margin:8px 0 0; padding:0; }}
+  .gatechecks li {{ display:flex; justify-content:space-between; gap:8px; padding:5px 0;
+                    border-top:1px solid var(--line); }}
+  .gatechecks li b {{ flex:none; font-weight:600; }}
+  .gatechecks li small {{ display:block; color:var(--muted); font-size:12px;
+                          line-height:1.45; margin-top:3px; }}
+  .gatechecks .check-bad b {{ color:#cf222e; }}
+  .gatechecks .check-wait b, .gatechecks .check-warn b {{ color:#bf8700; }}
+  .gatechecks .check-todo b {{ color:var(--muted); }}
+  .gateitems {{ color:var(--muted); font-size:13px; line-height:1.55; margin-top:12px; }}
+  .gateitems summary {{ cursor:pointer; color:var(--muted); }}
+  @media (max-width:980px) {{ .gateflow {{ grid-template-columns:repeat(3, minmax(0, 1fr)); }} }}
+  @media (max-width:650px) {{ .wrap {{ width:calc(100vw - 28px); }} .gateflow {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }}
+                           .gatecard:has(.gatechecks[open]) {{ grid-column:span 2; }}
+                           .gatecard[data-gate="G6"] .gatechecks[open] ul {{ display:block; }} }}
+  details.auditfold {{ margin-top:4px; border-top:1px solid var(--line); }}
+  details.auditfold > summary {{ cursor:pointer; padding:14px 2px; color:var(--muted); font-size:14px; }}
+
   /* One row per step, one line tall. The verdict is the summary; the evidence is
      inside the row, on request. Everything used to be printed at once, which made
      twelve rows about eighty lines and buried the only question that matters. */
@@ -1535,7 +1674,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .g {{ flex:0 0 68px; font-weight:700; font-size:12.5px; letter-spacing:.3px;
         color:var(--muted); }}
   .g.off {{ color:#bf8700; font-weight:600; }}
-  .nm {{ flex:1 1 auto; font-size:14.5px; font-weight:500; }}
+  .nm {{ flex:1 1 auto; font-size:15px; font-weight:500; }}
   .tag {{ margin-left:7px; font-size:10.5px; font-weight:400; color:var(--muted);
           border:1px dashed var(--line); border-radius:999px; padding:1px 6px; }}
   .sid {{ margin-left:7px; font-size:11.5px; color:#1a7f37; }}
@@ -1616,20 +1755,25 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   {halt}
   {not_started_block}
 
-  <div class="tablehead">
-    <h2>协议步骤 <span class="dim">{declared_total} 步</span></h2>
-    <div class="filters" role="group" aria-label="按结论过滤">
-      <button type="button" class="fbtn on" data-filter="all">全部</button>
-      <button type="button" class="fbtn" data-filter="open">待办</button>
-      <button type="button" class="fbtn" data-filter="ok">已通过</button>
-      <button type="button" class="fbtn" data-filter="bad">有风险</button>
+  {gate_flow}
+
+  <details class="auditfold" data-persist-key="audit">
+    <summary>展开协议明细 · {declared_total} 步（证据与合规细节）</summary>
+    <div class="tablehead">
+      <h2>协议步骤 <span class="dim">{declared_total} 步</span></h2>
+      <div class="filters" role="group" aria-label="按结论过滤">
+        <button type="button" class="fbtn on" data-filter="all">全部</button>
+        <button type="button" class="fbtn" data-filter="open">待办</button>
+        <button type="button" class="fbtn" data-filter="ok">已通过</button>
+        <button type="button" class="fbtn" data-filter="bad">有风险</button>
+      </div>
     </div>
-  </div>
-  <div class="rows" id="steps">{rows_html}</div>
-  <div class="empty" id="empty" hidden>当前筛选下没有步骤。</div>
+    <div class="rows" id="steps">{rows_html}</div>
+    <div class="empty" id="empty" hidden>当前筛选下没有步骤。</div>
+  </details>
   {extra_html}
 
-  <details class="more">
+  <details class="more" data-persist-key="more">
     <summary>展开：合规检查 / 尚未执行 / 产出文件</summary>
     {problem_block}
     {pending_block}
@@ -1638,8 +1782,21 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   <footer>
     {'全部段一览：<a href="/overview">/overview</a> · ' if live else ''}
     <code>workflow/runs/{escape(summary['run_id'])}.json</code> · 渲染于 {escape(summary['generated_at'])}
-  </footer>
+</footer>
 </div>
+<script>
+  // Auto-refresh must not erase the reader's open panels.
+  (function () {{
+    var prefix = 'short-drama-board:' + location.pathname + ':';
+    document.querySelectorAll('details[data-persist-key]').forEach(function (el) {{
+      var key = prefix + el.dataset.persistKey;
+      try {{ el.open = sessionStorage.getItem(key) === '1'; }} catch (e) {{}}
+      el.addEventListener('toggle', function () {{
+        try {{ sessionStorage.setItem(key, el.open ? '1' : '0'); }} catch (e) {{}}
+      }});
+    }});
+  }}());
+</script>
 </body>
 </html>
 """

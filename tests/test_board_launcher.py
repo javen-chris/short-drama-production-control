@@ -18,6 +18,7 @@ import re
 from pathlib import Path
 
 import pytest
+from tools import board_process
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
@@ -97,3 +98,16 @@ def test_nothing_references_a_launcher_that_is_not_on_disk():
             if not (TOOLS / name).is_file() and not (ROOT / name).is_file():
                 missing.append(f"{path.relative_to(ROOT)} → {name}")
     assert not missing, "references to launchers that do not exist:\n  " + "\n  ".join(missing)
+
+
+def test_current_launcher_process_tree_is_never_classified_as_stale():
+    protected = {100, 101}
+    assert not board_process._is_stale_launcher(
+        101, "python tools/open_board.py", protected=protected
+    )
+
+
+def test_unrelated_python_process_is_not_a_stale_launcher():
+    assert not board_process._is_stale_launcher(
+        200, "python tools/render_run_report.py", protected={100}
+    )

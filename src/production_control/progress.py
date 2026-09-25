@@ -125,6 +125,7 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
                  outcome: str = "SUBMITTED_FOR_QA", reason: str = "", validator: str = "",
                  actor: str = "", at: str = "", allow_missing_evidence: bool = False,
                  allow_self_qa: bool = False, role: str = "producer",
+                 writer_model: str = "",
                  gate: str = "", off_protocol: bool = False) -> dict:
     """Append one event and return the updated state.
 
@@ -143,6 +144,11 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     `actor` names the model that did the step. It is what makes QA independence
     checkable: a QA event whose actor matches the one that produced the work is a
     model grading its own homework, and is refused unless allow_self_qa is set.
+
+    `writer_model` is the model actually writing the trace. It is deliberately
+    separate from `actor`, which records the model that did the work. Only the
+    configured QA writer may append to the board, including a producer
+    submission relayed by QA.
 
     `role` decides what may be written at all. A producer may submit
     (SUBMITTED_FOR_QA) but never pass; passing is the QA role's to record, and a
@@ -178,6 +184,10 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
 
     validate_outcome(outcome)
 
+    ok_writer, writer_refusal = qa_policy.writer_model_allowed(writer_model)
+    if not ok_writer:
+        raise PermissionError(writer_refusal)
+
     allowed, refusal = qa_policy.may_write(role, outcome)
     if not allowed:
         raise PermissionError(refusal)
@@ -198,6 +208,7 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         "protocol_refs": [{"path": p} for p in (protocol_refs or [])],
         "evidence": evidence,
         "validator": validator,
+        "writer_model": writer_model,
     }
     event.update(extra_fields)
     if reason:

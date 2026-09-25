@@ -26,6 +26,7 @@ QA_WITHOUT_SUBMISSION = "QA_WITHOUT_SUBMISSION"
 QA_MODEL_NOT_ALLOWED = "QA_MODEL_NOT_ALLOWED"
 QA_MODEL_UNKNOWN = "QA_MODEL_UNKNOWN"
 PRODUCER_MODEL_NOT_ALLOWED = "PRODUCER_MODEL_NOT_ALLOWED"
+WRITER_MODEL_NOT_ALLOWED = "WRITER_MODEL_NOT_ALLOWED"
 
 DEFAULT_PRODUCER_ALLOWED = frozenset({
     "SUBMITTED_FOR_QA", "BLOCKED", "FAILED", "WAITING_APPROVAL",
@@ -127,6 +128,19 @@ def producer_model_allowed(model: str, policy: dict | None = None) -> tuple[bool
     if model not in allowed:
         return False, (f"{PRODUCER_MODEL_NOT_ALLOWED}：生产模型只允许 "
                        f"{'、'.join(allowed)}，收到的是 {model}。")
+    return True, ""
+
+
+def writer_model_allowed(model: str, policy: dict | None = None) -> tuple[bool, str]:
+    """Is this model allowed to append anything to the board trace?"""
+    policy = policy if policy is not None else load_policy()
+    model = (model or "").strip()
+    allowed = (policy or {}).get("writer_models") or []
+    if not allowed:
+        return False, f"{WRITER_MODEL_NOT_ALLOWED}：当前策略没有配置任何轨迹写入模型。"
+    if model not in allowed:
+        return False, (f"{WRITER_MODEL_NOT_ALLOWED}：只有 {'、'.join(allowed)} 可以写看板轨迹，"
+                       f"收到的是 {model or '未提供'}。生产模型只能提供产物，不能直接写入。")
     return True, ""
 
 
