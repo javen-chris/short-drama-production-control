@@ -196,7 +196,8 @@ def test_the_board_shows_the_one_table_that_matters(tmp_path):
     page = render_html(summary)
     assert "协议步骤" in page
     assert "无实证" in page          # claimed, nothing behind it
-    assert "QA 模型" in page         # who signed it off is on the same line
+    assert "生产 → QA" in page       # who produced and who signed it off, one line
+    assert 'class="gate">G5<' in page and "视频 Prompt 确认" in page  # and which Gate
     assert "链外 0 项" in page       # counted in the heading...
     assert "链外步骤（协议未声明" not in page  # ...and no such row to list
 
