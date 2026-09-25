@@ -1,4 +1,4 @@
-"""Who is allowed to write what, and which model may QA which Gate.
+"""Who may write the trace and which independent model must perform QA.
 
 The producing model must not be able to declare its own work passed. Enforcing
 that by asking it nicely does not work - it is enforced here, at the only door
@@ -6,8 +6,10 @@ the trace has: `append_event` refuses a COMPLETED written by a producer, so the
 only way a step can be recorded as passed is for a *different* model to say so
 through its own entry point.
 
-The rules are data, not code, so the Gate-to-model assignment can be changed
-without a release.
+The QA model is also the only authorized trace writer. `actor` remains the
+producer for a relayed submission; `writer_model` identifies the QA model that
+actually writes that event. A model-name argument is a declaration, not session
+authentication.
 """
 from __future__ import annotations
 
@@ -97,12 +99,20 @@ def gate_info(gate: str, policy: dict | None = None) -> dict:
     return {"gate": gate, "name": "", "qa_models": []}
 
 
-def qa_model_allowed(gate: str, model: str, policy: dict | None = None) -> tuple[bool, str]:
+def qa_model_for_execution(model: str, policy: dict | None = None) -> str | None:
+    """Return the configured QA model; unsupported execution models fail closed."""
+    policy = policy if policy is not None else load_policy()
+    routes = (policy or {}).get("qa_routes") or {}
+    key = (model or "").strip().lower()
+    return routes.get(key)
+
+
+def qa_model_allowed(gate: str, model: str, policy: dict | None = None,
+                     execution_model: str = "") -> tuple[bool, str]:
     """Is this model permitted to QA this Gate?
 
-    An empty qa_models list means "any model that is not the producer"; a filled
-    one means only those models. An unnamed model is never allowed - an
-    unattributable QA is not evidence of anything.
+    The gate allowlist and execution-model route must both agree. An unnamed or
+    unsupported model is never allowed.
     """
     model = (model or "").strip()
     if not model:
@@ -111,6 +121,14 @@ def qa_model_allowed(gate: str, model: str, policy: dict | None = None) -> tuple
     if allowed and model not in allowed:
         return False, (f"{QA_MODEL_NOT_ALLOWED}：Gate {gate} 的 QA 只允许 "
                        f"{'、'.join(allowed)}，收到的是 {model}。")
+    if execution_model:
+        expected = qa_model_for_execution(execution_model, policy)
+        if expected is None:
+            return False, (f"{QA_MODEL_NOT_ALLOWED}：执行模型 {execution_model} 没有配置 QA 路由，"
+                           "按 fail-closed 规则拒绝写入。")
+        if model.strip().lower() != expected:
+            return False, (f"{QA_MODEL_NOT_ALLOWED}：执行模型 {execution_model} 应由 {expected} QA，"
+                           f"实际收到 {model}。")
     return True, ""
 
 
@@ -132,14 +150,14 @@ def producer_model_allowed(model: str, policy: dict | None = None) -> tuple[bool
 
 
 def writer_model_allowed(model: str, policy: dict | None = None) -> tuple[bool, str]:
-    """Is this model allowed to append anything to the board trace?"""
+    """Is this QA model allowed to append anything to the board trace?"""
     policy = policy if policy is not None else load_policy()
     model = (model or "").strip()
     allowed = (policy or {}).get("writer_models") or []
     if not allowed:
         return False, f"{WRITER_MODEL_NOT_ALLOWED}：当前策略没有配置任何轨迹写入模型。"
     if model not in allowed:
-        return False, (f"{WRITER_MODEL_NOT_ALLOWED}：只有 {'、'.join(allowed)} 可以写看板轨迹，"
+        return False, (f"{WRITER_MODEL_NOT_ALLOWED}：只有路由表中的 QA 模型可以写看板轨迹，"
                        f"收到的是 {model or '未提供'}。生产模型只能提供产物，不能直接写入。")
     return True, ""
 

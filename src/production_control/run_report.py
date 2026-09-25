@@ -1087,8 +1087,10 @@ def gate_flow_block(summary: dict) -> str:
             outcome = item.get("outcome") or audit.get("outcome") or ""
             if state == "QA_PASSED":
                 status, label = "ok", "已通过"
-            elif state == "QA_FAILED" or outcome in {"FAILED", "BLOCKED", "PAUSED_EXCEPTION"}:
+            elif state in {"QA_FAILED", "QA_INVALID"} or outcome in {"FAILED", "BLOCKED", "PAUSED_EXCEPTION"}:
                 status, label = "bad", "有风险"
+            elif state == "QA_CONDITIONAL":
+                status, label = "wait", "待确认"
             elif state == "AWAITING_QA" or outcome in {
                     "SUBMITTED_FOR_QA", "SUBMITTED_IN_PROGRESS", "WAITING_APPROVAL"}:
                 status, label = "wait", "等待 QA"
@@ -1245,9 +1247,10 @@ def qa_gate_block(summary: dict) -> str:
     rows_data = qa.get("rows") or []
     if not rows_data:
         return ""
-    mark = {"QA_PASSED": "通过", "QA_FAILED": "不通过",
-            "AWAITING_QA": "等待 QA", "NOT_SUBMITTED": "未提交"}
-    cls = {"QA_PASSED": "ok", "QA_FAILED": "bad", "AWAITING_QA": "warn", "NOT_SUBMITTED": ""}
+    mark = {"QA_PASSED": "通过", "QA_FAILED": "不通过", "QA_INVALID": "路由/记录无效",
+            "QA_CONDITIONAL": "待确认", "AWAITING_QA": "等待 QA", "NOT_SUBMITTED": "未提交"}
+    cls = {"QA_PASSED": "ok", "QA_FAILED": "bad", "QA_INVALID": "bad",
+           "QA_CONDITIONAL": "warn", "AWAITING_QA": "warn", "NOT_SUBMITTED": ""}
     rows = []
     for row in rows_data:
         state = row.get("state", "")
@@ -1259,21 +1262,23 @@ def qa_gate_block(summary: dict) -> str:
             f'<td><span class="verdict {cls.get(state, "")}">{escape(mark.get(state, state))}</span></td>'
             f"<td><code>{escape(row.get('producer_actor') or '-')}</code></td>"
             f"<td><code>{escape(row.get('qa_actor') or '-')}</code></td>"
+            f"<td><code>{escape(row.get('version') or '-')}</code> / {escape(row.get('qa_level') or '-')}</td>"
+            f"<td>{(escape(str(row.get('elapsed_seconds'))) + ' 秒') if row.get('elapsed_seconds') is not None else '-'}</td>"
             f"<td class='dim'>{escape((row.get('qa_at') or row.get('at') or '')[:19] or '-')}</td></tr>"
         )
     return f"""
   <section class="pstate">
     <h2>QA 写入权与独立性</h2>
-    <div class="sub">生产模型<strong>只能提交</strong>（<code>SUBMITTED_FOR_QA</code>），
-      <strong>无权写「通过」</strong>——写出 COMPLETED 会被拒绝（<code>WRITE_AUTHORITY_VIOLATION</code>）。
-      通过只能由<strong>另一个模型</strong>经 <code>tools/qa_verdict.py</code> 写入。
-      <strong>看板的「通过」只认后面这一种。</strong></div>
+    <div class="sub">生产模型<strong>不能写轨迹或自签通过</strong>；每条提交与 QA 结论都由按执行模型路由的<strong>独立 GPT QA 模型本人</strong>写入。
+      看板只把模型路由、写入者、版本/等级和耗时记录齐全的 PASS 显示为通过；参数字段不等同于会话身份认证。</div>
     <div class="pprogress">已提交 <b>{qa.get('submitted', 0)}</b> ·
       QA 通过 <b>{qa.get('passed', 0)}</b> ·
       等待 QA <b>{qa.get('awaiting', 0)}</b> ·
-      QA 不通过 <b>{qa.get('failed', 0)}</b></div>
+      QA 不通过 <b>{qa.get('failed', 0)}</b> ·
+      待确认 <b>{qa.get('conditional', 0)}</b> ·
+      记录无效 <b>{qa.get('invalid', 0)}</b></div>
     <table>
-      <thead><tr><th>Gate</th><th>步骤</th><th>QA 状态</th><th>生产模型</th><th>QA 模型</th><th>时间</th></tr></thead>
+      <thead><tr><th>Gate</th><th>步骤</th><th>QA 状态</th><th>生产模型</th><th>QA/写入模型</th><th>版本/等级</th><th>耗时</th><th>时间</th></tr></thead>
       <tbody>{''.join(rows)}</tbody>
     </table>
   </section>"""
@@ -1328,8 +1333,12 @@ def _verdict_pill(step_row: dict, qa_row: dict) -> tuple[str, str]:
         return "未读协议", "warn"
     if verdict == step_audit.EXTRA:
         return "链外", "warn"
-    if step_row.get("qa_failed") or qa_row.get("state") == "QA_FAILED":
+    if step_row.get("qa_failed") or qa_row.get("state") in {"QA_FAILED", "QA_INVALID"}:
+        if qa_row.get("state") == "QA_INVALID":
+            return "QA记录无效", "bad"
         return "QA 不通过", "bad"
+    if qa_row.get("state") == "QA_CONDITIONAL":
+        return "待确认", "warn"
     if step_row.get("qa_passed"):
         return "通过", "ok"
     return "等待 QA", "wait"

@@ -16,8 +16,21 @@ CHAIN = {"steps": [
 
 
 def append_event(*args, **kwargs):
-    """Test helper: simulate GLM relaying every trace write."""
-    kwargs.setdefault("writer_model", "glm-5.3-flash")
+    """Test helper: the routed GPT QA model writes each trace event."""
+    role = kwargs.get("role", "producer")
+    actor = kwargs.setdefault("actor", "gpt-5.6-luna")
+    kwargs.setdefault("writer_model", actor if role == "qa" else "gpt-5.6-terra")
+    if kwargs.get("evidence"):
+        kwargs.setdefault("affected_files", [kwargs["evidence"]])
+    if role == "qa":
+        kwargs.setdefault("task_id", "RUN-EP02-N3-A2")
+        kwargs.setdefault("version", "v1")
+        kwargs.setdefault("qa_level", "C")
+        kwargs.setdefault("qa_conclusion", "PASS")
+        kwargs.setdefault("elapsed_seconds", 10)
+        kwargs.setdefault("execution_model", "gpt-5.6-luna")
+        kwargs.setdefault("blocking_issues", [])
+        kwargs.setdefault("next_step", "继续当前流程")
     return _append_event(*args, **kwargs)
 
 
@@ -49,13 +62,13 @@ def _fake_evidence(root: Path, step: str) -> str:
 def _submit(root: Path, run_id: str, step: str, **kw):
     """The producing model hands a step over. It cannot do more than this."""
     kw.setdefault("evidence", _fake_evidence(root, step))
-    return append_event(root, run_id, step=step, actor="model-A", role="producer", **kw)
+    return append_event(root, run_id, step=step, actor="gpt-5.6-luna", role="producer", **kw)
 
 
 def _pass(root: Path, run_id: str, step: str, **kw):
     """A different model signs the step off. This is what makes it count."""
     kw.setdefault("evidence", _fake_evidence(root, step))
-    return append_event(root, run_id, step=step, actor="model-B", role="qa",
+    return append_event(root, run_id, step=step, actor="gpt-5.6-terra", role="qa",
                         outcome="COMPLETED", **kw)
 
 
@@ -70,7 +83,7 @@ def test_a_producer_may_submit_but_never_declare_a_step_done(tmp_path):
     (root / "workflow" / "G0_上下文锁定.md").write_text("# G0 证据", encoding="utf-8")
     state = append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router",
                          protocol_refs=["00_自动化生产唯一入口_v3.0.md"],
-                         evidence="workflow/G0_上下文锁定.md", actor="model-A")
+                         evidence="workflow/G0_上下文锁定.md", actor="gpt-5.6-luna")
     assert state["completed_steps"] == []
     assert state["status"] == "SUBMITTED_FOR_QA"
     event = state["events"][-1]
@@ -79,11 +92,11 @@ def test_a_producer_may_submit_but_never_declare_a_step_done(tmp_path):
     assert event["at"]
     assert event["outcome"] == "SUBMITTED_FOR_QA"
     assert event["role"] == "producer"
-    assert event["writer_model"] == "glm-5.3-flash"
+    assert event["writer_model"] == "gpt-5.6-terra"
 
     with pytest.raises(PermissionError, match="WRITE_AUTHORITY_VIOLATION"):
         append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router",
-                     outcome="COMPLETED", actor="model-A",
+                     outcome="COMPLETED", actor="gpt-5.6-luna",
                      evidence="workflow/G0_上下文锁定.md")
 
 
@@ -99,12 +112,53 @@ def test_the_qa_model_is_what_advances_the_segment(tmp_path):
     assert state["status"] == "RUNNING"
 
 
-def test_non_glm_cannot_write_the_board_trace(tmp_path):
+def test_unrouted_execution_model_cannot_write_the_board_trace(tmp_path):
     root = _project(tmp_path)
     with pytest.raises(PermissionError, match="WRITER_MODEL_NOT_ALLOWED"):
         _append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-router",
                       actor="gpt-5", writer_model="gpt-5",
                       allow_missing_evidence=True)
+
+
+def test_wrong_gpt_route_cannot_write_the_qa_verdict(tmp_path):
+    root = _project(tmp_path)
+    step = "short-drama-production-router"
+    _submit(root, "RUN-EP02-N3-A2", step)
+    with pytest.raises(PermissionError, match="QA_MODEL_NOT_ALLOWED"):
+        append_event(root, "RUN-EP02-N3-A2", step=step, actor="gpt-5.6-sol", role="qa",
+                     writer_model="gpt-5.6-sol", execution_model="gpt-5.6-luna",
+                     outcome="COMPLETED", task_id="RUN-EP02-N3-A2", version="v1", qa_level="C",
+                     qa_conclusion="PASS", elapsed_seconds=10,
+                     evidence=_fake_evidence(root, step))
+
+
+def test_same_version_same_level_qa_cannot_be_repeated(tmp_path):
+    root = _project(tmp_path)
+    step = "short-drama-production-router"
+    _submit(root, "RUN-EP02-N3-A2", step)
+    _pass(root, "RUN-EP02-N3-A2", step)
+    with pytest.raises(ValueError, match="QA_ATTEMPT_DUPLICATE"):
+        _pass(root, "RUN-EP02-N3-A2", step)
+
+
+def test_one_targeted_same_issue_rereview_is_allowed(tmp_path):
+    root = _project(tmp_path)
+    step = "short-drama-production-router"
+    _submit(root, "RUN-EP02-N3-A2", step)
+    evidence = _fake_evidence(root, step)
+    append_event(root, "RUN-EP02-N3-A2", step=step, actor="gpt-5.6-terra", role="qa",
+                 writer_model="gpt-5.6-terra", execution_model="gpt-5.6-luna",
+                 outcome="FAILED", task_id="RUN-EP02-N3-A2", version="v1", qa_level="C",
+                 qa_conclusion="FAIL", elapsed_seconds=20, issue_id="I-01",
+                 blocking_issues=["I-01: continuity mismatch"], next_step="修复后复核",
+                 evidence=evidence)
+    state = append_event(root, "RUN-EP02-N3-A2", step=step, actor="gpt-5.6-terra", role="qa",
+                         writer_model="gpt-5.6-terra", execution_model="gpt-5.6-luna",
+                         outcome="COMPLETED", task_id="RUN-EP02-N3-A2", version="v1", qa_level="C",
+                         qa_conclusion="PASS", elapsed_seconds=8, issue_id="I-01", qa_attempt=2,
+                         next_step="进入下一步",
+                         evidence=evidence)
+    assert state["events"][-1]["qa_attempt"] == 2
 
 
 def test_one_call_records_a_step_and_advances_the_trace(tmp_path):
@@ -117,6 +171,8 @@ def test_one_call_records_a_step_and_advances_the_trace(tmp_path):
     assert event["at"]
     assert event["outcome"] == "COMPLETED"
     assert event["role"] == "qa"
+    assert event["actor"] == event["writer_model"] == "gpt-5.6-terra"
+    assert event["qa_level"] == "C" and event["version"] == "v1"
     # Both halves of the handover are on the trace: submit, then verdict.
     assert [e["outcome"] for e in state["events"]] == ["SUBMITTED_FOR_QA", "COMPLETED"]
 
@@ -142,7 +198,7 @@ def test_a_decision_point_is_recorded_as_waiting(tmp_path):
     root = _project(tmp_path)
     _complete(root, "RUN-EP02-N3-A2", "short-drama-production-router")
     state = append_event(root, "RUN-EP02-N3-A2", step="short-drama-image-generator",
-                         actor="model-A",
+                         actor="gpt-5.6-luna",
                          evidence=_fake_evidence(root, "short-drama-image-generator"),
                          outcome="WAITING_APPROVAL", reason="G5 Prompt QA 完成，等待用户审阅")
     assert state["status"] == "WAITING_APPROVAL"
@@ -220,7 +276,9 @@ def test_the_cli_records_a_step(tmp_path):
         [sys.executable, str(tools), str(root), "--run", "RUN-EP02-N3-A2",
          "--step", "short-drama-production-router",
          "--protocol", "00_自动化生产唯一入口_v3.0.md",
-         "--evidence", "workflow/G0.md", "--writer-model", "glm-5.3-flash"],
+         "--evidence", "workflow/G0.md", "--writer-model", "gpt-5.6-terra",
+         "--actor", "gpt-5.6-luna", "--task-id", "RUN-EP02-N3-A2",
+         "--version", "v1", "--qa-level", "C", "--affected-file", "workflow/G0.md"],
         capture_output=True, text=True, encoding="utf-8",
     )
     assert result.returncode == 0, result.stderr
@@ -250,8 +308,11 @@ def test_finishing_with_a_caveat_completes_but_keeps_the_caveat(tmp_path):
     (root / "workflow" / "qa.md").write_text("# QA", encoding="utf-8")
     _submit(root, "RUN-EP02-N3-A2", "short-drama-production-qa", evidence="workflow/qa.md")
     state = append_event(root, "RUN-EP02-N3-A2", step="short-drama-production-qa",
-                         evidence="workflow/qa.md", actor="model-B", role="qa",
-                         outcome="COMPLETED_WITH_CONTINUITY_CAVEAT")
+                         evidence="workflow/qa.md", actor="gpt-5.6-terra", role="qa",
+                         outcome="COMPLETED_WITH_CONTINUITY_CAVEAT",
+                         qa_conclusion="PASS", task_id="RUN-EP02-N3-A2", version="v1",
+                         qa_level="C", elapsed_seconds=12, execution_model="gpt-5.6-luna",
+                         next_step="显示连续性风险并等待用户决定")
     assert state["completed_steps"] == ["short-drama-production-router",
                                         "short-drama-image-generator",
                                         "short-drama-production-qa"]
@@ -275,7 +336,8 @@ def test_the_cli_accepts_a_submitted_outcome(tmp_path):
     result = subprocess.run(
         [sys.executable, str(tools), str(root), "--run", "RUN-EP02-N3-A2",
          "--step", "short-drama-prompt-compiler", "--evidence", "workflow/rep.md",
-         "--outcome", "SUBMITTED_IN_PROGRESS", "--writer-model", "glm-5.3-flash"],
+         "--outcome", "SUBMITTED_IN_PROGRESS", "--writer-model", "gpt-5.6-terra",
+         "--actor", "gpt-5.6-luna"],
         capture_output=True, text=True, encoding="utf-8",
     )
     assert result.returncode == 0, result.stderr

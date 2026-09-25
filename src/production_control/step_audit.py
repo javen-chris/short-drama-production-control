@@ -56,6 +56,7 @@ EXTRA = "EXTRA"
 INDEPENDENT = "INDEPENDENT"
 SELF_QA_VIOLATION = "SELF_QA_VIOLATION"
 QA_ACTOR_UNKNOWN = "QA_ACTOR_UNKNOWN"
+QA_ROUTE_VIOLATION = "QA_ROUTE_VIOLATION"
 QA_NOT_RUN = "QA_NOT_RUN"
 NOT_SUBMITTED = "NOT_SUBMITTED"
 AWAITING_QA = "AWAITING_QA"
@@ -85,6 +86,7 @@ QA_LABELS = {
     INDEPENDENT: "独立模型 QA",
     SELF_QA_VIOLATION: "自审（同一模型）",
     QA_ACTOR_UNKNOWN: "无法判定执行模型",
+    QA_ROUTE_VIOLATION: "QA 模型或轨迹写入者不符合路由规则",
     QA_NOT_RUN: "未做 QA",
 }
 
@@ -299,6 +301,7 @@ def audit_qa_independence(state: dict, chain: dict | None = None) -> dict:
             continue
         qa_actor = (event.get("actor") or event.get("validator") or "").strip()
         producer_actor = ""
+        producer_writer = ""
         producer_step = ""
         for earlier in reversed(events[:index]):
             if earlier.get("step") in qa_steps:
@@ -307,6 +310,7 @@ def audit_qa_independence(state: dict, chain: dict | None = None) -> dict:
                 continue
             producer_step = earlier.get("step", "")
             producer_actor = (earlier.get("actor") or "").strip()
+            producer_writer = (earlier.get("writer_model") or "").strip()
             break
 
         if not qa_actor or not producer_actor:
@@ -314,7 +318,16 @@ def audit_qa_independence(state: dict, chain: dict | None = None) -> dict:
         elif qa_actor == producer_actor:
             status = SELF_QA_VIOLATION
         else:
-            status = INDEPENDENT
+            from . import qa_policy
+            allowed, _ = qa_policy.qa_model_allowed(
+                event.get("gate", ""), qa_actor, execution_model=producer_actor
+            )
+            expected_writer = qa_policy.qa_model_for_execution(producer_actor)
+            if (not allowed or (event.get("writer_model") or "").strip().lower() != qa_actor.lower()
+                    or producer_writer.lower() != (expected_writer or "")):
+                status = QA_ROUTE_VIOLATION
+            else:
+                status = INDEPENDENT
 
         rounds.append({"at": event.get("at", ""), "qa_actor": qa_actor,
                        "producer_actor": producer_actor, "producer_step": producer_step,
@@ -349,25 +362,86 @@ def audit_qa_passes(state: dict, project_root: str | Path | None = None,
     by_step: dict[str, dict] = {}
     order: list[str] = []
 
-    for event in state.get("events", []) or []:
+    events = state.get("events", []) or []
+    for event_index, event in enumerate(events):
         step = event.get("step")
         if not step:
             continue
         if step not in by_step:
             order.append(step)
             by_step[step] = {"step": step, "producer_actor": "", "qa_actor": "",
-                             "gate": "", "at": "", "qa_at": "", "state": NOT_SUBMITTED}
+                             "gate": "", "at": "", "qa_at": "", "state": NOT_SUBMITTED,
+                             "task_id": "", "version": "", "qa_level": "",
+                             "elapsed_seconds": None, "qa_conclusion": ""}
         row = by_step[step]
         role = event.get("role") or qa_policy.PRODUCER
         outcome = event.get("outcome") or ""
 
         if role == qa_policy.QA:
+            producer_event = next((e for e in reversed(events[:event_index])
+                                   if e.get("step") == step
+                                   and (e.get("role") or qa_policy.PRODUCER) == qa_policy.PRODUCER), None)
+            producer = (producer_event or {}).get("actor", "")
+            routed, _ = qa_policy.qa_model_allowed(
+                event.get("gate", ""), event.get("actor", ""),
+                policy=policy, execution_model=producer,
+            )
+            expected_writer = qa_policy.qa_model_for_execution(producer)
+            writer = (event.get("writer_model") or "").strip()
+            metadata_ok = all(event.get(k) for k in (
+                "task_id", "version", "qa_level", "qa_conclusion", "next_step"
+            ))
+            metadata_ok = metadata_ok and type(event.get("elapsed_seconds")) is int
+            metadata_ok = metadata_ok and isinstance(event.get("blocking_issues"), list)
+            metadata_ok = metadata_ok and isinstance(event.get("affected_files"), list) and bool(event["affected_files"])
+            producer_writer = ((producer_event or {}).get("writer_model") or "").strip().lower()
+            prior_reviews = [e for e in events[:event_index]
+                             if e.get("step") == step
+                             and (e.get("role") or qa_policy.PRODUCER) == qa_policy.QA
+                             and e.get("version") == event.get("version")
+                             and e.get("qa_level") == event.get("qa_level")]
+            attempt = event.get("qa_attempt", 1)
+            duplicate_attempt = any(e.get("qa_attempt", 1) == attempt for e in prior_reviews)
+            retry_issue_ok = attempt == 1 or any(
+                e.get("qa_attempt", 1) == 1
+                and e.get("qa_conclusion") in {"FAIL", "TIMEOUT"}
+                and e.get("issue_id") == event.get("issue_id")
+                and bool(event.get("issue_id")) for e in prior_reviews
+            )
+            outcome_ok = {
+                "PASS": outcome in QA_PASS_OUTCOMES,
+                "FAIL": outcome == "FAILED",
+                "CONDITIONAL": outcome == "WAITING_APPROVAL",
+                "TIMEOUT": outcome == "WAITING_APPROVAL",
+            }.get(event.get("qa_conclusion"), False)
+            if event.get("qa_level") == "A" and (event.get("elapsed_seconds") or 0) > 180:
+                outcome_ok = outcome_ok and event.get("qa_conclusion") == "TIMEOUT"
+            if (not routed or writer.lower() != (event.get("actor") or "").strip().lower()
+                    or producer_writer != (expected_writer or "") or not metadata_ok
+                    or (event.get("execution_model") or "").strip().lower() != producer.strip().lower()
+                    or (producer_event or {}).get("version") not in (None, "", event.get("version"))
+                    or sorted((producer_event or {}).get("affected_files") or []) != sorted(event.get("affected_files") or [])
+                    or event.get("qa_level") not in {"A", "B", "C", "FINAL"}
+                    or not outcome_ok or duplicate_attempt or not retry_issue_ok):
+                row["state"], row["qa_actor"] = "QA_INVALID", event.get("actor", "")
+                row["qa_error"] = "QA 路由、写入身份或版本/等级/耗时元数据不合规"
+                row["qa_at"], row["gate"] = event.get("at", ""), event.get("gate", "") or row["gate"]
+                row["task_id"], row["version"] = event.get("task_id", ""), event.get("version", "")
+                row["qa_level"], row["elapsed_seconds"] = event.get("qa_level", ""), event.get("elapsed_seconds")
+                row["qa_conclusion"] = event.get("qa_conclusion", "")
+                continue
+            row["task_id"], row["version"] = event.get("task_id", ""), event.get("version", "")
+            row["qa_level"], row["elapsed_seconds"] = event.get("qa_level", ""), event.get("elapsed_seconds")
+            row["qa_conclusion"] = event.get("qa_conclusion", "")
             if outcome == "FAILED":
                 row["state"], row["qa_actor"] = "QA_FAILED", event.get("actor", "")
                 row["qa_at"], row["gate"] = event.get("at", ""), event.get("gate", "") or row["gate"]
             elif outcome in ("PASS", "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT",
                              "USABLE_WITH_SCENE_CONTINUITY_FAIL"):
                 row["state"], row["qa_actor"] = "QA_PASSED", event.get("actor", "")
+                row["qa_at"], row["gate"] = event.get("at", ""), event.get("gate", "") or row["gate"]
+            elif outcome == "WAITING_APPROVAL":
+                row["state"], row["qa_actor"] = "QA_CONDITIONAL", event.get("actor", "")
                 row["qa_at"], row["gate"] = event.get("at", ""), event.get("gate", "") or row["gate"]
             continue
 
@@ -386,6 +460,8 @@ def audit_qa_passes(state: dict, project_root: str | Path | None = None,
         "submitted": sum(1 for r in rows if r["state"] != NOT_SUBMITTED),
         "passed": sum(1 for r in rows if r["state"] == "QA_PASSED"),
         "failed": sum(1 for r in rows if r["state"] == "QA_FAILED"),
+        "invalid": sum(1 for r in rows if r["state"] == "QA_INVALID"),
+        "conditional": sum(1 for r in rows if r["state"] == "QA_CONDITIONAL"),
         "awaiting": sum(1 for r in rows if r["state"] == "AWAITING_QA"),
     }
 
@@ -442,6 +518,8 @@ def audit_run(state: dict, project_root: str | Path | None = None,
                       f"{qa['rounds'][0]['qa_actor']}），不构成独立 QA")
     elif qa["status"] == QA_ACTOR_UNKNOWN:
         errors.append("QA_ACTOR_UNKNOWN - 事件未记录执行模型，无法证明 QA 独立")
+    elif qa["status"] == QA_ROUTE_VIOLATION:
+        errors.append("QA_ROUTE_VIOLATION - QA 模型或轨迹写入者不符合当前独立模型路由")
     elif qa["status"] == QA_NOT_RUN:
         line = "QA_NOT_RUN - 轨迹里没有任何 QA 事件"
         if any(e.get("outcome") == "COMPLETED" for e in state.get("events", []) or []):

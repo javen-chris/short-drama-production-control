@@ -25,8 +25,21 @@ CHAIN = {"steps": [
 
 
 def append_event(*args, **kwargs):
-    """Test helper: all trace writes are relayed by the authorized GLM writer."""
-    kwargs.setdefault("writer_model", "glm-5.3-flash")
+    """Test helper: the routed GPT QA model writes all trace events."""
+    role = kwargs.get("role", "producer")
+    actor = kwargs.setdefault("actor", "gpt-5.6-luna")
+    kwargs.setdefault("writer_model", actor if role == "qa" else "gpt-5.6-terra")
+    if kwargs.get("evidence"):
+        kwargs.setdefault("affected_files", [kwargs["evidence"]])
+    if role == "qa":
+        kwargs.setdefault("task_id", "RUN-EP03-A1")
+        kwargs.setdefault("version", "v1")
+        kwargs.setdefault("qa_level", "C")
+        kwargs.setdefault("qa_conclusion", "PASS")
+        kwargs.setdefault("elapsed_seconds", 15)
+        kwargs.setdefault("execution_model", "gpt-5.6-luna")
+        kwargs.setdefault("blocking_issues", [])
+        kwargs.setdefault("next_step", "继续当前流程")
     return _append_event(*args, **kwargs)
 
 
@@ -49,11 +62,11 @@ def _write(root: Path, rel: str) -> None:
 
 
 def _submit(root: Path, step: str, **kw):
-    return append_event(root, "RUN-EP03-A1", step=step, actor="model-A", role="producer", **kw)
+    return append_event(root, "RUN-EP03-A1", step=step, actor="gpt-5.6-luna", role="producer", **kw)
 
 
 def _pass(root: Path, step: str, **kw):
-    return append_event(root, "RUN-EP03-A1", step=step, actor="model-B", role="qa",
+    return append_event(root, "RUN-EP03-A1", step=step, actor="gpt-5.6-terra", role="qa",
                         outcome="COMPLETED", **kw)
 
 
@@ -67,7 +80,7 @@ def test_a_step_claimed_without_its_evidence_is_not_a_pass(tmp_path):
     _write(root, "workflow/router_note.md")
     append_event(root, "RUN-EP03-A1", step="short-drama-production-router",
                  skill_id="short-drama-production-router", evidence="workflow/router_note.md",
-                 actor="gpt-5")
+                 actor="gpt-5.6-luna")
     # Claim the prompt step, pointing at a file that is not there.
     state = _state(root)
     state["events"].append({"step": "short-drama-prompt-compiler", "outcome": "COMPLETED",
@@ -117,11 +130,11 @@ def test_qa_by_the_same_model_as_the_producer_is_a_violation(tmp_path):
     _write(root, "workflow/prompt_v1.md")
     append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
                  skill_id="short-drama-prompt-compiler", evidence="workflow/prompt_v1.md",
-                 actor="gpt-5")
+                 actor="gpt-5.6-luna")
 
     state = _state(root)
     state["events"].append({"step": "short-drama-production-qa", "outcome": "COMPLETED",
-                            "actor": "gpt-5", "at": "2026-09-25T00:10:00+08:00"})
+                            "actor": "gpt-5.6-luna", "at": "2026-09-25T00:10:00+08:00"})
     qa = step_audit.audit_qa_independence(state, CHAIN)
     assert qa["status"] == step_audit.SELF_QA_VIOLATION
     assert qa["independent"] is False
@@ -132,14 +145,42 @@ def test_qa_by_a_different_model_counts_as_independent(tmp_path):
     _write(root, "workflow/prompt_v1.md")
     append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
                  skill_id="short-drama-prompt-compiler", evidence="workflow/prompt_v1.md",
-                 actor="gpt-5")
+                 actor="gpt-5.6-luna")
 
     state = _state(root)
     state["events"].append({"step": "short-drama-production-qa", "outcome": "COMPLETED",
-                            "actor": "claude-4.5", "at": "2026-09-25T00:10:00+08:00"})
+                            "actor": "gpt-5.6-terra", "writer_model": "gpt-5.6-terra",
+                            "gate": "G5", "at": "2026-09-25T00:10:00+08:00"})
     qa = step_audit.audit_qa_independence(state, CHAIN)
     assert qa["status"] == step_audit.INDEPENDENT
-    assert qa["rounds"][0]["producer_actor"] == "gpt-5"
+    assert qa["rounds"][0]["producer_actor"] == "gpt-5.6-luna"
+
+
+def test_historical_glm_or_unrouted_qa_cannot_render_green(tmp_path):
+    root = _project(tmp_path)
+    state = _state(root)
+    state["events"] = [
+        {"step": "short-drama-prompt-compiler", "outcome": "SUBMITTED_FOR_QA",
+         "role": "producer", "actor": "gpt-5.6-luna", "writer_model": "glm-5.3-flash"},
+        {"step": "short-drama-prompt-compiler", "outcome": "COMPLETED",
+         "role": "qa", "actor": "glm-5.3-flash", "writer_model": "glm-5.3-flash"},
+    ]
+    qa = step_audit.audit_qa_passes(state, root)
+    row = next(r for r in qa["rows"] if r["step"] == "short-drama-prompt-compiler")
+    assert row["state"] == "QA_INVALID"
+    assert qa["passed"] == 0
+
+
+def test_current_routed_qa_with_metadata_can_render_green(tmp_path):
+    root = _project(tmp_path)
+    _write(root, "workflow/prompt_v1.md")
+    _submit(root, "short-drama-prompt-compiler", evidence="workflow/prompt_v1.md",
+            task_id="TASK-1", version="v1", qa_level="C")
+    _pass(root, "short-drama-prompt-compiler", evidence="workflow/prompt_v1.md",
+          task_id="TASK-1", version="v1", qa_level="C")
+    qa = step_audit.audit_qa_passes(_state(root), root)
+    row = next(r for r in qa["rows"] if r["step"] == "short-drama-prompt-compiler")
+    assert row["state"] == "QA_PASSED"
 
 
 def test_qa_without_recorded_actors_is_not_treated_as_a_pass(tmp_path):
@@ -160,25 +201,25 @@ def test_append_event_refuses_to_write_a_self_review(tmp_path):
     _write(root, "workflow/prompt_v1.md")
     append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
                  skill_id="short-drama-prompt-compiler", evidence="workflow/prompt_v1.md",
-                 actor="gpt-5")
+                 actor="gpt-5.6-luna")
 
     with pytest.raises(ValueError, match="SELF_QA_VIOLATION"):
         append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
-                     evidence="workflow/prompt_v1.md", actor="gpt-5",
+                     evidence="workflow/prompt_v1.md", actor="gpt-5.6-luna",
                      role="qa", outcome="COMPLETED")
 
 
-def test_append_event_allows_a_self_review_when_it_is_explicit(tmp_path):
+def test_no_flag_can_allow_a_self_review(tmp_path):
     root = _project(tmp_path)
     _write(root, "workflow/prompt_v1.md")
     append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
                  skill_id="short-drama-prompt-compiler", evidence="workflow/prompt_v1.md",
-                 actor="gpt-5")
+                 actor="gpt-5.6-luna")
 
-    state = append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
-                         evidence="workflow/prompt_v1.md", actor="gpt-5",
-                         role="qa", outcome="COMPLETED", allow_self_qa=True)
-    assert state["events"][-1]["actor"] == "gpt-5"
+    with pytest.raises(ValueError, match="SELF_QA_VIOLATION"):
+        append_event(root, "RUN-EP03-A1", step="short-drama-prompt-compiler",
+                     evidence="workflow/prompt_v1.md", actor="gpt-5.6-luna",
+                     role="qa", outcome="COMPLETED", allow_self_qa=True)
 
 
 def test_append_event_records_the_actor(tmp_path):
@@ -186,8 +227,8 @@ def test_append_event_records_the_actor(tmp_path):
     _write(root, "workflow/router_note.md")
     state = append_event(root, "RUN-EP03-A1", step="short-drama-production-router",
                          skill_id="short-drama-production-router",
-                         evidence="workflow/router_note.md", actor="gpt-5")
-    assert state["events"][-1]["actor"] == "gpt-5"
+                         evidence="workflow/router_note.md", actor="gpt-5.6-luna")
+    assert state["events"][-1]["actor"] == "gpt-5.6-luna"
 
 
 def test_the_board_shows_the_one_table_that_matters(tmp_path):

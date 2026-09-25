@@ -126,7 +126,12 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
                  actor: str = "", at: str = "", allow_missing_evidence: bool = False,
                  allow_self_qa: bool = False, role: str = "producer",
                  writer_model: str = "",
-                 gate: str = "", off_protocol: bool = False) -> dict:
+                 gate: str = "", off_protocol: bool = False,
+                 task_id: str = "", version: str = "", qa_level: str = "",
+                 qa_conclusion: str = "", elapsed_seconds: int | None = None,
+                 execution_model: str = "", issue_id: str = "", qa_attempt: int = 1,
+                 blocking_issues: list[str] | None = None, next_step: str = "",
+                 affected_files: list[str] | None = None) -> dict:
     """Append one event and return the updated state.
 
     Every step must name evidence that exists on disk. Two refusals, both at
@@ -179,18 +184,131 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
                 f"证据文件不存在：{target}\n"
                 "按 18 号规则，证据必须真实存在——先把这一步的实际产物／记录写成文件，再记事件。"
             )
+    if not allow_missing_evidence:
+        for affected in affected_files or []:
+            if not (root / affected).is_file():
+                raise FileNotFoundError(f"受影响文件不存在：{root / affected}")
 
     state = json.loads(path.read_text(encoding="utf-8"))
 
     validate_outcome(outcome)
 
-    ok_writer, writer_refusal = qa_policy.writer_model_allowed(writer_model)
-    if not ok_writer:
-        raise PermissionError(writer_refusal)
+    if role == qa_policy.QA:
+        required_qa = {
+            "task_id": task_id, "version": version, "qa_level": qa_level,
+            "qa_conclusion": qa_conclusion, "execution_model": execution_model,
+            "next_step": next_step, "affected_files": affected_files,
+        }
+        missing_qa = [name for name, value in required_qa.items() if not str(value or "").strip()]
+        if elapsed_seconds is None or elapsed_seconds < 0:
+            missing_qa.append("elapsed_seconds")
+        if not affected_files:
+            missing_qa.append("affected_files")
+        if qa_level not in {"A", "B", "C", "FINAL"}:
+            raise ValueError("QA_LEVEL_INVALID：qa_level 必须为 A、B、C 或 FINAL。")
+        if qa_conclusion not in {"PASS", "FAIL", "CONDITIONAL", "TIMEOUT"}:
+            raise ValueError("QA_CONCLUSION_INVALID：结论必须为 PASS、FAIL、CONDITIONAL 或 TIMEOUT。")
+        if missing_qa:
+            raise ValueError("QA_METADATA_REQUIRED：QA 事件缺少 " + ", ".join(missing_qa))
+        expected_outcomes = {
+            "PASS": {"COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT",
+                     "USABLE_WITH_SCENE_CONTINUITY_FAIL"},
+            "FAIL": {"FAILED"},
+            "CONDITIONAL": {"WAITING_APPROVAL"},
+            "TIMEOUT": {"WAITING_APPROVAL"},
+        }[qa_conclusion]
+        if outcome not in expected_outcomes:
+            raise ValueError(
+                f"QA_OUTCOME_MISMATCH：{qa_conclusion} 与轨迹状态 {outcome} 不匹配。"
+            )
+        if qa_attempt not in {1, 2}:
+            raise ValueError("QA_ATTEMPT_LIMIT：同版本同等级最多一次初审和一次有 issue_id 的复核。")
+        if qa_attempt == 2 and not issue_id.strip():
+            raise ValueError("QA_ISSUE_ID_REQUIRED：同版本复核必须指定 issue_id。")
 
     allowed, refusal = qa_policy.may_write(role, outcome)
     if not allowed:
         raise PermissionError(refusal)
+
+    ok_writer, writer_refusal = qa_policy.writer_model_allowed(writer_model)
+    if not ok_writer:
+        raise PermissionError(writer_refusal)
+
+    if role == qa_policy.PRODUCER:
+        expected_writer = qa_policy.qa_model_for_execution(actor)
+        if expected_writer is None:
+            raise PermissionError(
+                f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：执行模型 {actor or '未提供'} 没有配置 QA 写入路由；"
+                "拒绝由生产模型或未知模型直接写看板。"
+            )
+        if writer_model.strip().lower() != expected_writer:
+            raise PermissionError(
+                f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：执行模型 {actor} 的提交必须由其路由 QA 模型 "
+                f"{expected_writer} 写入，收到 {writer_model}。"
+            )
+
+    if role == qa_policy.QA:
+        producer_model = ""
+        producer_event = None
+        for earlier in reversed(state.get("events") or []):
+            if earlier.get("step") == canonical_step and (
+                    earlier.get("role") or qa_policy.PRODUCER) == qa_policy.PRODUCER:
+                producer_event = earlier
+                producer_model = (earlier.get("actor") or "").strip()
+                break
+        if producer_model and producer_model.strip().lower() == actor.strip().lower():
+            raise ValueError(
+                f"SELF_QA_VIOLATION：QA 模型 {actor} 与执行模型相同，禁止自审。"
+            )
+        if execution_model.strip().lower() != producer_model.lower():
+            raise ValueError(
+                f"QA_EXECUTION_MODEL_MISMATCH：提交记录的执行模型为 {producer_model or '未记录'}，"
+                f"本次 QA 声明为 {execution_model or '未提供'}。"
+            )
+        if producer_event and producer_event.get("version") and producer_event["version"] != version:
+            raise ValueError(
+                f"QA_VERSION_MISMATCH：提交版本为 {producer_event['version']}，本次 QA 版本为 {version}。"
+            )
+        if producer_event and producer_event.get("task_id") and producer_event["task_id"] != task_id:
+            raise ValueError("QA_TASK_MISMATCH：任务 ID 与该版本提交记录不一致。")
+        if producer_event and producer_event.get("qa_level") and producer_event["qa_level"] != qa_level:
+            raise ValueError("QA_LEVEL_MISMATCH：QA 等级与该版本提交记录不一致。")
+        if producer_event and producer_event.get("affected_files") and sorted(producer_event["affected_files"]) != sorted(affected_files or []):
+            raise ValueError("QA_SCOPE_MISMATCH：QA 的 affected_files 必须与该版本提交的文件清单一致。")
+        if producer_event:
+            expected_writer = qa_policy.qa_model_for_execution(producer_model)
+            if (producer_event.get("writer_model") or "").strip().lower() != (expected_writer or ""):
+                raise PermissionError(
+                    f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：当前版本提交记录不是由路由 QA 模型 "
+                    f"{expected_writer or '写入'} 记录；请由 QA 模型重新登记提交后再审核。"
+                )
+        qa_allowed, qa_refusal = qa_policy.qa_model_allowed(
+            gate, actor, execution_model=producer_model
+        )
+        if not qa_allowed:
+            raise PermissionError(qa_refusal)
+        if writer_model.strip().lower() != actor.strip().lower():
+            raise PermissionError(
+                f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：QA 模型 {actor} 必须本人写入 QA 结论，"
+                f"收到写入者 {writer_model}。"
+            )
+        prior_reviews = [e for e in state.get("events") or []
+                         if e.get("step") == canonical_step
+                         and (e.get("role") or qa_policy.PRODUCER) == qa_policy.QA
+                         and e.get("version") == version
+                         and e.get("qa_level") == qa_level]
+        if any(int(e.get("qa_attempt") or 1) == qa_attempt for e in prior_reviews):
+            raise ValueError(
+                "QA_ATTEMPT_DUPLICATE：此版本此等级的该轮 QA 已记录；稳定版本不得重复调用。"
+            )
+        if qa_attempt == 2:
+            prior_issue_ids = {e.get("issue_id") for e in prior_reviews
+                               if e.get("qa_conclusion") in {"FAIL", "TIMEOUT"} and e.get("issue_id")}
+            if issue_id not in prior_issue_ids:
+                raise ValueError(
+                    "QA_REREVIEW_NOT_ALLOWED：同版本复核仅限对已有 FAIL 的同一 issue_id 复核。"
+                )
+
     if role == qa_policy.PRODUCER:
         ok_model, why = qa_policy.producer_model_allowed(actor)
         if not ok_model:
@@ -210,6 +328,15 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         "validator": validator,
         "writer_model": writer_model,
     }
+    optional_fields = {
+        "task_id": task_id, "version": version, "qa_level": qa_level,
+        "qa_conclusion": qa_conclusion, "elapsed_seconds": elapsed_seconds,
+        "execution_model": execution_model, "issue_id": issue_id,
+        "qa_attempt": qa_attempt if role == qa_policy.QA else None,
+        "blocking_issues": blocking_issues, "next_step": next_step,
+        "affected_files": affected_files,
+    }
+    event.update({key: value for key, value in optional_fields.items() if value is not None and value != ""})
     event.update(extra_fields)
     if reason:
         event["reason"] = reason

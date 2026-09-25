@@ -1,9 +1,8 @@
-r"""Record one step of a run trace with a single command (protocol 18).
+r"""Record a producer handoff through the routed GPT QA model (protocol 18).
 
-This is the *producing* model's entry point. It can submit work for review; it
-cannot declare that work passed. A producer writing COMPLETED is refused with
-WRITE_AUTHORITY_VIOLATION, because the only way a step may be recorded as
-passed is for a different model to say so through tools/qa_verdict.py.
+The producer supplies artifact facts but has no trace-write permission. The
+routed independent GPT QA model calls this tool to record a submission, and may
+not declare it passed here. Only tools/qa_verdict.py records the QA conclusion.
 
     python tools/append_event.py <项目目录> --run RUN-EP03-A1 \
         --step short-drama-prompt-compiler --actor gpt-5 \
@@ -17,11 +16,13 @@ passed is for a different model to say so through tools/qa_verdict.py.
         --step short-drama-prompt-compiler --actor gpt-5 \
         --outcome WAITING_APPROVAL --reason "Prompt 与资产绑定待你确认"
 
-    # QA 由另一个模型出结论（不是这条命令）：
+    # 路由 QA GPT 独立审查并由它本人写入结论：
     python tools/qa_verdict.py <项目目录> --run RUN-EP03-A1 \
         --step short-drama-prompt-compiler --gate G5 \
-        --qa-actor claude-4.5 --verdict pass \
-        --evidence workflow/EP03_A1_prompt_v1.md
+        --execution-model gpt-5.6-luna --qa-actor gpt-5.6-terra \
+        --task-id EP03-A1 --version v2 --qa-level C --elapsed-seconds 42 \
+        --conclusion PASS --artifact-evidence workflow/EP03_A1_prompt_v2.md \
+        --evidence workflow/qa/EP03_A1_prompt_review_v2.md
 """
 from __future__ import annotations
 
@@ -59,7 +60,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--outcome", default="SUBMITTED_FOR_QA", choices=list(OUTCOMES),
                         help="这一步的结果；默认 SUBMITTED_FOR_QA（生产者只能提交待审，不能写 COMPLETED）")
     parser.add_argument("--actor", default="", help="实际执行这一步的模型标识，例如 gpt-5")
-    parser.add_argument("--writer-model", default="", help="实际写入看板的模型；当前必须是 glm-5.3-flash")
+    parser.add_argument("--writer-model", default="", help="实际写入看板的模型；必须是执行模型对应的 GPT QA 模型")
+    parser.add_argument("--task-id", default="", help="任务 ID（提交待 QA 时必填）")
+    parser.add_argument("--version", default="", help="当前产物版本（提交待 QA 时必填）")
+    parser.add_argument("--qa-level", default="", choices=["A", "B", "C", "FINAL"],
+                        help="改动/审查等级（提交待 QA 时必填）")
+    parser.add_argument("--affected-file", action="append", default=[],
+                        help="本次修改/审查涉及的文件，可重复；提交待 QA 时至少一个")
     parser.add_argument("--gate", default="", help="这一步所属的 Gate，例如 G5")
     parser.add_argument("--reason", default="", help="暂停/异常的原因")
     parser.add_argument("--validator", default="", help="使用的校验器")
@@ -84,6 +91,9 @@ def main(argv: list[str] | None = None) -> int:
         print()
         return 0
 
+    if args.outcome == "SUBMITTED_FOR_QA" and not all((args.task_id, args.version, args.qa_level, args.affected_file)):
+        parser.error("提交待 QA 必须标注 --task-id、--version、--qa-level 和至少一个 --affected-file")
+
     if not args.project_root or not args.run or not args.step:
         parser.error("需要 project_root、--run、--step（或加 --list-steps 只看清单）")
 
@@ -94,7 +104,8 @@ def main(argv: list[str] | None = None) -> int:
             evidence=args.evidence, outcome=args.outcome, reason=args.reason,
             validator=args.validator, allow_missing_evidence=args.allow_missing_evidence,
             actor=args.actor, role="producer", writer_model=args.writer_model,
-            gate=args.gate,
+            gate=args.gate, task_id=args.task_id, version=args.version, qa_level=args.qa_level,
+            affected_files=args.affected_file,
             off_protocol=args.off_protocol,
         )
     except UnknownStepError as exc:
@@ -133,9 +144,14 @@ def main(argv: list[str] | None = None) -> int:
         print("  它会显示在看板的「链外」区，不会让任何 G 步骤前进。")
     print("已提交待审。这一步要显示为「通过」，必须由另一个模型的 QA 出结论：")
     print(f"  python tools/qa_verdict.py \"{args.project_root}\" --run {args.run} "
-          f"--step {canonical.get('step_id') or args.step} --qa-actor <另一个模型> --verdict pass"
+          f"--step {canonical.get('step_id') or args.step} --execution-model {args.actor} "
+          f"--qa-actor {args.writer_model} --task-id {args.task_id} --version {args.version} "
+          f"--qa-level {args.qa_level} --elapsed-seconds <秒> --conclusion <PASS/FAIL/CONDITIONAL/TIMEOUT> "
+          f"--next-step <下一步>"
+          f" --artifact-evidence {args.evidence} --evidence <QA报告>"
           + (f" --gate {args.gate}" if args.gate else "")
-          + (f" --evidence {args.evidence}" if args.evidence else ""))
+          + "".join(f" --affected-file {path}" for path in args.affected_file)
+          + "")
     print("刷新运行总表页面即可看到变化。")
     return 0
 
