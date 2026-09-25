@@ -10,13 +10,33 @@ Python-side helper; the CLI wrapper is tools/append_event.py.
 from __future__ import annotations
 
 import json
-import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import run_index, run_state
+from . import run_index, run_state, step_registry
 from . import qa_policy
 from .outcomes import COMPLETING_OUTCOMES, validate_outcome
+
+
+class MissingEvidenceError(ValueError):
+    """A step tried to record itself with no evidence path at all.
+
+    Distinct from FileNotFoundError (a path was given but the file is absent):
+    here the field was left empty, which used to be a warning. That made the
+    18-rule unenforceable — omitting the field satisfied the checker — and a
+    trace with `"evidence": ""` reads as recorded while showing nothing.
+    """
+
+
+class UnknownStepError(ValueError):
+    """A step name that no declared step answers to.
+
+    This is the boundary that stops the mistyped-name class of failure. A name
+    invented at write time is stored verbatim, and nothing downstream can tell
+    it apart from a real step - so the work is recorded and the board shows
+    nothing. Refusing here, with the valid list attached, moves the correction
+    to the one place where the correct names are known.
+    """
 
 
 def _refuse_self_review(state: dict, event: dict, *, allow_self_qa: bool = False) -> None:
@@ -62,18 +82,63 @@ def _refuse_self_review(state: dict, event: dict, *, allow_self_qa: bool = False
     return
 
 
+def resolve_step(step: str, *, off_protocol: bool = False) -> tuple[str, str, dict]:
+    """Canonicalise a typed step name.
+
+    Returns `(canonical_skill, step_id, extra_event_fields)`. Raises
+    `UnknownStepError` when nothing matches, unless the caller has said
+    `off_protocol=True` - which is for a genuinely auxiliary record (a skill
+    audit, a one-off probe) that is not one of the declared steps.
+
+    A near-miss spelling is accepted so that one wrong letter cannot silently
+    lose a day of work, but it is marked in the trace as `step_matched_fuzzy`
+    with the original text kept in `step_as_written`. Guessing quietly would
+    trade a loud failure for a silent mis-attribution, which is worse.
+    """
+    outcome = step_registry.resolve(step)
+    if outcome.ok and outcome.step is not None:
+        extra: dict = {"step_id": outcome.step.id}
+        if not outcome.exact:
+            extra["step_matched_fuzzy"] = round(outcome.score, 3)
+            extra["step_as_written"] = step
+        return outcome.step.skill, outcome.step.id, extra
+
+    if off_protocol:
+        return step, "", {"off_protocol": True, "step_as_written": step}
+
+    hints = "；".join(
+        f"你写的可能是 {s.id} {s.skill}" for s in outcome.suggestions
+    )
+    raise UnknownStepError(
+        f"UnknownStepError：步骤名「{step}」不在协议声明链内，已拒绝写入。\n"
+        "按 18 号规则，轨迹事件必须能用协议步骤名归位——名字写错的事件会被看板"
+        "列为「链外」，G1–G6 不会因为它的完成而前进，等于白记。\n"
+        f"{hints}\n"
+        "可用的名字（第一列是稳定 ID，推荐直接用它，最短也最不容易错）：\n"
+        f"{step_registry.format_choices()}\n"
+        "确实要记录一个协议链以外的辅助动作，显式加 --off-protocol。"
+    )
+
+
 def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: str = "",
                  protocol_refs: list[str] | None = None, evidence: str = "",
                  outcome: str = "SUBMITTED_FOR_QA", reason: str = "", validator: str = "",
                  actor: str = "", at: str = "", allow_missing_evidence: bool = False,
                  allow_self_qa: bool = False, role: str = "producer",
-                 gate: str = "") -> dict:
+                 gate: str = "", off_protocol: bool = False) -> dict:
     """Append one event and return the updated state.
 
-    If an evidence path is given it must exist: pointing at a file that is not
-    there is how a trace starts claiming work it cannot show. Write the evidence
-    first, then record the step. Use allow_missing_evidence only when the step
-    genuinely has no artefact of its own.
+    Every step must name evidence that exists on disk. Two refusals, both at
+    write time because that is the only moment the truth is checkable:
+
+      - a path given but not present  -> FileNotFoundError
+      - no path at all                -> MissingEvidenceError
+
+    The second one used to be a warning, which made the rule unenforceable: an
+    agent could satisfy the checker by simply omitting the field, and a trace
+    with `"evidence": ""` looks recorded while showing nothing. Write the
+    artefact first, then record the step. Use allow_missing_evidence only when
+    the step genuinely produces no artefact of its own.
 
     `actor` names the model that did the step. It is what makes QA independence
     checkable: a QA event whose actor matches the one that produced the work is a
@@ -90,15 +155,24 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     if not path.is_file():
         raise FileNotFoundError(f"没有找到轨迹文件：{path}（先创建该段的运行，或检查 run_id）")
 
-    if evidence and not allow_missing_evidence:
+    # Canonicalise first: every refusal below is more useful when it names the
+    # step the way the protocol names it, not the way it was typed.
+    canonical_step, step_id, extra_fields = resolve_step(step, off_protocol=off_protocol)
+
+    if not allow_missing_evidence:
+        if not evidence.strip():
+            raise MissingEvidenceError(
+                f"步骤 {step} 没有 evidence 路径。按 18 号规则，每一步都必须能追到证据——"
+                "证据缺失的轨迹与手写 JSON 无法区分，看板会把没做的事显示成做完了。\n"
+                "先把这一步的实际产物／记录写成文件，再用 --evidence 指过去；"
+                "确实没有本步产物时，显式传 allow_missing_evidence=True（并接受它会被审计标记）。"
+            )
         target = root / evidence
         if not target.is_file():
             raise FileNotFoundError(
                 f"证据文件不存在：{target}\n"
                 "按 18 号规则，证据必须真实存在——先把这一步的实际产物／记录写成文件，再记事件。"
             )
-    if not evidence:
-        warnings.warn("这一步没有 evidence 路径；18 号规则要求每步都能追到证据", stacklevel=2)
 
     state = json.loads(path.read_text(encoding="utf-8"))
 
@@ -113,14 +187,19 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
             raise PermissionError(why)
 
     event = {
-        "step": step,
+        "step": canonical_step,
         "outcome": outcome,
         "at": at or datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-        "skill_id": skill_id or step,
+        # The canonical skill, never whatever was typed: downstream code joins on
+        # these strings, and a name that only matches itself is how a recorded
+        # step becomes an invisible one. `skill_id` is still accepted for callers
+        # that pass it, but the canonical name wins.
+        "skill_id": canonical_step,
         "protocol_refs": [{"path": p} for p in (protocol_refs or [])],
         "evidence": evidence,
         "validator": validator,
     }
+    event.update(extra_fields)
     if reason:
         event["reason"] = reason
     if actor:
@@ -128,6 +207,10 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     event["role"] = role
     if gate:
         event["gate"] = gate
+    if allow_missing_evidence and not evidence.strip():
+        # A waiver must be visible in the trace, not silent: otherwise the next
+        # reader cannot tell "no artefact exists" from "nobody attached one".
+        event["evidence_waived"] = True
 
     _refuse_self_review(state, event, allow_self_qa=allow_self_qa)
 
@@ -136,8 +219,8 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     pipeline = state.get("pipeline") or []
     if outcome in COMPLETING_OUTCOMES:
         completed = state.setdefault("completed_steps", [])
-        if step not in completed:
-            completed.append(step)
+        if canonical_step not in completed:
+            completed.append(canonical_step)
         remaining = [s for s in pipeline if s not in completed]
         state["current_step"] = remaining[0] if remaining else ""
         # Once everything has run, keep whatever the outcome says: COMPLETED is a
@@ -147,7 +230,7 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     else:
         # Waiting, blocked, submitted, failed: the segment state IS the outcome.
         state["status"] = outcome
-        state["current_step"] = step
+        state["current_step"] = canonical_step
         if reason:
             state["pending_decision"] = reason
 

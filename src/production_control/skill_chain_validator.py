@@ -1,4 +1,11 @@
-"""Validate that the source-controlled Skill chain is complete and ordered."""
+"""Validate that the source-controlled Skill chain is complete and ordered.
+
+This used to carry a hardcoded set of the twelve required Skill names, which
+meant the very list the chain declares existed twice and could disagree with
+itself. The check is now structural - unique ids, every Gate covered, a QA step
+present - so it verifies the shape of the chain rather than re-asserting names
+that are already written down in the same file.
+"""
 from __future__ import annotations
 
 import json
@@ -7,6 +14,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
+
+#: Gates the chain has to cover. Taken from the protocol's own G0-G8 vocabulary:
+#: G8 is post-production and deliberately outside this chain, which stops at
+#: handover, so the chain owes G0-G7.
+REQUIRED_GATES = ("G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7")
 
 
 def validate_chain(path: Path = SKILLS / "skill-chain.json") -> list[str]:
@@ -24,11 +36,28 @@ def validate_chain(path: Path = SKILLS / "skill-chain.json") -> list[str]:
             errors.append(f"{skill_file.parent.name}: frontmatter name is {names[0]}")
         available.add(names[0])
 
+    seen_ids: dict[str, str] = {}
+    gates: set[str] = set()
+    modes: list[str] = []
     for step in data.get("steps", []):
         name = step.get("skill", "")
         declared.add(name)
         if name not in available:
             errors.append(f"missing Skill: {name}")
+
+        step_id = (step.get("id") or "").strip()
+        if not step_id:
+            errors.append(f"{name}: no id - the id is the join key, it cannot be blank")
+        elif step_id in seen_ids:
+            errors.append(f"{step_id}: duplicate id, also used by {seen_ids[step_id]}")
+        else:
+            seen_ids[step_id] = name
+        if not step.get("gate"):
+            errors.append(f"{name}: declares no Gate")
+        gates.update(step.get("gate", []) or [])
+        if step.get("mode"):
+            modes.append(step["mode"])
+
         for dependency in step.get("after", []):
             if dependency not in declared:
                 errors.append(f"{name}: dependency not declared earlier: {dependency}")
@@ -39,15 +68,10 @@ def validate_chain(path: Path = SKILLS / "skill-chain.json") -> list[str]:
             if dependency not in available:
                 errors.append(f"{name}: missing after_any Skill: {dependency}")
 
-    required = {
-        "short-drama-production-router", "short-drama-script-breakdown",
-        "short-drama-script-reviewer", "short-drama-scene-continuity",
-        "short-drama-asset-router", "short-drama-image-generator", "short-drama-storyboard-planner",
-        "short-drama-prompt-compiler", "short-drama-production-qa",
-        "runninghub-local-adapter", "xiaoyunque-local-adapter",
-        "libtv-local-adapter",
-    }
-    errors.extend(f"undeclared required Skill: {name}" for name in sorted(required - declared))
+    missing_gates = [g for g in REQUIRED_GATES if g not in gates]
+    errors.extend(f"no step declares Gate {g}" for g in missing_gates)
+    if "pre_generation" not in modes and "post_generation" not in modes:
+        errors.append("no QA step declared: the chain must gate on an independent review")
     return errors
 
 

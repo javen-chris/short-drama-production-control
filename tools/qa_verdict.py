@@ -27,8 +27,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from production_control import qa_policy, run_index, step_audit  # noqa: E402
-from production_control.progress import append_event  # noqa: E402
+from production_control import qa_policy, run_index, step_audit, step_registry  # noqa: E402
+from production_control.progress import UnknownStepError, append_event  # noqa: E402
 
 VERDICTS = {"pass": "COMPLETED", "fail": "FAILED"}
 
@@ -55,9 +55,13 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="由 QA 模型写入一步的 QA 结论（生产模型无权写）")
-    parser.add_argument("project_root", help="项目根目录")
-    parser.add_argument("--run", required=True, help="run_id，例如 RUN-EP03-A1")
-    parser.add_argument("--step", default="", help="被 QA 的步骤名，必须与生产提交时一致")
+    parser.add_argument("project_root", nargs="?", help="项目根目录")
+    parser.add_argument("--run", default="", help="run_id，例如 RUN-EP03-A1")
+    parser.add_argument("--list-steps", action="store_true",
+                        help="只打印全部合法步骤（含 ID）然后退出，不写任何东西")
+    parser.add_argument("--step", default="",
+                        help="被 QA 的步骤。推荐用稳定 ID（S01–S13）；与生产提交的步骤按解析结果对齐，"
+                             "拼写略有出入也会自动归位")
     parser.add_argument("--gate", default="", help="这一步属于哪个 Gate，例如 G5")
     parser.add_argument("--qa-actor", default="", help="执行 QA 的模型标识，必须与生产模型不同")
     parser.add_argument("--verdict", default="", choices=sorted(VERDICTS), help="pass 或 fail")
@@ -66,6 +70,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--protocol", action="append", default=[], help="QA 依据的协议文件（可重复）")
     parser.add_argument("--status", action="store_true", help="只读查看该 run 的 QA 状态，不写入")
     args = parser.parse_args(argv)
+
+    if args.list_steps:
+        print()
+        print("  QA 要写哪一步，就用它的 id（--step 填这个最稳）：")
+        print("  " + "=" * 74)
+        print(step_registry.format_choices())
+        print()
+        print("  QA 的 --step 必须与生产提交时那一步一致；两侧拼写略有出入也会自动归位。")
+        print()
+        return 0
+
+    if not args.project_root or not args.run:
+        parser.error("需要 project_root、--run（或加 --list-steps 只看清单）")
 
     if args.status:
         return _status(args.project_root, args.run)
@@ -86,6 +103,18 @@ def main(argv: list[str] | None = None) -> int:
             actor=args.qa_actor, role="qa", gate=args.gate,
             allow_missing_evidence=not args.evidence,
         )
+    except UnknownStepError as exc:
+        print()
+        print("=" * 70)
+        print(f"❌ QA 的步骤名无法识别：{args.step}")
+        print("=" * 70)
+        print(exc)
+        print()
+        print("QA 的 --step 必须是生产提交时那一步。用稳定 ID 最稳：")
+        print("  python tools/qa_verdict.py \"<项目目录>\" --run <RUN-ID> "
+              "--step S08 --gate G5 --qa-actor <另一个模型> --verdict pass --evidence <QA报告>")
+        print()
+        return 2
     except (FileNotFoundError, ValueError, PermissionError) as exc:
         print(f"失败：{exc}")
         return 1

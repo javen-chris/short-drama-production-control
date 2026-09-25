@@ -11,19 +11,14 @@ import json
 from pathlib import Path
 
 from . import run_state
+from . import step_registry
 
 SKILL_CHAIN = "skills/skill-chain.json"
 
-# Steps that must not be crossed without an explicit human decision.
-APPROVAL_BREAKPOINTS = {
-    "short-drama-script-breakdown": "确认秒表脚本与节拍链",
-    "short-drama-script-reviewer": "确认镜头拆解与角色/空间调度",
-    "short-drama-prompt-compiler": "确认视频 Prompt、参数与本次成本",
-    "short-drama-production-qa": "确认生成前 QA 结论与放行",
-    "runninghub-local-adapter": "明确授权本次付费提交",
-    "xiaoyunque-local-adapter": "明确授权本次付费提交",
-    "libtv-local-adapter": "明确授权本次付费提交",
-}
+# Steps that must not be crossed without an explicit human decision. The prompts
+# live on the steps themselves in `skills/skill-chain.json`; keeping a second
+# name-keyed copy here is how the two drift apart.
+APPROVAL_BREAKPOINTS = step_registry.approval_breakpoints()
 
 NON_PASS_OUTCOMES = {"qa_failure", "qa_uncertain", "missing_master", "unknown_cloud_task", "degraded_qa_failure"}
 

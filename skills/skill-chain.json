@@ -1,19 +1,301 @@
 {
-  "version": "1.0.0",
-  "authority": "D:\\短剧制作核心协议\\00_自动化生产唯一入口.md",
+  "version": "2.0.0",
+  "authority": "D:\\AIGC短剧本地工作流规则及协议\\短剧制作核心协议\\00_自动化生产唯一入口_v3.0.md",
+  "_note": "这是全系统唯一的步骤注册表。看板、写入端、合规校验都从这里取数据，不要再在代码里另抄一份名字。连接键是 id（S01…S12），不是名字——名字只用来显示。",
   "steps": [
-    {"skill": "short-drama-production-router", "after": []},
-    {"skill": "short-drama-script-breakdown", "after": ["short-drama-production-router"]},
-    {"skill": "short-drama-script-reviewer", "after": ["short-drama-script-breakdown"]},
-    {"skill": "short-drama-scene-continuity", "after": ["short-drama-script-reviewer"]},
-    {"skill": "short-drama-asset-router", "after": ["short-drama-scene-continuity"]},
-    {"skill": "short-drama-image-generator", "after": ["short-drama-asset-router"], "when": "any image asset must be produced or repaired; gpt-image-2 only"},
-    {"skill": "short-drama-storyboard-planner", "after": ["short-drama-image-generator"], "when": "L2 or storyboard-required; L1 uses key-state planning only"},
-    {"skill": "short-drama-prompt-compiler", "after": ["short-drama-image-generator"]},
-    {"skill": "short-drama-production-qa", "after": ["short-drama-prompt-compiler"], "mode": "pre_generation"},
-    {"skill": "runninghub-local-adapter", "after": ["short-drama-production-qa"], "provider": "runninghub"},
-    {"skill": "xiaoyunque-local-adapter", "after": ["short-drama-production-qa"], "provider": "xiaoyunque"},
-    {"skill": "libtv-local-adapter", "after": ["short-drama-production-qa"], "provider": "libtv"},
-    {"skill": "short-drama-production-qa", "after_any": ["runninghub-local-adapter", "xiaoyunque-local-adapter", "libtv-local-adapter"], "mode": "post_generation"}
+    {
+      "id": "S01",
+      "skill": "short-drama-production-router",
+      "gate": [
+        "G0",
+        "G1"
+      ],
+      "name_zh": "生产路由与任务建卡",
+      "aliases": [
+        "router",
+        "production-router",
+        "路由",
+        "任务建卡"
+      ],
+      "protocol_refs": [
+        "00_自动化生产唯一入口_v3.0.md",
+        "核心自动化生产包/02_任务路由与Gate_v3.0.md"
+      ],
+      "after": []
+    },
+    {
+      "id": "S02",
+      "skill": "short-drama-script-breakdown",
+      "gate": [
+        "G1"
+      ],
+      "name_zh": "脚本拆解为镜头与生产单元",
+      "aliases": [
+        "script-breakdown",
+        "breakdown",
+        "脚本拆解",
+        "拆解"
+      ],
+      "approval": "确认秒表脚本与节拍链",
+      "protocol_refs": [
+        "09_脚本优化与分镜拆解规范_v3.0.md"
+      ],
+      "after": [
+        "short-drama-production-router"
+      ]
+    },
+    {
+      "id": "S03",
+      "skill": "short-drama-script-reviewer",
+      "gate": [
+        "G1"
+      ],
+      "name_zh": "脚本节奏与镜头复核",
+      "aliases": [
+        "script-reviewer",
+        "脚本复核"
+      ],
+      "approval": "确认镜头拆解与角色/空间调度",
+      "protocol_refs": [
+        "09_脚本优化与分镜拆解规范_v3.0.md"
+      ],
+      "after": [
+        "short-drama-script-breakdown"
+      ]
+    },
+    {
+      "id": "S04",
+      "skill": "short-drama-scene-continuity",
+      "gate": [
+        "G2"
+      ],
+      "name_zh": "场面调度与连续性",
+      "aliases": [
+        "scene-continuity",
+        "continuity",
+        "连续性",
+        "场面调度"
+      ],
+      "protocol_refs": [
+        "03_资产与连续性规则_v3.0.md"
+      ],
+      "after": [
+        "short-drama-script-reviewer"
+      ]
+    },
+    {
+      "id": "S05",
+      "skill": "short-drama-asset-router",
+      "gate": [
+        "G3"
+      ],
+      "name_zh": "资产映射与最小必要路线",
+      "aliases": [
+        "asset-router",
+        "资产路由",
+        "资产映射",
+        "资产锁定"
+      ],
+      "protocol_refs": [
+        "核心自动化生产包/03_生产与资产规则_v3.0.md"
+      ],
+      "after": [
+        "short-drama-scene-continuity"
+      ]
+    },
+    {
+      "id": "S06",
+      "skill": "short-drama-image-generator",
+      "gate": [
+        "G3"
+      ],
+      "name_zh": "图像资产生成（GPT-Image-2）",
+      "aliases": [
+        "image-generator",
+        "生图",
+        "图像生成"
+      ],
+      "protocol_refs": [
+        "16_生图渠道规则_v3.0.md",
+        "14_RH生图渠道与GPT通道现状_v3.0.md"
+      ],
+      "after": [
+        "short-drama-asset-router"
+      ],
+      "when": "any image asset must be produced or repaired; gpt-image-2 only"
+    },
+    {
+      "id": "S07",
+      "skill": "short-drama-storyboard-planner",
+      "gate": [
+        "G4"
+      ],
+      "name_zh": "故事本与关键状态图",
+      "aliases": [
+        "storyboard-planner",
+        "storyboard",
+        "故事本",
+        "关键状态图"
+      ],
+      "protocol_refs": [
+        "08_故事本生产与QA规范_v3.0.md",
+        "12_真人短剧Prompt与故事本弹性标准_v3.0.md"
+      ],
+      "after": [
+        "short-drama-image-generator"
+      ],
+      "when": "L2 or storyboard-required; L1 uses key-state planning only"
+    },
+    {
+      "id": "S08",
+      "skill": "short-drama-prompt-compiler",
+      "gate": [
+        "G5"
+      ],
+      "name_zh": "视频 Prompt 编译",
+      "aliases": [
+        "prompt-compiler",
+        "prompt",
+        "提示词编译",
+        "视频prompt"
+      ],
+      "approval": "确认视频 Prompt、参数与本次成本",
+      "protocol_refs": [
+        "12_真人短剧Prompt与故事本弹性标准_v3.0.md"
+      ],
+      "after": [
+        "short-drama-image-generator"
+      ]
+    },
+    {
+      "id": "S09",
+      "skill": "short-drama-production-qa",
+      "gate": [
+        "G5",
+        "G7"
+      ],
+      "name_zh": "独立 QA",
+      "aliases": [
+        "production-qa",
+        "qa",
+        "独立qa",
+        "质检"
+      ],
+      "approval": "确认生成前 QA 结论与放行",
+      "protocol_refs": [
+        "04_QA与文件治理_v3.0.md"
+      ],
+      "after": [
+        "short-drama-prompt-compiler"
+      ],
+      "mode": "pre_generation"
+    },
+    {
+      "id": "S10",
+      "skill": "runninghub-local-adapter",
+      "gate": [
+        "G6"
+      ],
+      "name_zh": "RunningHub 提交适配",
+      "aliases": [
+        "runninghub",
+        "rh-adapter",
+        "runninghub适配"
+      ],
+      "approval": "明确授权本次付费提交",
+      "protocol_refs": [
+        "13_模型执行前硬门禁_v3.0.md",
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
+      ],
+      "after": [
+        "short-drama-production-qa"
+      ],
+      "provider": "runninghub",
+      "alternative_group": "submit-adapter"
+    },
+    {
+      "id": "S11",
+      "skill": "xiaoyunque-local-adapter",
+      "gate": [
+        "G6"
+      ],
+      "name_zh": "小云雀提交适配",
+      "aliases": [
+        "xiaoyunque",
+        "小云雀",
+        "xyq-adapter"
+      ],
+      "approval": "明确授权本次付费提交",
+      "protocol_refs": [
+        "13_模型执行前硬门禁_v3.0.md",
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
+      ],
+      "after": [
+        "short-drama-production-qa"
+      ],
+      "provider": "xiaoyunque",
+      "alternative_group": "submit-adapter"
+    },
+    {
+      "id": "S12",
+      "skill": "libtv-local-adapter",
+      "gate": [
+        "G6"
+      ],
+      "name_zh": "LibTV 提交适配",
+      "aliases": [
+        "libtv",
+        "lib-tv",
+        "libtv适配"
+      ],
+      "approval": "明确授权本次付费提交",
+      "protocol_refs": [
+        "13_模型执行前硬门禁_v3.0.md",
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
+      ],
+      "after": [
+        "short-drama-production-qa"
+      ],
+      "provider": "libtv",
+      "alternative_group": "submit-adapter"
+    },
+    {
+      "id": "S13",
+      "skill": "short-drama-production-qa",
+      "gate": [
+        "G7"
+      ],
+      "name_zh": "成片独立 QA",
+      "aliases": [],
+      "protocol_refs": [
+        "04_QA与文件治理_v3.0.md"
+      ],
+      "after_any": [
+        "runninghub-local-adapter",
+        "xiaoyunque-local-adapter",
+        "libtv-local-adapter"
+      ],
+      "mode": "post_generation"
+    }
+  ],
+  "markers": [
+    {
+      "id": "M01",
+      "skill": "protocol-read",
+      "name_zh": "读取协议与唯一入口",
+      "aliases": [
+        "protocol_read",
+        "读协议"
+      ]
+    },
+    {
+      "id": "M02",
+      "skill": "protocol-attestation",
+      "name_zh": "提交协议读取证明",
+      "aliases": [
+        "attestation",
+        "协议证明"
+      ]
+    }
   ]
 }

@@ -26,7 +26,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .run_compliance import STEP_PROTOCOL_REQUIREMENTS
+from . import step_registry
+from .run_compliance import STEP_PROTOCOL_REQUIREMENTS, missing_required_reads
 
 CHAIN_RELPATH = "skills/skill-chain.json"
 
@@ -212,6 +213,12 @@ def audit_steps(state: dict, project_root: str | Path | None = None,
             "qa_failed": bool(reviewer and reviewer.get("outcome") == "FAILED"),
             "qa_actor": (reviewer or {}).get("actor", ""),
             "gate": (producer or {}).get("gate", "") or (reviewer or {}).get("gate", ""),
+            # How the recorded name got here. A step that was written under a
+            # near-miss spelling is still the right step, but a reader deserves to
+            # know the trace was corrected rather than typed correctly.
+            "step_as_written": (producer or {}).get("step_as_written", ""),
+            "step_matched_fuzzy": (producer or {}).get("step_matched_fuzzy", 0),
+            "step_id": (producer or {}).get("step_id", ""),
             "missing_reads": [],
         }
 
@@ -231,25 +238,37 @@ def audit_steps(state: dict, project_root: str | Path | None = None,
             continue
 
         row["evidence_ok"] = True
-        recorded = _read_paths(producer)
-        required = set(STEP_PROTOCOL_REQUIREMENTS.get(step, []))
-        row["missing_reads"] = sorted(required - recorded)
+        row["missing_reads"] = missing_required_reads(producer, step)
         row["verdict"] = CLAIMED_NO_READ if row["missing_reads"] else OK
         rows.append(row)
 
+    # Events whose step name the protocol does not declare. These used to be
+    # dropped unless they said COMPLETED, which made the board look frozen while
+    # an agent was in fact writing a dozen events: the work was real, the names
+    # were invented, and the board showed neither. A board that hides activity it
+    # cannot categorise is worse than one that shows it as uncategorised - so
+    # every undeclared step is surfaced, whatever its outcome.
+    seen_extra: dict[str, dict] = {}
     for event in state.get("events", []) or []:
         step = event.get("step")
         if not step or step in declared_names:
             continue
-        if event.get("outcome") != "COMPLETED":
-            continue
-        if any(r["step"] == step for r in rows):
-            continue
-        rows.append({"step": step, "modes": [], "claimed": True, "outcome": "COMPLETED",
-                     "at": event.get("at", ""), "evidence": event.get("evidence", ""),
-                     "actor": event.get("actor", ""), "validator": event.get("validator", ""),
-                     "missing_reads": [], "evidence_ok": _evidence_ok(event, root),
-                     "verdict": EXTRA})
+        seen_extra[step] = event  # later events win; the dict keeps the latest
+    for step, event in seen_extra.items():
+        rows.append({
+            "step": step,
+            "modes": [],
+            "claimed": True,
+            "outcome": event.get("outcome", ""),
+            "at": event.get("at", ""),
+            "evidence": event.get("evidence", ""),
+            "actor": event.get("actor", ""),
+            "validator": event.get("validator", ""),
+            "gate": event.get("gate", ""),
+            "missing_reads": [],
+            "evidence_ok": _evidence_ok(event, root),
+            "verdict": EXTRA,
+        })
 
     counts: dict[str, int] = {}
     for row in rows:
@@ -267,9 +286,9 @@ def audit_qa_independence(state: dict, chain: dict | None = None) -> dict:
     """
     qa_steps = {row["step"] for row in declared_steps(chain) if set(row["modes"]) & QA_MODES}
     if not qa_steps:
-        # Without a chain we cannot say which steps are QA; fall back to the name
-        # the protocol has always used.
-        qa_steps = {"short-drama-production-qa"}
+        # Without a chain the modes are not available, so ask the registry: a step
+        # is a QA step when the chain declares it with a QA mode.
+        qa_steps = {s.skill for s in step_registry.qa_steps()}
 
     events = state.get("events", []) or []
     rounds: list[dict] = []
