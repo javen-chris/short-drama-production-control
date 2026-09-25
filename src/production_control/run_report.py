@@ -12,6 +12,7 @@ digging through raw logs.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -124,6 +125,15 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
     qa_passes = step_audit.audit_qa_passes(state, project_root)
     last_event = max((event for event in state.get("events", []) or []),
                      key=lambda event: event.get("at", ""), default={})
+    post_qa_entry = step_registry.by_id("S13")
+    post_qa_skill = post_qa_entry.skill if post_qa_entry else ""
+    post_qa_event = max((event for event in state.get("events", []) or []
+                         if event.get("step") == post_qa_skill and
+                         (event.get("gate") == "G7" or event.get("mode") == "post_generation")),
+                        key=lambda event: event.get("at", ""), default={})
+    events_fingerprint = hashlib.sha256(json.dumps(
+        state.get("events", []) or [], ensure_ascii=False, sort_keys=True,
+        separators=(",", ":")).encode("utf-8")).hexdigest()
     return {
         "run_id": state.get("run_id", ""),
         "contract_id": state.get("contract_id", ""),
@@ -142,15 +152,56 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         "qa_passes": qa_passes,
         "last_event": {
             "step": last_event.get("step", ""),
+            "step_id": last_event.get("step_id", ""),
             "outcome": last_event.get("outcome", ""),
             "at": last_event.get("at", ""),
             "actor": last_event.get("actor", ""),
+            "gate": last_event.get("gate", ""),
+            "mode": last_event.get("mode", ""),
             "writer_model": last_event.get("writer_model", ""),
             "role": last_event.get("role", ""),
             "reason": last_event.get("reason", ""),
         },
+        "recent_events": [
+            {
+                "step": event.get("step", ""),
+                "label": gate_map.skill_label(event.get("step", "")),
+                "gate": event.get("gate", ""),
+                "step_id": event.get("step_id", ""),
+                "mode": event.get("mode", ""),
+                "outcome": event.get("outcome", ""),
+                "at": event.get("at", ""),
+                "actor": event.get("actor", ""),
+                "role": event.get("role", ""),
+                "reason": event.get("reason", ""),
+                "evidence": event.get("evidence", ""),
+            }
+            for event in sorted(state.get("events", []) or [],
+                                key=lambda item: item.get("at", ""), reverse=True)[:10]
+        ],
+        "event_count": len(state.get("events", []) or []),
+        "events_fingerprint": events_fingerprint,
+        "post_generation_qa_event": post_qa_event,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def refresh_fingerprint(summary: dict, project_state: dict | None = None) -> str:
+    """Stable signature of visible run/QA/project state, excluding render time."""
+    visible = {
+        "events": summary.get("events_fingerprint", ""),
+        "status": summary.get("status", ""),
+        "current_step": summary.get("current_step", ""),
+        "pending_decision": summary.get("pending_decision", ""),
+        "progress": summary.get("progress", {}),
+        "qa_passes": summary.get("qa_passes", {}),
+        "audit": summary.get("audit", {}),
+        "compliance": summary.get("compliance", {}),
+        "project_state": project_state or {},
+    }
+    return hashlib.sha256(json.dumps(
+        visible, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        default=str).encode("utf-8")).hexdigest()
 
 
 def step_accounting(state: dict) -> dict:
@@ -830,10 +881,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>项目运行总表 · {escape(view['project'])}</title>
 <style>
-  :root {{ color-scheme: light dark; --bg:#fff; --fg:#1f2328; --line:#d1d9e0; --muted:#59636e; --card:#f6f8fa; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
-  }}
+  :root {{ color-scheme: dark; --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
   * {{ box-sizing: border-box; }}
   body {{ margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
          font:15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }}
@@ -908,9 +956,11 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .psrow {{ display:flex; gap:10px; font-size:12.5px; margin-top:4px; }}
   .psrow span {{ color:var(--muted); flex:none; }}
   .problems ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
-  .silence {{ border:2px solid #cf222e; border-radius:10px; padding:14px 16px; margin-bottom:18px;
+  .silence {{ border:1px solid rgba(207,34,46,.6); border-radius:10px; padding:9px 12px; margin:0 0 14px;
               background:rgba(207,34,46,.12); }}
-  .silence .shead {{ font-size:15.5px; font-weight:700; color:#cf222e; margin-bottom:6px; }}
+  .silence .shead {{ cursor:pointer; list-style:none; font-size:14px; font-weight:700; color:#cf222e; }}
+  .silence .shead::-webkit-details-marker {{ display:none; }}
+  .silence .shead span {{ float:right; font-size:12px; font-weight:400; color:var(--muted); }}
   .silence .sbody {{ font-size:13.5px; margin-bottom:6px; }}
   .silence .ev {{ font-size:12.5px; color:var(--muted); margin-bottom:6px; }}
   .silence .sfix {{ font-size:13px; padding-top:8px; border-top:1px solid rgba(207,34,46,.35); }}
@@ -938,7 +988,8 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .agentbox .value {{ margin-top:2px; font-size:13.5px; font-weight:600;
                       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
   .agentbox .value.bad {{ color:#cf222e; }} .agentbox .value.wait {{ color:#0969da; }}
-  .agentbox .value.ok {{ color:#1a7f37; }} .agentbox .wide {{ grid-column:span 2; }}
+  .agentbox .value.warn {{ color:#bf8700; }} .agentbox .value.ok {{ color:#1a7f37; }}
+  .agentbox .wide {{ grid-column:span 2; }}
   @media (max-width:760px) {{ .agentbox {{ grid-template-columns:repeat(2,minmax(0,1fr)); }}
                               .agentbox .wide {{ grid-column:span 2; }} }}
   table td {{ vertical-align:top; }}
@@ -1406,6 +1457,36 @@ def _unified_step_rows(summary: dict) -> list[dict]:
             "offchain": row["verdict"] == step_audit.EXTRA,
             "evidence": row.get("evidence", ""), "at": row.get("at", ""),
         })
+    # The same QA Skill is registered twice (S09 before generation, S13 after).
+    # The reconciliation groups by Skill, so add the post-generation occurrence
+    # from the authoritative registry rather than silently losing S13.
+    post_entry = step_registry.by_id("S13")
+    post = post_entry.as_dict() if post_entry else None
+    if post:
+        event = summary.get("post_generation_qa_event") or {}
+        outcome = event.get("outcome", "")
+        is_historical = bool(event and event.get("at") != (summary.get("last_event") or {}).get("at"))
+        if is_historical:
+            label, cls = "旧版需复核", "warn"
+        elif outcome in {"BLOCKED", "FAILED", "PAUSED_EXCEPTION"}:
+            label, cls = OUTCOME_LABELS.get(outcome, outcome), "bad"
+        elif outcome.startswith("COMPLETED"):
+            label, cls = "待核验", "warn"
+        elif event:
+            label, cls = OUTCOME_LABELS.get(outcome, outcome or "已记录"), "warn"
+        else:
+            label, cls = "生成后执行", "todo"
+        out.append({
+            "step": post.get("skill", ""), "step_id": post.get("id", "S13"),
+            "gate_letters": "G7", "gate": "G7 成片独立 QA", "gate_name": "成片 QA",
+            "skill_name": post.get("name_zh", "成片独立 QA"), "alternative": False,
+            "producer": event.get("actor", ""), "qa_actor": "", "label": label,
+            "cls": cls,
+            "note": ("G6 完成并生成成片后执行；当前没有成片独立 QA 证据"
+                     if not event else "G7 事件已记录；独立 QA 结论仍需证据核验"),
+            "offchain": False, "evidence": event.get("evidence", ""),
+            "at": event.get("at", ""),
+        })
     return out
 
 
@@ -1419,6 +1500,9 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     """
     siblings = siblings or []
     meta = project_meta or {}
+    service = meta.get("service") or {}
+    last = summary.get("last_event") or {}
+    project_state = meta.get("project_state") or {}
     segment_title = summary.get("segment_title") or summary.get("segment") or summary["run_id"]
 
     options = "".join(
@@ -1434,18 +1518,70 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     <label>查看段
       <select onchange="location.href='/?run='+encodeURIComponent(this.value)">{options}</select>
     </label>
-    <button type="button" onclick="location.reload()">刷新</button>
+    <button type="button" id="refreshButton" title="重新读取轨迹数据，不会重启服务">刷新</button>
     <label class="autof"><input type="checkbox" id="auto" checked> 自动刷新 5s</label>
-    <span class="dim hint" title="刷新只重新读取磁盘上的轨迹，不会重启服务、不会清空进度">
-      刷新不会重启服务</span>
+    <span class="refresh-state" id="connectionHint" aria-live="polite">● 实时连接</span>
     <span class="dim right">渲染于 {escape(summary['generated_at'][:19])}</span>
   </div>
   <script>
     var box = document.getElementById('auto');
+    var refreshButton = document.getElementById('refreshButton');
     var timer = null;
+    var running = false;
+    var runId = {json.dumps(summary.get('run_id', ''))};
+    var projectPath = {json.dumps(str(service.get('project', '')))};
+    var endpoint = '/run/' + encodeURIComponent(runId) + '/data';
+    var initialSignature = {json.dumps(refresh_fingerprint(summary, project_state))};
+    var hintNode = document.getElementById('connectionHint');
+    function stamp() {{ return new Date().toLocaleString('zh-CN', {{hour12:false}}); }}
+    function showState(text, cls) {{
+      var stateNode = document.getElementById('refreshState');
+      if (stateNode) {{ stateNode.textContent = text; stateNode.className = 'value ' + (cls || ''); }}
+      if (hintNode) {{ hintNode.textContent = cls === 'error' ? '● 连接异常' : '● 实时连接'; hintNode.className = 'refresh-state ' + (cls || ''); }}
+    }}
+    async function refreshBoard(isAuto) {{
+      if (running) return;
+      running = true;
+      var serviceNode = document.getElementById('serviceState');
+      var readNode = document.getElementById('lastRead');
+      if (refreshButton) refreshButton.disabled = true;
+      try {{
+        const response = await fetch(endpoint + '?_=' + Date.now(), {{cache:'no-store'}});
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        if (data.run_id !== runId) throw new Error('RUN 不匹配');
+        if (projectPath && !data.project_path) throw new Error('服务代码较旧，请通过桌面按钮重开一次');
+        if (projectPath && data.project_path.toLowerCase() !== projectPath.toLowerCase()) throw new Error('项目路径不匹配');
+        if (serviceNode) serviceNode.textContent = '● 已连接 · PID ' + (data.service ? data.service.pid : '-');
+        if (readNode) readNode.textContent = stamp();
+        const latest = data.last_event || {{}};
+        const signature = data.refresh_fingerprint || data.events_fingerprint || (String(data.event_count || 0) + '|' + (latest.at || '') + '|' + (latest.outcome || ''));
+        if (signature !== initialSignature) {{
+          sessionStorage.setItem('board-refresh-result', '发现新事件，正在更新页面');
+          sessionStorage.setItem('board-scroll-y', String(window.scrollY));
+          location.reload();
+          return;
+        }}
+        showState('读取成功 · 数据未变化' + (latest.at ? ' · 最近上报 ' + latest.at.slice(0,19).replace('T',' ') : ''), 'same');
+      }} catch (error) {{
+        if (serviceNode) serviceNode.textContent = '● 连接失败';
+        showState('未能读取：' + error.message + ' · 当前页面保留', 'error');
+      }} finally {{
+        running = false;
+        if (refreshButton) refreshButton.disabled = false;
+        if (!isAuto) applyAuto();
+      }}
+    }}
+    if (refreshButton) refreshButton.addEventListener('click', function () {{ refreshBoard(false); }});
+    document.addEventListener('DOMContentLoaded', function () {{
+      const refreshNotice = sessionStorage.getItem('board-refresh-result');
+      if (refreshNotice) {{ showState(refreshNotice + ' · ' + stamp(), 'new'); sessionStorage.removeItem('board-refresh-result'); }}
+      const savedScroll = sessionStorage.getItem('board-scroll-y');
+      if (savedScroll) {{ sessionStorage.removeItem('board-scroll-y'); window.scrollTo(0, Number(savedScroll)); }}
+    }});
     function applyAuto() {{
       if (timer) {{ clearTimeout(timer); timer = null; }}
-      if (box && box.checked) {{ timer = setTimeout(function () {{ location.reload(); }}, 5000); }}
+      if (box && box.checked) {{ timer = setTimeout(function () {{ refreshBoard(true); applyAuto(); }}, 5000); }}
     }}
     if (box) {{ box.addEventListener('change', applyAuto); applyAuto(); }}
 {_FILTER_SCRIPT}
@@ -1465,20 +1601,80 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 
     status_text = OUTCOME_LABELS.get(summary.get("status", "")) or summary.get("status", "") or "未开始"
     status_class = {"已阻断": "bad", "等待 QA": "wait", "已完成": "ok"}.get(status_text, "")
-    last = summary.get("last_event") or {}
     last_step = last.get("step") or "暂无事件"
     last_outcome = OUTCOME_LABELS.get(last.get("outcome", "")) or last.get("outcome", "") or "暂无结果"
-    service = meta.get("service") or {}
+    current_step = summary.get("current_step", "")
+    last_is_current = last.get("step") == current_step
+    current_modes = [last.get("mode", "")] if last_is_current else []
+    current_modes = [mode for mode in current_modes if mode]
+    current_entry = (step_registry.by_id(last.get("step_id", "")) if last_is_current
+                     else step_registry.by_skill(current_step))
+    current_gate = ((last.get("gate") if last_is_current else "") or
+                    gate_map.gate_badge(current_step, current_modes) or "G1–G6")
+    if current_gate in {"G5", "G7"} and not current_modes:
+        if current_entry and current_entry.id in {"S09", "S13"}:
+            current_gate = current_entry.gate[0] if current_entry.id == "S09" else current_entry.gate[-1]
+    a1_state = project_state.get("a1") or {}
+    version_hint = (Path(a1_state.get("authority_script", "")).name
+                    or a1_state.get("main_unit") or project_state.get("stage") or "未登记")
+    next_action = project_state.get("next_step") or summary.get("pending_decision") or "等待 Agent 下一条上报"
+    next_action = " ".join(str(next_action).split())
+    if len(next_action) > 82:
+        next_action = next_action[:79] + "…"
+    generation_allowed = (project_state.get("authorization") or {}).get("generation_allowed")
+    auth_badge = ("<span class='auth-lock'>🔒 生成未授权</span>"
+                  if generation_allowed is False else "")
+    current_label = (current_entry.name_zh if current_entry else
+                     gate_map.skill_label(summary.get("current_step", "")) or "等待 Agent 上报")
+    if current_entry and len([entry for entry in step_registry.declared()
+                              if entry.skill == current_entry.skill]) > 1:
+        current_label = ("生成前" if current_gate == "G5" else "成片") + current_entry.name_zh
+    activity_rows = []
+    for event in (summary.get("recent_events") or [])[:3]:
+        outcome = event.get("outcome", "")
+        label = OUTCOME_LABELS.get(outcome, outcome or "已记录")
+        tone = ("bad" if outcome in {"BLOCKED", "FAILED", "PAUSED_EXCEPTION"} else
+                "ok" if outcome in {"QA_PASSED", "INDEPENDENT_QA_PASSED"} and
+                event.get("role") in {"qa", "independent_qa", "independent-qa"} else
+                "wait" if outcome in {"SUBMITTED_FOR_QA", "SUBMITTED_IN_PROGRESS"} else "warn")
+        modes = [event.get("mode", "")] if event.get("mode") else None
+        event_gate = event.get("gate") or gate_map.gate_badge(event.get("step", ""), modes)
+        event_title = f'{event_gate} · {event.get("label") or event.get("step")}' if event_gate else (event.get("label") or event.get("step"))
+        activity_rows.append(
+            f'<div class="activity"><span class="activity-time">{escape((event.get("at") or "")[:19])}</span>'
+            f'<span><span class="activity-name">{escape(event_title)}</span>'
+            f'<span class="activity-meta"> · {escape(event.get("actor") or "模型未记录")}</span></span>'
+            f'<span class="activity-state {tone}">{escape(label)}</span></div>'
+        )
+    recent_html = (
+        '<section class="recent"><h2>最近活动 <span class="activity-meta">最新 3 条</span></h2>'
+        + "".join(activity_rows) +
+        '<details class="tech-details"><summary>技术详情</summary>'
+        f'<div>项目：<code>{escape(str(service.get("project") or ""))}</code> · '
+        f'RUN：<code>{escape(summary.get("run_id", ""))}</code> · '
+        f'服务 PID：{escape(str(service.get("pid", "-")))} · '
+        f'代码：<code>{escape(str(service.get("code", "-")))}</code> · '
+        f'启动于：<code>{escape(str(service.get("started_at", "-")))}</code></div>'
+        f'<div>生产版本：<code>{escape(version_hint)}</code> · '
+        f'轨迹记录执行者：<code>{escape(last.get("actor") or "未记录")}</code> · '
+        f'轨迹声明写入者：<code>{escape(last.get("writer_model") or "未记录")}</code></div>'
+        '</details></section>'
+    ) if activity_rows else '<section class="recent"><h2>最近活动</h2><div class="activity-meta">暂无 Agent 事件</div></section>'
+    icon = {"bad": "⛔", "wait": "◷", "warn": "⚠", "ok": "✓"}.get(status_class, "●")
+    hero_html = (
+        f'<section class="hero-state {status_class or "warn"}"><span class="hero-icon">{icon}</span>'
+        f'<div><div class="activity-meta">当前卡点 · {escape(current_gate)}</div>'
+        f'<div class="hero-title">{escape(status_text)}{auth_badge}</div></div>'
+        f'<div class="hero-next"><b>下一步</b> {escape(next_action)}</div></section>'
+    )
     agent_box = f'''
-  <section class="agentbox" aria-label="当前 Agent 运行状态">
-    <div class="fact"><div class="label">当前状态</div><div class="value {status_class}">{escape(status_text)}</div></div>
-    <div class="fact"><div class="label">当前环节</div><div class="value">{escape(summary.get("current_step") or "等待 Agent 上报")}</div></div>
-    <div class="fact"><div class="label">最近动作</div><div class="value">{escape(last_step)}</div></div>
-    <div class="fact"><div class="label">最近结果</div><div class="value {"bad" if last.get("outcome") in {"BLOCKED", "FAILED"} else ""}">{escape(last_outcome)}</div></div>
-    <div class="fact wide"><div class="label">执行 / 看板写入</div><div class="value">{escape(last.get("actor") or "未记录")} · {escape(last.get("writer_model") or "未记录")}</div></div>
-    <div class="fact"><div class="label">最后事件</div><div class="value">{escape((last.get("at") or "未记录")[:19])}</div></div>
-    <div class="fact"><div class="label">状态来源</div><div class="value">当前 RUN 轨迹</div></div>
-    {f'<div class="fact wide"><div class="label">看板实例</div><div class="value">PID {escape(str(service.get("pid", "-")))} · 代码 {escape(str(service.get("code", "-")))}</div></div>' if live and service else ''}
+  <section class="agentbox {status_class}" aria-label="当前 Agent 运行状态">
+    <div class="fact"><div class="label">当前流程</div><div class="value">{escape(current_gate)} · {escape(current_label)}</div></div>
+    <div class="fact"><div class="label">生产版本</div><div class="value" title="{escape(version_hint)}">{escape(version_hint)}</div></div>
+    <div class="fact"><div class="label">最后 Agent 上报</div><div class="value">{escape((last.get("at") or "未记录")[:19])}</div><div class="subvalue">轨迹执行者：{escape(last.get("actor") or "未记录")}</div></div>
+    <div class="fact"><div class="label">服务</div><div class="value" id="serviceState">● 本机看板已连接</div></div>
+    <div class="fact"><div class="label">最后读取</div><div class="value" id="lastRead">{escape(summary.get("generated_at", "")[:19])}</div></div>
+    <div class="fact wide"><div class="label">刷新反馈</div><div class="value" id="refreshState" aria-live="polite">读取完成 · 共 {summary.get("event_count", 0)} 条事件</div></div>
   </section>'''
     gate_flow = gate_flow_block(summary)
     rows = _steps_html(summary)
@@ -1495,8 +1691,10 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         for s in summary["pending"]
     )
     pending_block = f'<div class="pending"><h2>尚未执行（{len(summary["pending"])}）</h2><ul>{pending}</ul></div>' if summary["pending"] else ""
+    decision_short = "当前版本等待用户裁定 / 独立 QA" if "QA" in summary.get("pending_decision", "") else "存在待确认事项"
     halt = (
-        f'<div class="halt"><strong>等待决定：</strong>{escape(summary["pending_decision"])}</div>'
+        f'<details class="halt"><summary>待用户决定 · {escape(decision_short)}</summary>'
+        f'<div>{escape(summary["pending_decision"])}</div></details>'
         if summary.get("pending_decision")
         else ""
     )
@@ -1513,7 +1711,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         100 * summary["progress"]["completed"] / summary["progress"]["total"]
     )
     unified = _unified_step_rows(summary)
-    declared_total = (summary.get("audit", {}).get("steps", {}) or {}).get("declared_total", 0)
+    declared_total = len(step_registry.declared())
     offchain = [r["step"] for r in unified if r["label"] == "链外"]
     offchain_total = len(offchain)
     _, handled_activity = gate_checks.classify(
@@ -1604,14 +1802,11 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生产线运行报告 · {escape(summary['run_id'])}</title>
 <style>
-  :root {{ color-scheme: light dark; --bg:#fff; --fg:#1f2328; --line:#d1d9e0; --muted:#59636e; --card:#f6f8fa; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
-  }}
+  :root {{ color-scheme: dark; --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
   * {{ box-sizing: border-box; }}
-  body {{ margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
+  body {{ margin:0; padding:20px 22px 48px; background:var(--bg); color:var(--fg);
          font:15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }}
-  .wrap {{ width:min(1220px, calc(100vw - 56px)); margin:0 auto; }}
+  .wrap {{ width:min(1480px, calc(100vw - 36px)); margin:0 auto; }}
   h1 {{ font-size:20px; margin:0 0 4px; }}
   h2 {{ font-size:15px; margin:0 0 10px; }}
   h3 {{ font-size:15px; margin:0; }}
@@ -1645,9 +1840,11 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .problems, .pending {{ background:var(--card); border:1px solid var(--line); border-radius:10px;
                          padding:12px 14px; margin-top:16px; }}
   .problems {{ border-color:rgba(207,34,46,.5); }}
-  .silence {{ border:2px solid #cf222e; border-radius:10px; padding:14px 16px; margin-bottom:18px;
+  .silence {{ border:1px solid rgba(207,34,46,.6); border-radius:10px; padding:9px 12px; margin:0 0 14px;
               background:rgba(207,34,46,.12); }}
-  .silence .shead {{ font-size:15.5px; font-weight:700; color:#cf222e; margin-bottom:6px; }}
+  .silence .shead {{ cursor:pointer; list-style:none; font-size:14px; font-weight:700; color:#cf222e; }}
+  .silence .shead::-webkit-details-marker {{ display:none; }}
+  .silence .shead span {{ float:right; font-size:12px; font-weight:400; color:var(--muted); }}
   .silence .sbody {{ font-size:13.5px; margin-bottom:6px; }}
   .silence .ev {{ font-size:12.5px; color:var(--muted); margin-bottom:6px; }}
   .silence .sfix {{ font-size:13px; padding-top:8px; border-top:1px solid rgba(207,34,46,.35); }}
@@ -1661,6 +1858,44 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .strip .sep {{ color:var(--muted); }}
   .strip b.ok {{ color:#1a7f37; }} .strip b.stale {{ color:#cf222e; }} .strip b.none {{ color:#bf8700; }}
   .strip .bad {{ color:#cf222e; }} .strip .warn {{ color:#bf8700; }}
+  .agentbox {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;
+               border:1px solid var(--line); border-left:4px solid var(--gate,#0969da);
+               border-radius:12px; padding:14px 16px; margin:0 0 14px; background:var(--card); }}
+  .agentbox.bad {{ --gate:#cf222e; }} .agentbox.wait {{ --gate:#0969da; }}
+  .agentbox.warn {{ --gate:#bf8700; }} .agentbox.ok {{ --gate:#1a7f37; }}
+  .agentbox .fact {{ min-width:0; }}
+  .agentbox .label {{ color:var(--muted); font-size:12.5px; }}
+  .agentbox .value {{ margin-top:3px; font-size:15px; font-weight:650;
+                      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .agentbox .value.bad {{ color:#cf222e; }} .agentbox .value.wait {{ color:#0969da; }}
+  .agentbox .value.warn {{ color:#bf8700; }} .agentbox .value.ok {{ color:#1a7f37; }}
+  .agentbox .value.error {{ color:#cf222e; }}
+  .agentbox .wide {{ grid-column:span 1; }}
+  .agentbox .subvalue {{ color:var(--muted); font-size:12px; font-weight:400; margin-top:2px; }}
+  .refresh-state {{ font-size:13px; color:var(--muted); min-width:180px; }}
+  .refresh-state.new {{ color:#1a7f37; }} .refresh-state.error {{ color:#cf222e; }}
+  .refresh-state.same {{ color:#8c959f; }}
+  .hero-state {{ display:flex; align-items:center; gap:12px; padding:13px 16px;
+                 border:1px solid var(--line); border-radius:12px; margin:0 0 14px;
+                 background:var(--card); }}
+  .hero-state.bad {{ border-left:5px solid #cf222e; }} .hero-state.wait {{ border-left:5px solid #0969da; }}
+  .hero-state.warn {{ border-left:5px solid #bf8700; }} .hero-state.ok {{ border-left:5px solid #1a7f37; }}
+  .hero-icon {{ font-size:25px; line-height:1; }}
+  .hero-title {{ font-size:19px; font-weight:750; }}
+  .hero-next {{ margin-left:auto; text-align:right; font-size:13px; color:var(--muted); max-width:48%; }}
+  .recent {{ background:var(--card); border:1px solid var(--line); border-radius:12px;
+             padding:12px 16px; margin:8px 0 14px; }}
+  .recent h2 {{ display:flex; justify-content:space-between; align-items:center; }}
+  .activity {{ display:grid; grid-template-columns:145px minmax(0,1fr) auto; gap:12px; align-items:center;
+               border-top:1px solid var(--line); padding:9px 2px; }}
+  .activity-time {{ color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }}
+  .activity-name {{ font-size:14px; font-weight:600; }}
+  .activity-meta {{ color:var(--muted); font-size:12.5px; }}
+  .activity-state {{ white-space:nowrap; font-size:13px; font-weight:650; }}
+  .activity-state.bad {{ color:#cf222e; }} .activity-state.wait {{ color:#0969da; }}
+  .activity-state.ok {{ color:#1a7f37; }} .activity-state.warn {{ color:#bf8700; }}
+  .tech-details {{ margin-top:8px; color:var(--muted); font-size:12.5px; }}
+  .tech-details summary {{ cursor:pointer; }}
   .pill {{ font-size:12px; font-weight:400; padding:2px 8px; border-radius:999px;
            border:1px solid var(--line); color:var(--muted); vertical-align:middle; }}
   .pill.wait, .pill.warn {{ color:#bf8700; border-color:#bf8700; }}
@@ -1674,10 +1909,10 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .fbtn:hover {{ border-color:var(--fg); color:var(--fg); }}
   .fbtn.on {{ background:var(--fg); border-color:var(--fg); color:var(--bg); font-weight:600; }}
 
-  .gateflow {{ display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:12px;
-               margin:0 0 22px; }}
+  .gateflow {{ display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:10px;
+               margin:0 0 18px; }}
   .gatecard {{ min-width:0; border:1px solid var(--line); border-top:3px solid var(--gate,#6e7781);
-               border-radius:10px; padding:14px 14px 12px; background:var(--card); min-height:174px; }}
+               border-radius:10px; padding:10px 11px 9px; background:var(--card); min-height:140px; }}
   .gatecard.ok {{ --gate:#1a7f37; }} .gatecard.wait {{ --gate:#0969da; }}
   .gatecard.warn {{ --gate:#bf8700; }} .gatecard.bad {{ --gate:#cf222e; }}
   .gatecard.todo {{ --gate:#6e7781; }}
@@ -1689,8 +1924,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .gateid {{ font-size:14px; font-weight:700; color:var(--gate); }}
   .gatestatus {{ font-size:13px; color:var(--gate); white-space:nowrap; }}
   .gatename {{ font-size:16px; font-weight:700; margin-top:6px; }}
-  .gatepurpose {{ color:var(--fg); font-size:13.5px; line-height:1.55; margin-top:9px; min-height:43px; }}
-  .gatechecks {{ margin-top:11px; font-size:13px; line-height:1.5; }}
+  .gatepurpose {{ color:var(--fg); font-size:13px; line-height:1.4; margin-top:6px; min-height:36px; }}
+  .gatechecks {{ margin-top:6px; font-size:12.5px; line-height:1.4; }}
   .gatechecks summary {{ cursor:pointer; color:var(--gate); }}
   .gatechecks ul {{ list-style:none; margin:8px 0 0; padding:0; }}
   .gatechecks li {{ display:flex; justify-content:space-between; gap:8px; padding:5px 0;
@@ -1701,12 +1936,18 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .gatechecks .check-bad b {{ color:#cf222e; }}
   .gatechecks .check-wait b, .gatechecks .check-warn b {{ color:#bf8700; }}
   .gatechecks .check-todo b {{ color:var(--muted); }}
-  .gateitems {{ color:var(--muted); font-size:13px; line-height:1.55; margin-top:12px; }}
+  .gateitems {{ color:var(--muted); font-size:12.5px; line-height:1.4; margin-top:6px; }}
   .gateitems summary {{ cursor:pointer; color:var(--muted); }}
-  @media (max-width:980px) {{ .gateflow {{ grid-template-columns:repeat(3, minmax(0, 1fr)); }} }}
-  @media (max-width:650px) {{ .wrap {{ width:calc(100vw - 28px); }} .gateflow {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }}
+  @media (max-width:1050px) {{ .gateflow {{ grid-template-columns:repeat(3, minmax(0, 1fr)); }} }}
+  @media (max-width:760px) {{ .wrap {{ width:calc(100vw - 24px); }} .gateflow {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }}
                            .gatecard:has(.gatechecks[open]) {{ grid-column:span 2; }}
                            .gatecard[data-gate="G6"] .gatechecks[open] ul {{ display:block; }} }}
+  @media (max-width:560px) {{ .agentbox {{ grid-template-columns:repeat(2,minmax(0,1fr)); }}
+                              .agentbox .wide {{ grid-column:span 2; }}
+                              .activity {{ grid-template-columns:1fr auto; gap:4px 10px; }}
+                              .activity-time {{ grid-column:1 / -1; }}
+                              .hero-state {{ align-items:flex-start; flex-wrap:wrap; }}
+                              .hero-next {{ margin:4px 0 0 36px; max-width:none; text-align:left; }} }}
   details.auditfold {{ margin-top:4px; border-top:1px solid var(--line); }}
   details.auditfold > summary {{ cursor:pointer; padding:14px 2px; color:var(--muted); font-size:14px; }}
 
@@ -1779,6 +2020,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .psrow span {{ color:var(--muted); flex:none; }}
   .halt {{ margin-top:16px; padding:10px 14px; border-radius:10px; background:rgba(154,103,0,.12);
            border:1px solid rgba(154,103,0,.4); }}
+  .halt summary {{ cursor:pointer; color:#bf8700; font-weight:650; }}
+  .halt[open] summary {{ margin-bottom:7px; }}
   .toolbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:12px;
               padding:8px 14px; background:var(--card); border:1px solid var(--line); border-radius:10px;
               font-size:13px; }}
@@ -1796,7 +2039,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 <div class="wrap">
   <h1>{escape(segment_title)} <span class="pill {status_cls}">{escape(status_label)}</span></h1>
   <div class="sub">
-    {escape(meta.get('project') or '-')}
+    {escape(meta.get('series') or meta.get('project') or '-')}
     · {escape(meta.get('episode') or '-')} · 段 {escape(summary.get('segment') or summary['run_id'])}
     · <code>{escape(summary['run_id'])}</code>
   </div>
@@ -1804,14 +2047,15 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   {toolbar}
 
   <div class="strip">{strip}</div>
-  {silence_banner}
-
   {halt}
   {not_started_block}
 
   {agent_box}
+  {hero_html}
+  {silence_banner}
 
   {gate_flow}
+  {recent_html}
 
   <details class="auditfold" data-persist-key="audit">
     <summary>展开协议明细 · {declared_total} 步（证据与合规细节）</summary>
@@ -1838,9 +2082,6 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   <footer>
     {'全部段一览：<a href="/overview">/overview</a> · ' if live else ''}
     <code>workflow/runs/{escape(summary['run_id'])}.json</code> · 渲染于 {escape(summary['generated_at'])}
-    {('<br>服务实例：PID ' + escape(str(meta.get('service', {}).get('pid', '-'))) +
-      ' · 启动于 ' + escape(str(meta.get('service', {}).get('started_at', '-'))) +
-      ' · 代码 ' + escape(str(meta.get('service', {}).get('code', '-')))) if live else ''}
 </footer>
 </div>
 <script>

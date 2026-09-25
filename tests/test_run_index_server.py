@@ -127,6 +127,13 @@ def test_server_routes_serve_live_data(tmp_path):
         data = json.loads(urllib.request.urlopen(f"{base}/data", timeout=10).read().decode("utf-8"))
         assert data["runs"][0]["run_id"] == "RUN-U01"
 
+        segment_data = json.loads(urllib.request.urlopen(
+            f"{base}/run/RUN-U01/data", timeout=10).read().decode("utf-8"))
+        assert segment_data["run_id"] == "RUN-U01"
+        assert segment_data["project_path"] == str(root.resolve())
+        assert segment_data["service"]["pid"] > 0
+        assert segment_data["event_count"] == 1
+
         segment = urllib.request.urlopen(f"{base}/run/RUN-U01", timeout=10).read().decode("utf-8")
         assert "short-drama-image-generator" in segment
     finally:

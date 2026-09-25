@@ -228,9 +228,9 @@ def banner_html(alarm: dict) -> str:
             f'　写于 {escape(str(artifact.get("age_minutes", "?")))} 分钟前</div>'
         )
     return f"""
-  <div class="silence" role="alert">
-    <div class="shead">⚠ {escape(alarm.get("label", ""))}</div>
+  <details class="silence" role="alert">
+    <summary class="shead">⚠ {escape(alarm.get("label", ""))} <span>详情</span></summary>
     <div class="sbody">{alarm.get("detail", "")}</div>
     {evidence}
     <div class="sfix">{alarm.get("hint", "")}</div>
-  </div>"""
+  </details>"""

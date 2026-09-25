@@ -31,6 +31,7 @@ from urllib.parse import unquote
 from . import run_index
 from .run_report import (
     build_report,
+    refresh_fingerprint,
     render_html,
     render_project_html,
     render_project_text,
@@ -162,14 +163,30 @@ def make_handler(project_root: str | Path, service_meta: dict | None = None):
                             return
                         summary = placeholder_summary(run_id, rows[run_id], view_for_placeholder(root))
                         if tail == "data":
+                            summary["project_path"] = str(root.resolve())
+                            summary["service"] = {**service_meta, "pid": os.getpid()}
+                            summary["project_state"] = current_view(root, with_details=False).get("project_state")
+                            summary["refresh_fingerprint"] = refresh_fingerprint(
+                                summary, summary["project_state"])
                             self._send(200, "application/json; charset=utf-8",
                                        json.dumps(summary, ensure_ascii=False).encode("utf-8"))
                         else:
+                            view = current_view(root, with_details=False)
                             self._send(200, "text/html; charset=utf-8",
-                                       render_html(summary, live=True).encode("utf-8"))
+                                       render_html(summary, live=True, project_meta={
+                                           "project": view.get("project", ""),
+                                           "episode": view.get("episode", ""),
+                                           "project_state": view.get("project_state"),
+                                           "service": {**service_meta, "pid": os.getpid()},
+                                       }).encode("utf-8"))
                         return
                     if tail == "data":
                         summary = build_report(run_file)
+                        summary["project_path"] = str(root.resolve())
+                        summary["service"] = {**service_meta, "pid": os.getpid()}
+                        summary["project_state"] = current_view(root, with_details=False).get("project_state")
+                        summary["refresh_fingerprint"] = refresh_fingerprint(
+                            summary, summary["project_state"])
                         self._send(200, "application/json; charset=utf-8",
                                    json.dumps(summary, ensure_ascii=False).encode("utf-8"))
                     else:
@@ -244,7 +261,8 @@ def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = Tr
     """
     root = Path(project_root)
     service_meta = {"started_at": datetime.now(timezone.utc).isoformat(),
-                    "code": code_fingerprint(), "pid": os.getpid()}
+                    "code": code_fingerprint(), "pid": os.getpid(),
+                    "project": str(root.resolve())}
     if not run_index.has_trace(root):
         raise SystemExit(
             f"没有找到 {root / 'workflow' / 'run_index.json'}（也没有 segments.json）：该项目还没有运行轨迹。"
@@ -257,7 +275,7 @@ def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = Tr
         try:
             httpd = ThreadingHTTPServer(("127.0.0.1", candidate),
                                         make_handler(root, service_meta))
-            port = candidate
+            port = httpd.server_address[1]
             break
         except OSError as exc:
             last_error = exc

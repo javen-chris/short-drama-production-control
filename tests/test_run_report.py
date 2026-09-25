@@ -125,6 +125,47 @@ def test_the_table_is_led_by_the_gate_not_the_skill_slug():
             assert gate in gate_map.GATE_NAMES, f"{skill} maps to unknown {gate}"
 
 
+def test_live_board_puts_status_card_styles_on_the_segment_view_and_keeps_s13_visible():
+    html = render_html(summarize(STATE), live=True, project_meta={
+        "project": "D:/isolated/project", "episode": "EP01",
+        "project_state": {"authorization": {"generation_allowed": False}},
+        "service": {"project": "D:/isolated/project", "pid": 1234, "code": "abc123"},
+    })
+    styles = html.split("</style>", 1)[0]
+    assert ".agentbox {" in styles
+    assert "成片独立 QA" in html
+    assert "生成后执行" in html
+    assert "生成未授权" in html
+    assert "服务代码较旧，请通过桌面按钮重开一次" in html
+    assert "data-persist-key=\"audit\"" in html
+
+
+def test_recent_events_are_kept_for_the_live_refresh_signature():
+    state = json.loads(json.dumps(STATE))
+    summary = summarize(state)
+    assert summary["event_count"] == 3
+    assert summary["recent_events"][0]["step"] == "short-drama-production-qa"
+    assert summary["last_event"]["outcome"] == "PAUSED_EXCEPTION"
+
+
+def test_historical_post_generation_qa_is_not_mistaken_for_current_version_pass():
+    state = json.loads(json.dumps(STATE))
+    state["events"].append({
+        "step": "short-drama-production-qa", "step_id": "S13", "gate": "G7",
+        "outcome": "FAILED", "at": "2026-09-20T13:10:00Z", "actor": "gpt-reviewer",
+    })
+    state["events"].append({
+        "step": "short-drama-script-breakdown", "step_id": "S02", "gate": "G1",
+        "outcome": "SUBMITTED_FOR_QA", "at": "2026-09-20T13:11:00Z", "actor": "producer",
+    })
+    summary = summarize(state)
+    from production_control.run_report import _unified_step_rows
+    row = next(row for row in _unified_step_rows(summary) if row["step_id"] == "S13")
+    assert row["label"] == "旧版需复核"
+    assert row["cls"] == "warn"
+    assert row["cls"] != "ok"
+
+
 def test_every_declared_skill_has_a_chinese_name():
     """The board must never show a bare slug as the primary label."""
     from production_control import gate_map
