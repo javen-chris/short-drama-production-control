@@ -122,6 +122,8 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
     compliance = verify_run_compliance(state, chain, manifest)
     reconciliation = step_audit.audit_run(state, project_root, chain)
     qa_passes = step_audit.audit_qa_passes(state, project_root)
+    last_event = max((event for event in state.get("events", []) or []),
+                     key=lambda event: event.get("at", ""), default={})
     return {
         "run_id": state.get("run_id", ""),
         "contract_id": state.get("contract_id", ""),
@@ -138,6 +140,15 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         "compliance": compliance,
         "audit": reconciliation,
         "qa_passes": qa_passes,
+        "last_event": {
+            "step": last_event.get("step", ""),
+            "outcome": last_event.get("outcome", ""),
+            "at": last_event.get("at", ""),
+            "actor": last_event.get("actor", ""),
+            "writer_model": last_event.get("writer_model", ""),
+            "role": last_event.get("role", ""),
+            "reason": last_event.get("reason", ""),
+        },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -919,6 +930,17 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .strip b {{ font-weight:500; }}
   .strip b.ok {{ color:#1a7f37; }} .strip b.stale {{ color:#cf222e; }} .strip b.none {{ color:#bf8700; }}
   .strip .bad {{ color:#cf222e; }} .strip .warn {{ color:#bf8700; }}
+  .agentbox {{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px;
+               border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+               margin-bottom:16px; background:var(--card); }}
+  .agentbox .fact {{ min-width:0; }}
+  .agentbox .label {{ color:var(--muted); font-size:11.5px; }}
+  .agentbox .value {{ margin-top:2px; font-size:13.5px; font-weight:600;
+                      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .agentbox .value.bad {{ color:#cf222e; }} .agentbox .value.wait {{ color:#0969da; }}
+  .agentbox .value.ok {{ color:#1a7f37; }} .agentbox .wide {{ grid-column:span 2; }}
+  @media (max-width:760px) {{ .agentbox {{ grid-template-columns:repeat(2,minmax(0,1fr)); }}
+                              .agentbox .wide {{ grid-column:span 2; }} }}
   table td {{ vertical-align:top; }}
   .vp {{ font-weight:500; white-space:nowrap; }}
   .vp.ok {{ color:#1a7f37; }} .vp.bad {{ color:#cf222e; }}
@@ -1441,6 +1463,23 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 """
     )
 
+    status_text = OUTCOME_LABELS.get(summary.get("status", "")) or summary.get("status", "") or "未开始"
+    status_class = {"已阻断": "bad", "等待 QA": "wait", "已完成": "ok"}.get(status_text, "")
+    last = summary.get("last_event") or {}
+    last_step = last.get("step") or "暂无事件"
+    last_outcome = OUTCOME_LABELS.get(last.get("outcome", "")) or last.get("outcome", "") or "暂无结果"
+    service = meta.get("service") or {}
+    agent_box = f'''
+  <section class="agentbox" aria-label="当前 Agent 运行状态">
+    <div class="fact"><div class="label">当前状态</div><div class="value {status_class}">{escape(status_text)}</div></div>
+    <div class="fact"><div class="label">当前环节</div><div class="value">{escape(summary.get("current_step") or "等待 Agent 上报")}</div></div>
+    <div class="fact"><div class="label">最近动作</div><div class="value">{escape(last_step)}</div></div>
+    <div class="fact"><div class="label">最近结果</div><div class="value {"bad" if last.get("outcome") in {"BLOCKED", "FAILED"} else ""}">{escape(last_outcome)}</div></div>
+    <div class="fact wide"><div class="label">执行 / 看板写入</div><div class="value">{escape(last.get("actor") or "未记录")} · {escape(last.get("writer_model") or "未记录")}</div></div>
+    <div class="fact"><div class="label">最后事件</div><div class="value">{escape((last.get("at") or "未记录")[:19])}</div></div>
+    <div class="fact"><div class="label">状态来源</div><div class="value">当前 RUN 轨迹</div></div>
+    {f'<div class="fact wide"><div class="label">看板实例</div><div class="value">PID {escape(str(service.get("pid", "-")))} · 代码 {escape(str(service.get("code", "-")))}</div></div>' if live and service else ''}
+  </section>'''
     gate_flow = gate_flow_block(summary)
     rows = _steps_html(summary)
     compliance = summary["compliance"]
@@ -1769,6 +1808,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 
   {halt}
   {not_started_block}
+
+  {agent_box}
 
   {gate_flow}
 
