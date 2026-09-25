@@ -197,9 +197,12 @@ def test_the_board_shows_the_one_table_that_matters(tmp_path):
     assert "协议步骤" in page
     assert "无实证" in page          # claimed, nothing behind it
     assert "生产 → QA" in page       # who produced and who signed it off, one line
-    assert 'class="gate">G5<' in page and "视频 Prompt 确认" in page  # and which Gate
-    assert "链外 0 项" in page       # counted in the heading...
-    assert "链外步骤（协议未声明" not in page  # ...and no such row to list
+    assert 'data-gate="G5"' in page and "视频 Prompt 确认" in page  # and which Gate
+    # This run has no off-chain events, so the page must not mention any: a
+    # permanent "链外步骤 0" is a row of noise explaining nothing. The count
+    # appears in the progress strip only when there is something to count.
+    assert "链外步骤" not in page
+    assert '<details class="offchain">' not in page
 
 
 def test_a_run_that_invents_its_own_step_names_is_flagged(tmp_path):
@@ -250,3 +253,51 @@ def test_a_finished_run_missing_declared_steps_is_flagged(tmp_path):
 
     result = step_audit.audit_run(_state(root), root, CHAIN)
     assert any(e.startswith("PROTOCOL_STEPS_INCOMPLETE") for e in result["errors"])
+
+
+# --- Off-chain activity must never be invisible ------------------------------
+# The board used to drop any event whose step name the protocol does not declare
+# unless it said COMPLETED. An agent that spends an afternoon writing
+# SUBMITTED_FOR_QA / BLOCKED events under invented names therefore produced a
+# board that never moved - the work was real, the names were wrong, and the user
+# was told nothing. Every undeclared step is now surfaced whatever its outcome.
+
+def test_an_off_chain_event_is_shown_even_when_it_is_not_completed(tmp_path):
+    root = _project(tmp_path)
+    _write(root, "workflow/note.md")
+    _submit(root, "g6-reference-integrity", outcome="BLOCKED", off_protocol=True,
+            evidence="workflow/note.md", reason="节点读回不一致")
+
+    rows = _rows(step_audit.audit_run(_state(root), root, CHAIN))
+    assert "g6-reference-integrity" in rows
+    assert rows["g6-reference-integrity"]["verdict"] == step_audit.EXTRA
+    assert rows["g6-reference-integrity"]["outcome"] == "BLOCKED"
+
+
+def test_every_off_chain_outcome_reaches_the_board(tmp_path):
+    """SUBMITTED_FOR_QA and PAUSED_EXCEPTION used to be dropped entirely."""
+    root = _project(tmp_path)
+    for index, outcome in enumerate(("SUBMITTED_FOR_QA", "BLOCKED", "PAUSED_EXCEPTION")):
+        _write(root, f"workflow/note{index}.md")
+        _submit(root, f"g6-invented-{index}", outcome=outcome, off_protocol=True,
+                evidence=f"workflow/note{index}.md")
+
+    result = step_audit.audit_run(_state(root), root, CHAIN)
+    rows = _rows(result)
+    for index in range(3):
+        assert f"g6-invented-{index}" in rows
+    assert result["steps"]["counts"].get(step_audit.EXTRA) == 3
+
+
+def test_an_off_chain_step_appears_once_showing_its_latest_event(tmp_path):
+    root = _project(tmp_path)
+    _write(root, "workflow/a.md")
+    _write(root, "workflow/b.md")
+    _submit(root, "g6-preflight-11refs", outcome="BLOCKED", off_protocol=True,
+            evidence="workflow/a.md")
+    _submit(root, "g6-preflight-11refs", outcome="SUBMITTED_FOR_QA", off_protocol=True,
+            evidence="workflow/b.md")
+
+    rows = _rows(step_audit.audit_run(_state(root), root, CHAIN))
+    assert rows["g6-preflight-11refs"]["outcome"] == "SUBMITTED_FOR_QA"
+    assert rows["g6-preflight-11refs"]["evidence"] == "workflow/b.md"

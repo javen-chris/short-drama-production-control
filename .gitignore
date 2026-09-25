@@ -19,5 +19,6 @@ assets/
 *.jpeg
 *.webp
 
-# Per-machine roots for the run board launcher (copy the example next to it)
-tools/start-run-board.roots.txt
+# Screenshots under docs/ui/ are documentation, not generated media, and the
+# handoff note points at them. Every other image stays ignored.
+!docs/ui/*.png

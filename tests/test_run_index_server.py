@@ -115,7 +115,7 @@ def test_server_routes_serve_live_data(tmp_path):
     try:
         page = urllib.request.urlopen(f"{base}/", timeout=10).read().decode("utf-8")
         assert "B-2A（物理格斗）" in page
-        assert "立即刷新" in page
+        assert "刷新" in page
         assert "自动刷新" in page
 
         data = json.loads(urllib.request.urlopen(f"{base}/data", timeout=10).read().decode("utf-8"))

@@ -19,7 +19,16 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from . import gate_map, gate_token, run_index, skill_audit, step_audit
+from . import (
+    gate_map,
+    gate_token,
+    run_compliance,
+    run_index,
+    silence_alarm,
+    skill_audit,
+    step_audit,
+    step_registry,
+)
 from .outcomes import OUTCOME_LABELS
 from .run_compliance import STEP_PROTOCOL_REQUIREMENTS, verify_run_compliance
 
@@ -61,10 +70,15 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         outcome = event.get("outcome", "")
         refs = _ref_map(event)
         required = STEP_PROTOCOL_REQUIREMENTS.get(step, [])
+        # A required document counts as read when the event names it in any
+        # path shape - bare name, relative, or absolute. See normalise_ref.
+        recorded = {run_compliance.normalise_ref(p) for p in refs}
         started = bool(event)
         reads = []
         for path in sorted(set(list(refs.keys()) + required)):
-            if path in refs:
+            if run_compliance.normalise_ref(path) in recorded and (
+                path in refs or path in required
+            ):
                 status = "read"
             elif step in completed and path in required:
                 # Only a finished step can be in violation of a required read.
@@ -262,18 +276,46 @@ RUN_STATUS_LABELS = {
 }
 
 
-def minutes_since(iso: str) -> int | None:
-    """Whole minutes since an ISO timestamp, or None when there is no timestamp."""
-    if not iso:
+def parse_iso(value: str) -> datetime | None:
+    """An ISO timestamp as an aware datetime, or None when it is unusable.
+
+    Timestamps in this system come from two different writers and therefore carry
+    two different offsets: the index is stamped in UTC by `run_index._now()`, while
+    the agent writes events in local time. Comparing those as *strings* is wrong -
+    `12:17:39+00:00` sorts before `20:17:39+08:00` even though they are the same
+    instant - and the board then raises a "the index is stale" alarm that is not
+    true. Always parse before comparing.
+    """
+    if not value:
         return None
-    text = iso.strip().replace("Z", "+00:00")
     try:
-        moment = datetime.fromisoformat(text)
+        moment = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
     except ValueError:
         return None
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def minutes_since(iso: str) -> int | None:
+    """Whole minutes since an ISO timestamp, or None when there is no timestamp."""
+    moment = parse_iso(iso)
+    if moment is None:
+        return None
     return int((datetime.now(timezone.utc) - moment).total_seconds() // 60)
+
+
+def _is_index_behind(newest_event: str, index_time: str) -> bool:
+    """Is the index genuinely older than the newest event?
+
+    Both sides must be parsed first: they are written by different code paths with
+    different UTC offsets, so a string comparison reports "stale" for two stamps
+    that are the same instant. A false alarm here is expensive - it tells the user
+    to re-sync data that is already correct.
+    """
+    event_at = parse_iso(newest_event)
+    index_at = parse_iso(index_time)
+    if event_at is None or index_at is None:
+        return False
+    return event_at > index_at
 
 
 def reporting_state(idle_minutes: int | None, *, threshold: int = STALE_MINUTES,
@@ -355,6 +397,16 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         if stamp:
             newest_event = datetime.fromtimestamp(stamp, timezone.utc).isoformat()
     idle_minutes = minutes_since(newest_event)
+    reporting = reporting_state(idle_minutes, started=counts["running"] + counts["waiting"] + counts["blocked"])
+    # `reporting_state` only sees the trajectory. If the window never wrote one,
+    # it reports "stale" while the agent is in fact busy writing files. Add the
+    # filesystem as a second witness so "no work" and "work not reported" -- two
+    # verdicts that demand opposite responses -- stop looking identical.
+    alarm = silence_alarm.detect(
+        root,
+        newest_event_at=newest_event,
+        index_updated_at=index_time,
+    )
     return {
         "project": index.get("project", ""),
         "series": index.get("series", ""),
@@ -365,13 +417,14 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         "data_source": source,
         "index_updated_at": index_time,
         "newest_event_at": newest_event,
-        "stale": bool(newest_event and index_time and newest_event > index_time),
+        "stale": _is_index_behind(newest_event, index_time),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project_state": project_state,
         "gate_tokens": gate_token.load_tokens(root) if root else [],
         "skill_audits": skill_audit.load_audits(root) if root else [],
         "idle_minutes": idle_minutes,
-        "reporting": reporting_state(idle_minutes, started=counts["running"] + counts["waiting"] + counts["blocked"]),
+        "reporting": reporting,
+        "silence_alarm": alarm,
     }
 
 
@@ -543,11 +596,12 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     (live=False) is a snapshot and says so.
     """
     counts = view["counts"]
-    live_hint = "实时模式：每次刷新都重新读取磁盘上的最新状态" if live else "静态快照：数据为生成时状态，需重新运行命令才会更新"
+    live_hint = "刷新只重读磁盘，不重启服务" if live else "静态快照：需重新运行命令才会更新"
     auto_checked = "checked" if live else ""
 
     reporting = view.get("reporting") or reporting_state(view.get("idle_minutes"))
     heartbeat = heartbeat_block(reporting, view.get("newest_event_at", ""))
+    silence_banner = silence_alarm.banner_html(view.get("silence_alarm") or {})
     heading = " · ".join(x for x in (view["series"], view["episode"]) if x) or view["project"]
 
     # One line instead of six cards: the numbers that change a decision, and
@@ -573,6 +627,12 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     # panels said the same thing three times over a mostly-empty page; their
     # conclusions now ride along per segment in the table.
     alerts = []
+    silence = view.get("silence_alarm") or {}
+    if silence.get("alarm"):
+        alerts.append(
+            f'<li><strong>{escape(silence.get("label") or "")}</strong>——'
+            f'{silence.get("detail") or ""} {silence.get("hint") or ""}</li>'
+        )
     if reporting.get("level") in ("stale", "none"):
         alerts.append(f'<li>{escape(reporting.get("label") or "")}——{escape(reporting.get("hint") or "")}</li>')
     state = view.get("project_state") or {}
@@ -591,8 +651,8 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     # fail (and look like a broken app). Only the live server gets real controls.
     toolbar_controls = (
         f"""
-    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
-    <label><input type="checkbox" id="auto" {auto_checked}> 自动刷新（每 5 秒）</label>
+    <button type="button" onclick="location.reload()">刷新</button>
+    <label><input type="checkbox" id="auto" {auto_checked}> 自动刷新 5s</label>
     <span class="dim">{live_hint}</span>"""
         if live
         else """
@@ -723,7 +783,11 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
         serious = counts_a.get(step_audit.CLAIMED_NO_EVIDENCE) or counts_a.get(step_audit.EXTRA)
         where = f'<code>{escape(row.get("current_step", "") or "-")}</code>'
         if row.get("pending_decision"):
-            where += f'<div class="note">{escape(row["pending_decision"])}</div>'
+            # A blocked reason is free text written by the agent and can run to
+            # several lines. Two lines plus a tooltip keeps the row scannable
+            # while the whole sentence stays available.
+            reason = escape(row["pending_decision"])
+            where += f'<div class="note clamp" title="{reason}">{reason}</div>'
         if blockers:
             where += (f'<div class="note{" bad" if serious else ""}">'
                       + " ｜ ".join(blockers) + "</div>")
@@ -778,7 +842,8 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .rid {{ white-space:nowrap; }}
   .bar {{ height:6px; background:var(--line); border-radius:3px; overflow:hidden; min-width:80px; margin-bottom:2px; }}
   .bar > i {{ display:block; height:100%; background:#1a7f37; }}
-  .badge {{ display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; color:#fff; background:var(--c,#6e7781); }}
+  .badge {{ display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; color:#fff;
+            background:var(--c,#6e7781); white-space:nowrap; }}
   .dim {{ color:var(--muted); }}
   .step {{ border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; }}
   .step.done {{ border-left:3px solid #1a7f37; }}
@@ -831,6 +896,22 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .psrow {{ display:flex; gap:10px; font-size:12.5px; margin-top:4px; }}
   .psrow span {{ color:var(--muted); flex:none; }}
   .problems ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
+  .silence {{ border:2px solid #cf222e; border-radius:10px; padding:14px 16px; margin-bottom:18px;
+              background:rgba(207,34,46,.12); }}
+  .silence .shead {{ font-size:15.5px; font-weight:700; color:#cf222e; margin-bottom:6px; }}
+  .silence .sbody {{ font-size:13.5px; margin-bottom:6px; }}
+  .silence .ev {{ font-size:12.5px; color:var(--muted); margin-bottom:6px; }}
+  .silence .sfix {{ font-size:13px; padding-top:8px; border-top:1px solid rgba(207,34,46,.35); }}
+  .offchain {{ border:1px solid rgba(191,135,0,.45); border-radius:8px; margin-bottom:14px;
+               background:rgba(191,135,0,.06); }}
+  .offchain > summary {{ cursor:pointer; padding:9px 14px; font-size:13px;
+                         font-weight:600; color:#bf8700; }}
+  .offchain .osbody {{ padding:0 14px; font-size:12.5px; margin-bottom:6px; }}
+  .offchain ol {{ margin:4px 0 0; padding-left:46px; font-size:12px; }}
+  .offchain li {{ margin-bottom:2px; }}
+  .offchain code {{ font-size:11.5px; }}
+  .offchain .osfix {{ font-size:12.5px; padding:9px 14px 12px; margin-top:8px;
+                      border-top:1px solid rgba(191,135,0,.35); }}
   .strip {{ border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:16px;
             background:var(--card); font-size:13.5px; }}
   .strip .sep {{ color:var(--muted); }}
@@ -843,6 +924,10 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .vp.warn, .vp.wait {{ color:#bf8700; }} .vp.todo {{ color:var(--muted); }}
   .note {{ font-size:12px; color:var(--muted); margin-top:2px; }}
   .note.bad {{ color:#cf222e; }}
+  /* Free text the agent wrote can run to several lines; two lines plus a tooltip
+     keeps a row scannable without throwing the sentence away. */
+  .note.clamp {{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+                 overflow:hidden; max-width:520px; }}
   details.more {{ margin-top:10px; }}
   details.more summary {{ cursor:pointer; color:var(--muted); font-size:13px; }}
   footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
@@ -859,6 +944,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   </div>
 
   <div class="strip">{strip}</div>
+  {silence_banner}
   {stale}
 
   <table>
@@ -1030,7 +1116,7 @@ _FILTER_SCRIPT = """
       ok: function (v) { return v === 'ok'; },
       bad: function (v) { return v === 'bad'; }
     };
-    var rows = [].slice.call(document.querySelectorAll('#steps tbody tr.srow'));
+    var rows = [].slice.call(document.querySelectorAll('#steps .srow'));
     var empty = document.getElementById('empty');
     function applyFilter(name) {
       var test = FILTERS[name] || FILTERS.all;
@@ -1076,50 +1162,65 @@ def _verdict_pill(step_row: dict, qa_row: dict) -> tuple[str, str]:
 
 
 def _step_row_html(row: dict) -> str:
-    """One step, Gate first.
+    """One step, one line, with the rest folded away.
 
-    The Gate is what the protocol calls this step, so it leads. The Skill id is
-    still there but demoted to a tooltip and a footnote line - a person reading
-    the board wants "G3 资产锁定 / 资产映射与最小必要路线", not
-    `short-drama-asset-router`.
+    The previous version printed everything it knew into every row: the Gate, the
+    Gate's name, the Chinese Skill name, the Skill slug, the id, the producer and
+    QA models, the missing reads, the evidence path and a full timestamp. Twelve
+    such rows is roughly eighty lines of grey text, and the one thing a reader
+    came for - is this step done or not - was the hardest thing to find.
+
+    So the row is a `<summary>` of four facts and a `<details>` body holding the
+    evidence. Nothing is lost, it is only ordered: the answer first, the proof on
+    request. `<details>` costs no JavaScript and works with the page's filtering.
     """
-    gate_cell = (
-        f'<span class="gate">{escape(row["gate_letters"])}</span>'
-        f'<div class="gname">{escape(row["gate_name"])}</div>'
-        if row["gate_letters"] else '<span class="dim">链外</span>'
+    # The letter leads because it is what the protocol's own documents use. The
+    # Gate's Chinese name rides on the tooltip: putting `G1 秒表脚本` next to
+    # `脚本拆解为镜头与生产单元` on one line repeats the same idea twice and pushes
+    # the row wider than it needs to be.
+    gate_title = f'{row["gate_letters"]} {row["gate_name"]}'.strip() or "不在协议链内"
+    gate = (
+        f'<span class="g" title="{escape(gate_title)}">{escape(row["gate_letters"])}</span>'
+        if row["gate_letters"]
+        else f'<span class="g off" title="{escape(gate_title)}">链外</span>'
     )
-    skill_cell = (
-        f'<div class="sname">{escape(row["skill_name"])}'
-        + ('<span class="alt" title="三个提交适配是三选一，本次只会用一个">三选一</span>'
-           if row["alternative"] else "")
-        + "</div>"
-        f'<div class="sid" title="{escape(row["step"])}">{escape(row["step"])}</div>'
+    # The Chinese name is the label a person recognises. The slug and the id are
+    # for copying into a command, so they ride along at lower contrast.
+    name = f'<span class="nm">{escape(row["skill_name"])}</span>'
+    if row["alternative"]:
+        name += '<span class="tag" title="三个提交适配是三选一，本次只会用一个">三选一</span>'
+    if row.get("step_id"):
+        name += (f'<code class="sid" title="向 Agent 交代这一步时用这个稳定 ID">'
+                 f'{escape(row["step_id"])}</code>')
+
+    detail_rows: list[tuple[str, str]] = [("Skill", f'<code>{escape(row["step"])}</code>')]
+    # Always present, even when both sides are blank: "nobody recorded who ran
+    # this" is itself the finding, and hiding the row hides that.
+    detail_rows.append((
+        "生产 → QA",
+        f'{escape(row["producer"] or "未记录")} <span class="ar">→</span> '
+        f'{escape(row["qa_actor"] or "未记录")}',
+    ))
+    if row["note"]:
+        detail_rows.append(("备注", escape(row["note"])))
+    if row["evidence"]:
+        detail_rows.append(("证据", f'<code>{escape(row["evidence"])}</code>'))
+    if row["at"]:
+        detail_rows.append(("时间", f'<code>{escape(row["at"][:19])}</code>'))
+
+    body = "".join(
+        f'<div class="dr"><span class="dk">{escape(k)}</span>'
+        f'<span class="dv">{v}</span></div>'
+        for k, v in detail_rows
     )
-    who = ""
-    if row["producer"] or row["qa_actor"]:
-        who = (f'<span class="who">{escape(row["producer"] or "—")}</span>'
-               f'<span class="arrow">→</span>'
-               f'<span class="who">{escape(row["qa_actor"] or "—")}</span>')
-    else:
-        who = '<span class="dim">—</span>'
-    detail = ""
-    if row["note"] or row["evidence"]:
-        detail = (
-            '<div class="detail">'
-            + (f'<div class="note">{escape(row["note"])}</div>' if row["note"] else "")
-            + (f'<div class="ev"><span class="evk">证据</span>'
-               f'<code>{escape(row["evidence"])}</code></div>' if row["evidence"] else "")
-            + (f'<div class="ev"><span class="evk">时间</span>'
-               f'<code>{escape(row["at"][:19])}</code></div>' if row["at"] else "")
-            + "</div>"
-        )
     return (
-        f'<tr class="srow {row["cls"]}" data-verdict="{escape(row["cls"])}">'
-        f'<td class="cgate">{gate_cell}</td>'
-        f'<td class="cskill">{skill_cell}{detail}</td>'
-        f'<td class="cwho">{who}</td>'
-        f'<td class="cvp"><span class="vp {row["cls"]}">{escape(row["label"])}</span></td>'
-        "</tr>"
+        f'<details class="srow {row["cls"]}" data-verdict="{escape(row["cls"])}"'
+        f' data-gate="{escape(row["gate_letters"])}">'
+        f'<summary>{gate}{name}'
+        f'<span class="vp {row["cls"]}">{escape(row["label"])}</span>'
+        f"</summary>"
+        f'<div class="sbody">{body}</div>'
+        "</details>"
     )
 
 
@@ -1148,12 +1249,30 @@ def _unified_step_rows(summary: dict) -> list[dict]:
         elif row["verdict"] == step_audit.CLAIMED_NO_EVIDENCE:
             note = "证据文件不存在"
         elif row["verdict"] == step_audit.EXTRA:
-            note = "协议声明的链里没有这一步"
+            state = OUTCOME_LABELS.get(row.get("outcome") or "", row.get("outcome") or "")
+            note = f"协议链外 · 最新结果 {state}" if state else "协议声明的链里没有这一步"
         elif row["verdict"] == step_audit.NOT_CLAIMED:
-            note = "协议要求这一步，轨迹里没有它"
+            # Say what to run, not just what is missing. The reader of this board
+            # is the person who then has to tell the agent what to do next, so
+            # hand them the exact flag rather than making them look it up.
+            entry = step_registry.by_skill(step)
+            if entry:
+                gate = entry.gate[0] if entry.gate else ""
+                note = (f"协议要求这一步，轨迹里没有它 —— 让 Agent 跑 "
+                        f"--step {entry.id} --gate {gate}")
+            else:
+                note = "协议要求这一步，轨迹里没有它"
+        if row.get("step_matched_fuzzy") and not note:
+            # A corrected name is informational, so it only shows when there is no
+            # real problem to report. Saying it at all keeps the trace honest: the
+            # step is right, but it was not typed correctly.
+            note = (f"步骤名已自动纠正：写的「{row['step_as_written']}」→ "
+                    f"{row.get('step_id') or step}（相似度 {row['step_matched_fuzzy']}）")
         gate_letters = gate_map.gates_for(step, row.get("modes"))
+        entry = step_registry.by_skill(step)
         out.append({
             "step": step,
+            "step_id": entry.id if entry else "",
             "gate_letters": gate_map.gate_badge(step, row.get("modes")),
             "gate": gate_map.annotated_gate(step, row.get("modes")) or row.get("gate", ""),
             "gate_name": gate_map.GATE_NAMES.get(gate_letters[0], "") if gate_letters else "",
@@ -1161,6 +1280,7 @@ def _unified_step_rows(summary: dict) -> list[dict]:
             "alternative": gate_map.is_alternative(step),
             "producer": row.get("actor", ""), "qa_actor": qa_row.get("qa_actor", ""),
             "label": label, "cls": cls, "note": note,
+            "offchain": row["verdict"] == step_audit.EXTRA,
             "evidence": row.get("evidence", ""), "at": row.get("at", ""),
         })
     return out
@@ -1188,13 +1308,14 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     toolbar = (
         f"""
   <div class="toolbar">
-    <label>查看段：
+    <label>查看段
       <select onchange="location.href='/?run='+encodeURIComponent(this.value)">{options}</select>
     </label>
-    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
-    <label><input type="checkbox" id="auto" checked> 自动刷新（每 5 秒）</label>
-    <span class="dim">刷新只重新读取磁盘上的轨迹，<strong>不会重启服务、不会清空进度</strong></span>
-    <span class="dim">本次渲染：{escape(summary['generated_at'])}</span>
+    <button type="button" onclick="location.reload()">刷新</button>
+    <label class="autof"><input type="checkbox" id="auto" checked> 自动刷新 5s</label>
+    <span class="dim hint" title="刷新只重新读取磁盘上的轨迹，不会重启服务、不会清空进度">
+      刷新不会重启服务</span>
+    <span class="dim right">渲染于 {escape(summary['generated_at'][:19])}</span>
   </div>
   <script>
     var box = document.getElementById('auto');
@@ -1210,12 +1331,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         if live
         else f"""
   <div class="toolbar">
-    <span>这是<b>静态快照</b>：切换段落与刷新按钮不会生效（静态文件没有后端，点了会报 AccessDenied）。
-      表格下方的筛选按钮仍然可用。</span>
-  </div>
-  <div class="toolbar">
-    <span class="dim">要看实时进度并在段之间来回切换，双击 <code>启动-运行总表.cmd</code>，
-      或运行：<code>python tools\\render_run_report.py &lt;项目目录&gt; --serve</code></span>
+    <span>这是<b>静态快照</b>，不能刷新或切段。要看实时进度：
+      <code>tools\\一键打开看板.cmd</code></span>
   </div>
   <script>
 {_FILTER_SCRIPT}
@@ -1262,6 +1379,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     passes = summary.get("qa_passes") or {}
     hb = meta.get("reporting") or {}
     hb_level = escape(hb.get("level") or "")
+    silence_banner = silence_alarm.banner_html(meta.get("silence_alarm") or {})
     strip_bits = [
         f'已提交 <b>{passes.get("submitted", 0)}</b>',
         f'QA 通过 <b class="{"ok" if passes.get("passed") else ""}">{passes.get("passed", 0)}</b>',
@@ -1274,14 +1392,53 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     strip_bits.append(f'最后回传 <b class="{hb_level}">{escape(hb.get("label") or "从未回传")}</b>')
     strip = ' <span class="sep">·</span> '.join(strip_bits)
 
-    rows_html = "".join(_step_row_html(r) for r in unified)
-    offchain_note = (
-        '<div class="quiet">链外步骤（协议未声明，已计入进度，需要确认是否替换了协议步骤）：'
-        + "、".join(f"<code>{escape(s)}</code>" for s in offchain) + "</div>"
-        if offchain else ""
-    )
+    # The main table is the protocol's own steps. Off-chain activity is real and
+    # must stay reachable, but letting it sit in the same table buried the twelve
+    # rows the reader actually came for - eighteen extra rows pushed G1-G6 off the
+    # first screen. It moves into a fold that is closed by default and says how
+    # many rows are inside.
+    chain_rows = [r for r in unified if not r.get("offchain")]
+    extra_rows = [r for r in unified if r.get("offchain")]
+    rows_html = "".join(_step_row_html(r) for r in chain_rows)
+
+    # Off-chain activity gets exactly one place on the page. It used to get two -
+    # a warning panel above the table and a fold below it - both saying "18 rows",
+    # which reads as two separate problems and pads the top of the page with prose
+    # about data that will never change. One fold, holding the explanation, the
+    # names and the rows together.
+    extra_html = ""
+    if extra_rows:
+        shown = offchain[:8]
+        names = "".join(f"<li><code>{escape(s)}</code></li>" for s in shown)
+        if len(offchain) > len(shown):
+            names += f"<li>…另有 {len(offchain) - len(shown)} 个</li>"
+        # Example ids come from the registry, so this hint cannot go stale.
+        examples = "／".join(
+            f"<code>{escape(s.id)}</code>" for s in step_registry.declared()
+            if s.gate and "G6" in s.gate
+        ) or "<code>S10</code>"
+        extra_html = (
+            f'<details class="offchain">'
+            f'<summary>⚠ 链外活动 {len(extra_rows)} 条 —— '
+            f'不在协议链内，不计入上面的进度</summary>'
+            f'<div class="osbody">这些事件<strong>已经写进轨迹了</strong>（不是没上报），'
+            f'但它们的步骤名不是协议登记的步骤，看板无法把它们归到任何 G 步骤上，'
+            f'只能单独列在这里。这就是「Agent 一直在干活、看板却不动」的原因。</div>'
+            f'<ol>{names}</ol>'
+            f'<div class="osfix">怎么修：让 Agent 写轨迹时 <code>--step</code> 用稳定 ID'
+            f'（<code>S01</code>–<code>S13</code>，例如 G6 提交用 {examples}）。'
+            f'大小写、连字符、别名、甚至拼错一两个字母都会自动归位；'
+            f'只有协议里根本没有的名字会被拒绝写入。完整清单见 '
+            f'<code>看板上报提示词.md</code>。</div>'
+            f'<div class="rows">'
+            + "".join(_step_row_html(r) for r in extra_rows)
+            + f'</div></details>'
+        )
+
     status_cls = {"SUBMITTED_FOR_QA": "wait", "BLOCKED": "bad", "FAILED": "bad",
                   "COMPLETED": "ok", "WAITING_APPROVAL": "warn"}.get(summary["status"], "")
+    # A status pill reading `SUBMITTED_FOR_QA` is machine output on a human page.
+    status_label = OUTCOME_LABELS.get(summary["status"]) or summary["status"] or "未开始"
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -1331,6 +1488,12 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .problems, .pending {{ background:var(--card); border:1px solid var(--line); border-radius:10px;
                          padding:12px 14px; margin-top:16px; }}
   .problems {{ border-color:rgba(207,34,46,.5); }}
+  .silence {{ border:2px solid #cf222e; border-radius:10px; padding:14px 16px; margin-bottom:18px;
+              background:rgba(207,34,46,.12); }}
+  .silence .shead {{ font-size:15.5px; font-weight:700; color:#cf222e; margin-bottom:6px; }}
+  .silence .sbody {{ font-size:13.5px; margin-bottom:6px; }}
+  .silence .ev {{ font-size:12.5px; color:var(--muted); margin-bottom:6px; }}
+  .silence .sfix {{ font-size:13px; padding-top:8px; border-top:1px solid rgba(207,34,46,.35); }}
   .verdict {{ font-weight:600; }}
   .verdict.ok {{ color:#1a7f37; }}
   .verdict.bad {{ color:#cf222e; }}
@@ -1346,46 +1509,60 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .pill.wait, .pill.warn {{ color:#bf8700; border-color:#bf8700; }}
   .pill.bad {{ color:#cf222e; border-color:#cf222e; }}
   .pill.ok {{ color:#1a7f37; border-color:#1a7f37; }}
-  table.steps td {{ vertical-align:top; }}
-  .tablehead {{ display:flex; gap:16px; align-items:flex-start; justify-content:space-between;
-                flex-wrap:wrap; margin-bottom:10px; }}
-  .tablehead .sub {{ margin-bottom:0; max-width:620px; }}
+  .tablehead {{ display:flex; gap:16px; align-items:center; justify-content:space-between;
+                flex-wrap:wrap; margin:0 0 8px; }}
   .filters {{ display:flex; gap:6px; flex:none; }}
   .fbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:999px; cursor:pointer;
            border:1px solid var(--line); background:var(--bg); color:var(--muted); }}
   .fbtn:hover {{ border-color:var(--fg); color:var(--fg); }}
   .fbtn.on {{ background:var(--fg); border-color:var(--fg); color:var(--bg); font-weight:600; }}
-  table.steps {{ width:100%; border-collapse:collapse; font-size:13.5px; }}
-  table.steps th {{ text-align:left; font-weight:600; font-size:12px; color:var(--muted);
-                    padding:0 12px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }}
-  table.steps td {{ padding:10px 12px; border-bottom:1px solid var(--line); }}
-  table.steps tr.srow:hover {{ background:var(--card); }}
-  table.steps tr.hidden {{ display:none; }}
-  .cgate {{ width:132px; }} .cskill {{ }} .cwho {{ width:190px; }}
-  .cvp {{ width:92px; text-align:right; }}
-  .gate {{ font-weight:700; font-size:14px; letter-spacing:.3px; }}
-  .gname {{ font-size:11.5px; color:var(--muted); margin-top:1px; }}
-  .sname {{ font-weight:500; }}
-  .alt {{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px; font-size:10.5px;
-          font-weight:400; color:var(--muted); border:1px dashed var(--line); vertical-align:1px; }}
-  .sid {{ font-size:11px; color:var(--muted); font-family:ui-monospace, Consolas, monospace;
-          margin-top:1px; word-break:break-all; }}
-  .who {{ font-family:ui-monospace, Consolas, monospace; font-size:12px; }}
-  .arrow {{ color:var(--muted); margin:0 5px; font-size:11px; }}
-  .detail {{ margin-top:5px; }}
-  .ev {{ font-size:11.5px; color:var(--muted); margin-top:2px; }}
-  .evk {{ display:inline-block; min-width:30px; }}
-  .ev code {{ font-size:11.5px; word-break:break-all; }}
+
+  /* One row per step, one line tall. The verdict is the summary; the evidence is
+     inside the row, on request. Everything used to be printed at once, which made
+     twelve rows about eighty lines and buried the only question that matters. */
+  .rows {{ border-top:1px solid var(--line); }}
+  details.srow {{ border-bottom:1px solid var(--line); }}
+  details.srow.hidden {{ display:none; }}
+  details.srow > summary {{ display:flex; align-items:center; gap:12px;
+                            padding:10px 6px; cursor:pointer; list-style:none; }}
+  details.srow > summary::-webkit-details-marker {{ display:none; }}
+  details.srow > summary::marker {{ content:""; }}
+  details.srow:hover > summary {{ background:var(--card); }}
+  details.srow[open] > summary {{ background:var(--card); }}
+  details.srow > summary::after {{ content:"›"; color:var(--muted); font-size:15px;
+                                   transition:transform .12s; }}
+  details.srow[open] > summary::after {{ transform:rotate(90deg); }}
+  .g {{ flex:0 0 68px; font-weight:700; font-size:12.5px; letter-spacing:.3px;
+        color:var(--muted); }}
+  .g.off {{ color:#bf8700; font-weight:600; }}
+  .nm {{ flex:1 1 auto; font-size:14.5px; font-weight:500; }}
+  .tag {{ margin-left:7px; font-size:10.5px; font-weight:400; color:var(--muted);
+          border:1px dashed var(--line); border-radius:999px; padding:1px 6px; }}
+  .sid {{ margin-left:7px; font-size:11.5px; color:#1a7f37; }}
+  .sbody {{ padding:0 6px 12px 80px; }}
+  .dr {{ display:grid; grid-template-columns:72px 1fr; gap:10px; padding:2px 0; font-size:12.5px; }}
+  .dk {{ color:var(--muted); }}
+  .dv {{ word-break:break-all; }}
+  .ar {{ color:var(--muted); margin:0 4px; }}
   .empty {{ padding:24px; text-align:center; color:var(--muted); font-size:13.5px; }}
-  .vp {{ font-weight:500; white-space:nowrap; }}
-  .vp.ok {{ color:#1a7f37; }} .vp.bad {{ color:#cf222e; }}
-  .vp.warn, .vp.wait {{ color:#bf8700; }}
+  .vp {{ flex:0 0 auto; font-size:13px; font-weight:600; white-space:nowrap; }}
+  /* Five states, five colours. "Waiting for QA" and "did not read the protocol"
+     both used amber, so a healthy submitted step looked the same as a broken one -
+     which made the whole column unscannable. Waiting is normal, so it is neutral. */
+  .vp.ok {{ color:#1a7f37; }}
+  .vp.bad {{ color:#cf222e; }}
+  .vp.warn {{ color:#bf8700; }}
+  .vp.wait {{ color:#0969da; }}
   .vp.todo {{ color:var(--muted); }}
+  /* Still used by the compliance tables inside the fold below the step list. */
   .note {{ font-size:12px; color:var(--muted); margin-top:2px; }}
-  .evidence {{ font-size:12px; word-break:break-all; max-width:230px; }}
-  .quiet {{ font-size:12.5px; color:var(--muted); margin:8px 0 16px; }}
+  .gate {{ font-weight:700; font-size:12.5px; letter-spacing:.3px; white-space:nowrap; }}
   details.more {{ margin-top:22px; border-top:1px solid var(--line); padding-top:12px; }}
   details.more summary {{ cursor:pointer; color:var(--muted); font-size:13px; }}
+  details.extra {{ margin-top:14px; border:1px solid var(--line); border-radius:10px;
+                   padding:10px 14px; background:var(--card); }}
+  details.extra summary {{ cursor:pointer; font-size:13px; color:var(--warn,#bf8700); }}
+  details.extra table {{ margin-top:10px; }}
   .verdict .dim {{ font-weight:400; }}
   .problems ul, .pending ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
   .notstarted {{ margin-top:16px; padding:12px 14px; border-radius:10px; background:var(--card);
@@ -1409,40 +1586,38 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .psrow span {{ color:var(--muted); flex:none; }}
   .halt {{ margin-top:16px; padding:10px 14px; border-radius:10px; background:rgba(154,103,0,.12);
            border:1px solid rgba(154,103,0,.4); }}
-  .toolbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px;
-              padding:10px 14px; background:var(--card); border:1px solid var(--line); border-radius:10px; }}
-  .toolbar button {{ font:inherit; font-size:13.5px; padding:5px 14px; border-radius:8px; cursor:pointer;
+  .toolbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:12px;
+              padding:8px 14px; background:var(--card); border:1px solid var(--line); border-radius:10px;
+              font-size:13px; }}
+  .toolbar button {{ font:inherit; font-size:13px; padding:4px 14px; border-radius:8px; cursor:pointer;
                      border:1px solid var(--line); background:var(--bg); color:var(--fg); }}
-  .toolbar select {{ font:inherit; font-size:13.5px; padding:4px 8px; border-radius:6px;
+  .toolbar select {{ font:inherit; font-size:13px; padding:4px 8px; border-radius:6px;
                      border:1px solid var(--line); background:var(--bg); color:var(--fg); max-width:320px; }}
   .toolbar label {{ font-size:13px; display:flex; align-items:center; gap:6px; }}
+  .toolbar .right {{ margin-left:auto; }}
   footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
   code {{ font-family: ui-monospace, Consolas, monospace; }}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>{escape(segment_title)} <span class="pill {status_cls}">{escape(summary['status'] or '未开始')}</span></h1>
+  <h1>{escape(segment_title)} <span class="pill {status_cls}">{escape(status_label)}</span></h1>
   <div class="sub">
-    项目 <code>{escape(meta.get('project') or '-')}</code>
-    · 集 {escape(meta.get('episode') or '-')} · 段 <code>{escape(summary.get('segment') or summary['run_id'])}</code>
-    · 运行 <code>{escape(summary['run_id'])}</code>
+    {escape(meta.get('project') or '-')}
+    · {escape(meta.get('episode') or '-')} · 段 {escape(summary.get('segment') or summary['run_id'])}
+    · <code>{escape(summary['run_id'])}</code>
   </div>
 
   {toolbar}
 
   <div class="strip">{strip}</div>
+  {silence_banner}
 
   {halt}
   {not_started_block}
 
   <div class="tablehead">
-    <div>
-      <h2>协议步骤 <span class="dim">G0–G8 · 声明 {declared_total} 项 · 链外 {offchain_total} 项</span></h2>
-      <div class="sub">按 Gate 顺序看一行就够：<strong>Gate</strong> 是协议里的步骤名，
-        <strong>步骤</strong>是执行它的 Skill，<strong>结论</strong>是它现在到底算不算完成。
-        <strong>只有独立 QA 写过「通过」才算通过</strong>；生产模型的「已提交」不算。</div>
-    </div>
+    <h2>协议步骤 <span class="dim">{declared_total} 步</span></h2>
     <div class="filters" role="group" aria-label="按结论过滤">
       <button type="button" class="fbtn on" data-filter="all">全部</button>
       <button type="button" class="fbtn" data-filter="open">待办</button>
@@ -1450,12 +1625,9 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
       <button type="button" class="fbtn" data-filter="bad">有风险</button>
     </div>
   </div>
-  <table class="steps" id="steps">
-    <thead><tr><th class="cgate">Gate</th><th class="cskill">步骤</th><th class="cwho">生产 → QA</th><th class="cvp">结论</th></tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
+  <div class="rows" id="steps">{rows_html}</div>
   <div class="empty" id="empty" hidden>当前筛选下没有步骤。</div>
-  {offchain_note}
+  {extra_html}
 
   <details class="more">
     <summary>展开：合规检查 / 尚未执行 / 产出文件</summary>

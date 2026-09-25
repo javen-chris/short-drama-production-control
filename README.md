@@ -78,10 +78,16 @@ See [docs/protocol-mapping.md](docs/protocol-mapping.md) for the mapping to the 
 
 ### 启动方式
 
+**只有一个启动入口**：`tools\一键打开看板.cmd`（桌面上的「短剧看板」快捷方式指向它）。
+双击即可，它会回收旧看板占用的端口、启动服务、并打开浏览器。要切换项目，
+直接改 `tools\board-project.txt` 里的那一行路径再双击一次。
+
+> 之前有 5 个入口（仓库内 2 个 `.cmd`、仓库外 2 个 `.cmd`、1 个交互式菜单），
+> 行为各不相同，双击两次还可能互相杀掉对方的看板。已合并为这一个。
+
 | 方式 | 命令 / 动作 |
 |---|---|
-| 双击（推荐） | `tools\start-run-board.cmd` — 自动扫描出所有项目，输入序号回车即可，无需拖文件夹 |
-| 命令行起实时服务 | `python tools/render_run_report.py "<项目目录>" --serve` |
+| 双击（推荐） | `tools\一键打开看板.cmd` — 读 `tools\board-project.txt`，回收端口后启动 |
 | 命令行起实时服务 | `python tools/render_run_report.py "<项目目录>" --serve` |
 | 等价的模块写法 | `python -m production_control.run_server "<项目目录>"` |
 | 只看一次，不起服务 | `python tools/render_run_report.py "<项目目录>"` |

@@ -104,9 +104,14 @@ def test_the_table_is_led_by_the_gate_not_the_skill_slug():
     from production_control.step_audit import load_chain
 
     html = render_html(summarize(STATE))
-    # The Gate letters and the Chinese Gate name are separate elements, so the
-    # assertion is on both rather than on one concatenated string.
-    assert 'class="gate">G1<' in html
+    # The Gate is anchored as a data attribute, so the assertion survives a
+    # restyle: it checks that the Gate is on the row, not how it is painted.
+    assert 'data-gate="G1"' in html
+
+    # The Gate's Chinese name travels with the letter as a tooltip rather than as
+    # a second visible label: `G1 秒表脚本` beside `脚本拆解为镜头与生产单元` says the
+    # same thing twice and makes every row wider than it needs to be.
+    assert "秒表脚本" in html, "the Gate's own name must still be reachable on the row"
     assert "秒表脚本" in html
     assert "脚本拆解为镜头与生产单元" in html  # and not the raw slug as the label
 
@@ -143,3 +148,31 @@ def test_an_unknown_step_still_renders_as_itself():
     assert gate_map.skill_label("someone-elses-custom-step") == "someone-elses-custom-step"
     assert gate_map.gates_of("someone-elses-custom-step") == ()
     assert gate_map.gate_badge("someone-elses-custom-step") == ""
+
+
+# --- Timezone-aware comparison -------------------------------------------------
+# The index is stamped in UTC while the agent writes events in local time. A raw
+# string comparison therefore sorts `12:17+00:00` before `20:17+08:00` and raises
+# "the index is stale" for two stamps that are the same instant. The board telling
+# the user to re-sync correct data is worse than saying nothing.
+
+def test_two_stamps_of_the_same_instant_are_not_a_stale_index():
+    from production_control.run_report import _is_index_behind
+
+    assert _is_index_behind("2026-09-25T20:17:39+08:00",
+                            "2026-09-25T12:17:39.818485+00:00") is False
+
+
+def test_a_genuinely_newer_event_is_reported_as_stale():
+    from production_control.run_report import _is_index_behind
+
+    assert _is_index_behind("2026-09-25T20:20:00+08:00",
+                            "2026-09-25T12:17:39+00:00") is True
+
+
+def test_an_unparseable_stamp_is_not_evidence_of_staleness():
+    """Refuse to raise an alarm on a timestamp that cannot be read."""
+    from production_control.run_report import _is_index_behind
+
+    assert _is_index_behind("", "") is False
+    assert _is_index_behind("not a time", "2026-09-25T12:00:00+00:00") is False

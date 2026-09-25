@@ -117,6 +117,7 @@ def make_handler(project_root: str | Path):
                         project_meta={"project": view["project"], "series": view["series"],
                                       "episode": view["episode"],
                                       "reporting": view.get("reporting"),
+                                      "silence_alarm": view.get("silence_alarm"),
                                       "newest_event_at": view.get("newest_event_at", ""),
                                       "project_state": view.get("project_state")})
                     self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
