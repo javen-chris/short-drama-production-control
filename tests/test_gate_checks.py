@@ -47,7 +47,7 @@ def test_check_events_affect_gate_warning_but_never_step_progress():
     assert "G5.1 Skill 与 Prompt 版本审计" in html
     assert 'data-gate="G5"' in html
     assert "有阻断" in html
-    assert "辅助活动原始记录" in html
+    assert "辅助审计记录" in html
     assert "确认当前 Prompt 版本确实经过对应 Skill" in html
 
 

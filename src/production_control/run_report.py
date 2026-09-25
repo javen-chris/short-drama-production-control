@@ -1495,7 +1495,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     if passes.get("failed"):
         strip_bits.append(f'<span class="bad">QA 不通过 <b>{passes["failed"]}</b></span>')
     if offchain_total:
-        strip_bits.append(f'<span class="warn">辅助活动 <b>{offchain_total}</b>'
+        strip_bits.append(f'<span class="warn">辅助审计 <b>{offchain_total}</b>'
                           f'{" · 待归类 " + str(len(unknown_activity)) if unknown_activity else ""}</span>')
     strip_bits.append(f'最后回传 <b class="{hb_level}">{escape(hb.get("label") or "从未回传")}</b>')
     strip = ' <span class="sep">·</span> '.join(strip_bits)
@@ -1509,34 +1509,48 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     extra_rows = [r for r in unified if r.get("offchain")]
     rows_html = "".join(_step_row_html(r) for r in chain_rows)
 
-    # Off-chain activity gets exactly one place on the page. It used to get two -
-    # a warning panel above the table and a fold below it - both saying "18 rows",
-    # which reads as two separate problems and pads the top of the page with prose
-    # about data that will never change. One fold, holding the explanation, the
-    # names and the rows together.
+    # Off-chain activity gets one compact audit fold. It must not look like a
+    # seventh protocol lane: group it by the registry's G3/G5/G6 check rule and
+    # hide raw legacy names one level deeper.
     extra_html = ""
     if extra_rows:
-        shown = offchain[:8]
-        names = "".join(f"<li><code>{escape(s)}</code></li>" for s in shown)
-        if len(offchain) > len(shown):
-            names += f"<li>…另有 {len(offchain) - len(shown)} 个</li>"
+        activity_to_check = {}
+        for definition in gate_checks.definitions():
+            for activity in definition.get("activity_names", []) or []:
+                activity_to_check[activity] = definition
+        groups = {}
+        for row in extra_rows:
+            definition = activity_to_check.get(row["step"])
+            if definition:
+                key = definition.get("id", "")
+                title = (f'{definition.get("gate", "")} · '
+                         f'{definition.get("name_zh", "")}')
+                purpose = definition.get("purpose_zh", "")
+            else:
+                key, title, purpose = "unknown", "待归类活动", "尚未建立唯一的 Gate 检查定义。"
+            groups.setdefault(key, {"title": title, "purpose": purpose, "rows": []})["rows"].append(row)
+        group_html = []
+        for group in groups.values():
+            raw = "".join(_step_row_html(row) for row in group["rows"])
+            group_html.append(
+                f'<details class="offgroup"><summary>{escape(group["title"])} · '
+                f'{len(group["rows"])} 条</summary>'
+                f'<div class="osbody">{escape(group["purpose"])}；这些记录不增加 G1–G6 正式进度。</div>'
+                f'<div class="rows">{raw}</div></details>'
+            )
         extra_html = (
             f'<details class="offchain">'
-            f'<summary>辅助活动原始记录 {len(extra_rows)} 条 · '
+            f'<summary>辅助审计记录 {len(extra_rows)} 条 · '
             f'已归类 {len(set(offchain) & handled_activity)} · '
             f'标记 {len(set(offchain) & marker_names)} · '
             f'待归类 {len(unknown_activity)}</summary>'
-            f'<div class="osbody">已归类活动显示在所属 Gate 的门禁中；'
-            f'原始事件在此保留供审计。辅助活动不会直接增加正式步骤进度，'
-            f'通过仍需对应的独立 QA 与证据。</div>'
-            f'<ol>{names}</ol>'
+            f'<div class="osbody">这些是 G3/G5/G6 的辅助检查、返工或异常记录，'
+            f'不是新的协议步骤。正式流程只看上方 G1–G6；原始名称仅在下方展开供审计。</div>'
+            + "".join(group_html) +
             f'<div class="osfix">正式生产步骤使用注册表中的稳定 ID；'
             f'诊断、返工和平台子动作使用 <code>--off-protocol</code> 留痕。'
             f'子动作的完成不能替代正式步骤和独立 QA。完整清单见 '
-            f'<code>看板上报提示词.md</code>。</div>'
-            f'<div class="rows">'
-            + "".join(_step_row_html(r) for r in extra_rows)
-            + f'</div></details>'
+            f'<code>看板上报提示词.md</code>。</div></details>'
         )
 
     status_cls = {"SUBMITTED_FOR_QA": "wait", "BLOCKED": "bad", "FAILED": "bad",
