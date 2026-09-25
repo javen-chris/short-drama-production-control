@@ -279,18 +279,18 @@
     }
   ],
   "gate_checks": [
-    {"id":"C31","gate":"G3","name_zh":"身份参考返工复核","kind":"rework","activity_names":["g3-reference-rework"],"protocol_refs":["03_资产与连续性规则_v3.0.md"]},
-    {"id":"C51","gate":"G5","name_zh":"G5.1 模型 Skill 与 Prompt 版本审计","kind":"required","activity_names":["seedance-skill-audit"],"protocol_refs":["21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"]},
-    {"id":"C52","gate":"G5","name_zh":"当前 Prompt 返工与重新 QA","kind":"rework","activity_names":["g2-g5-main-prompt-rebuild"],"protocol_refs":["12_真人短剧Prompt与故事本弹性标准_v3.0.md"]},
-    {"id":"C53","gate":"G5","name_zh":"独立 QA 调度","kind":"exception","activity_names":["independent-qa-dispatch-retry","independent-qa-dispatch-retry-2","independent-qa-dispatch-retry-3","independent-qa-route-fix"],"protocol_refs":["04_QA与文件治理_v3.0.md"]},
-    {"id":"C61","gate":"G6","name_zh":"本地参考资产与哈希","kind":"required","activity_names":["g6-reference-integrity"],"protocol_refs":["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
-    {"id":"C62","gate":"G6","name_zh":"目标项目与会话锁定","kind":"required","activity_names":["g6-target-project-lock"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C63","gate":"G6","name_zh":"旧节点隔离与版本核对","kind":"required","activity_names":["g6-stale-node-readback"],"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"]},
-    {"id":"C64","gate":"G6","name_zh":"模型参数与参考预检","kind":"required","activity_names":["g6-seedance25-preflight"],"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C65","gate":"G6","name_zh":"平台参考节点绑定与回读","kind":"required","activity_names":["g6-reference-nodes","g6-node-media-binding-repair"],"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C66","gate":"G6","name_zh":"平台素材合规回写","kind":"required","activity_names":["g6-preflight-11refs","g6-compliance-resourceid-diagnosis"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C67","gate":"G6","name_zh":"当前视频节点配置回读","kind":"required","activity_names":["g6-video-node-build-readback"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C68","gate":"G6","name_zh":"主片生产范围修订","kind":"change","activity_names":["g6-main-unit-only-correction"],"protocol_refs":["19_视频提交前确认报告与授权范围规则_v3.0.md"]}
+    {"id":"C31","gate":"G3","name_zh":"身份与参考资产返工复核","kind":"rework","activity_names":["g3-reference-rework"],"purpose_zh":"发现角色、场景或道具参考不一致后重新核对资产职责；不是资产通过结论。","decision_zh":"G3 需要重新核验","counts_as_step_progress":false,"protocol_refs":["03_资产与连续性规则_v3.0.md"]},
+    {"id":"C51","gate":"G5","name_zh":"G5.1 Skill 与 Prompt 版本审计","kind":"required","activity_names":["seedance-skill-audit"],"purpose_zh":"确认当前 Prompt 版本确实经过对应 Skill、输入资产和禁止项审计。","decision_zh":"未通过不得进入 G6","counts_as_step_progress":false,"protocol_refs":["21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"]},
+    {"id":"C52","gate":"G5","name_zh":"当前 Prompt 返工与重新 QA","kind":"rework","activity_names":["g2-g5-main-prompt-rebuild"],"purpose_zh":"脚本、镜头、对白或资产版本变化后重编译 Prompt，并重新提交当前版本 QA。","decision_zh":"旧 Prompt QA 不再适用","counts_as_step_progress":false,"protocol_refs":["12_真人短剧Prompt与故事本弹性标准_v3.0.md"]},
+    {"id":"C53","gate":"G5","name_zh":"独立 QA 调度异常","kind":"exception","activity_names":["independent-qa-dispatch-retry","independent-qa-dispatch-retry-2","independent-qa-dispatch-retry-3","independent-qa-route-fix"],"purpose_zh":"记录 QA 调度失败、重试或路由修复；调用成功不等于产生了 QA 结论。","decision_zh":"保持待 QA 或阻断","counts_as_step_progress":false,"protocol_refs":["04_QA与文件治理_v3.0.md"]},
+    {"id":"C61","gate":"G6","name_zh":"本地参考资产完整性与哈希","kind":"required","activity_names":["g6-reference-integrity"],"purpose_zh":"核对合同声明的资产路径、角色、文件哈希和当前生产单元是否一致。","decision_zh":"缺失或哈希不一致不得建节点","counts_as_step_progress":false,"protocol_refs":["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
+    {"id":"C62","gate":"G6","name_zh":"目标项目与会话锁定","kind":"required","activity_names":["g6-target-project-lock"],"purpose_zh":"确认实际操作的是授权项目、目标集和目标 RUN，防止串项目或串会话。","decision_zh":"项目未锁定不得提交","counts_as_step_progress":false,"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C63","gate":"G6","name_zh":"旧节点隔离与版本回读","kind":"required","activity_names":["g6-stale-node-readback"],"purpose_zh":"检查旧节点、旧 Prompt 和旧资产是否被误当作当前主片；版本变更后重新回读。","decision_zh":"旧节点只能隔离，不能冒充当前节点","counts_as_step_progress":false,"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"]},
+    {"id":"C64","gate":"G6","name_zh":"模型参数与参考资产预检","kind":"required","activity_names":["g6-seedance25-preflight"],"purpose_zh":"提交前核对模型、时长、画幅、分辨率、声音、参考资产和合同参数。","decision_zh":"参数或资产预检失败不得提交","counts_as_step_progress":false,"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C65","gate":"G6","name_zh":"平台参考节点绑定与回读","kind":"required","activity_names":["g6-reference-nodes","g6-node-media-binding-repair"],"purpose_zh":"确认每个声明资产都绑定到正确节点，并获得平台回读证据；上传成功不等于绑定成功。","decision_zh":"缺绑定、resourceId 或回读不得建节点","counts_as_step_progress":false,"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C66","gate":"G6","name_zh":"平台素材合规回写","kind":"required","activity_names":["g6-preflight-11refs","g6-compliance-resourceid-diagnosis"],"purpose_zh":"核对平台返回的资源 ID、素材数量和合规回写是否覆盖当前合同声明集合。","decision_zh":"resourceId 缺失或数量不符保持阻断","counts_as_step_progress":false,"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C67","gate":"G6","name_zh":"当前视频节点配置回读","kind":"required","activity_names":["g6-video-node-build-readback"],"purpose_zh":"回读已创建节点的模型、Prompt、时长、资产绑定和目标项目，确认没有串入旧配置。","decision_zh":"节点配置未核实不得视为可运行","counts_as_step_progress":false,"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
+    {"id":"C68","gate":"G6","name_zh":"主片生产范围修订","kind":"change","activity_names":["g6-main-unit-only-correction"],"purpose_zh":"记录生产单元、时长或范围发生变化后的合同修订；它触发上游证据和资产门禁重新核验。","decision_zh":"范围变化使旧令牌和旧 QA 需复核","counts_as_step_progress":false,"protocol_refs":["19_视频提交前确认报告与授权范围规则_v3.0.md"]}
   ],
   "markers": [
     {

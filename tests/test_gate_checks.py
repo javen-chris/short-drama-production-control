@@ -14,6 +14,8 @@ def test_all_ep03_legacy_activity_has_one_interpretation():
     assert step_registry.resolve("protocol-attestation").step.marker
     assert all(row["gate"] in {"G3", "G5", "G6"} for row in definitions)
     assert all(row["id"] and row["name_zh"] and row["protocol_refs"] for row in definitions)
+    assert all(row["purpose_zh"] and row["decision_zh"] for row in definitions)
+    assert all(row["counts_as_step_progress"] is False for row in definitions)
 
 
 def test_latest_scope_change_does_not_turn_old_node_failure_into_a_pass():
@@ -42,10 +44,11 @@ def test_check_events_affect_gate_warning_but_never_step_progress():
     summary = summarize(state)
     html = render_html(summary)
     assert summary["progress"] == {"completed": 0, "total": 0}
-    assert "G5.1 模型 Skill 与 Prompt 版本审计" in html
+    assert "G5.1 Skill 与 Prompt 版本审计" in html
     assert 'data-gate="G5"' in html
     assert "有阻断" in html
     assert "辅助活动原始记录" in html
+    assert "确认当前 Prompt 版本确实经过对应 Skill" in html
 
 
 def test_registry_gate_checks_reject_duplicate_activity_names_in_guard(tmp_path):

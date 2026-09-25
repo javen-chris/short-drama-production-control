@@ -1052,6 +1052,7 @@ def gate_flow_block(summary: dict) -> str:
         items = "、".join(labels) if labels else "协议未声明步骤"
         check_items = "".join(
             f'<li class="check-{row["status"]}"><span>{escape(row["name"])}'
+            f'{"<small>" + escape(row.get("purpose", "")) + (" · " + escape(row.get("decision", "")) if row.get("decision") else "") + "</small>" if row.get("purpose") else ""}'
             f'{"<small>" + escape(row["latest"].get("reason", "")) + "</small>" if row["latest"] and row["latest"].get("reason") and row["status"] in {"bad", "warn"} else ""}'
             f'</span>'
             f'<b>{escape(row["label"])}</b></li>'

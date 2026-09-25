@@ -48,6 +48,9 @@ def classify(audit_rows: list[dict]) -> tuple[list[dict], set[str]]:
         checks.append({
             "id": definition.get("id", ""), "gate": definition.get("gate", ""),
             "name": definition.get("name_zh", ""), "kind": definition.get("kind", ""),
+            "purpose": definition.get("purpose_zh", ""),
+            "decision": definition.get("decision_zh", ""),
+            "counts_as_step_progress": definition.get("counts_as_step_progress", False),
             "status": status, "label": label, "latest": latest,
             "count": len(matches), "superseded": superseded,
         })
