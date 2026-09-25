@@ -1797,6 +1797,9 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   <footer>
     {'全部段一览：<a href="/overview">/overview</a> · ' if live else ''}
     <code>workflow/runs/{escape(summary['run_id'])}.json</code> · 渲染于 {escape(summary['generated_at'])}
+    {('<br>服务实例：PID ' + escape(str(meta.get('service', {}).get('pid', '-'))) +
+      ' · 启动于 ' + escape(str(meta.get('service', {}).get('started_at', '-'))) +
+      ' · 代码 ' + escape(str(meta.get('service', {}).get('code', '-')))) if live else ''}
 </footer>
 </div>
 <script>

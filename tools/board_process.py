@@ -45,6 +45,20 @@ def free_the_port(port: int = BOARD_PORT) -> str:
     """
     if os.name != "nt":
         return "非 Windows，跳过端口回收。"
+    # A renderer can survive after its launcher or sit behind a runtime shim.
+    # Reclaim every old renderer first; killing only the listener PID left an
+    # old process tree alive and made a fresh browser page look stale.
+    protected = _protected_processes()
+    old_renderers = [pid for pid, command in python_processes().items()
+                     if "render_run_report" in command and pid not in protected]
+    for pid in old_renderers:
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                           capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if old_renderers:
+        time.sleep(1.0)
     try:
         out = subprocess.run(
             ["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True, timeout=15

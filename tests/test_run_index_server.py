@@ -118,6 +118,12 @@ def test_server_routes_serve_live_data(tmp_path):
         assert "刷新" in page
         assert "自动刷新" in page
 
+        health = json.loads(urllib.request.urlopen(f"{base}/health", timeout=10).read().decode("utf-8"))
+        assert health["status"] == "ok"
+        assert health["project"] == str(root)
+        assert health["pid"] > 0
+        assert len(health["code"]) == 12
+
         data = json.loads(urllib.request.urlopen(f"{base}/data", timeout=10).read().decode("utf-8"))
         assert data["runs"][0]["run_id"] == "RUN-U01"
 

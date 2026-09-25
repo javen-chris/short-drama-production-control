@@ -18,6 +18,8 @@ Binds to 127.0.0.1 only. Standard library only.
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 import sys
 import threading
 import webbrowser
@@ -35,6 +37,17 @@ from .run_report import (
     render_text,
     summarize_project,
 )
+
+
+def code_fingerprint() -> str:
+    """Fingerprint the running renderer so a stale page is diagnosable."""
+    digest = hashlib.sha256()
+    for path in (Path(__file__), Path(render_html.__code__.co_filename)):
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            digest.update(str(path).encode("utf-8"))
+    return digest.hexdigest()[:12]
 
 
 def current_view(project_root: str | Path, *, with_details: bool = True) -> dict:
@@ -76,8 +89,9 @@ def placeholder_summary(run_id: str, row: dict, view: dict) -> dict:
     }
 
 
-def make_handler(project_root: str | Path):
+def make_handler(project_root: str | Path, service_meta: dict | None = None):
     root = Path(project_root)
+    service_meta = service_meta or {}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ShortDramaRunReport/1.0"
@@ -119,7 +133,8 @@ def make_handler(project_root: str | Path):
                                       "reporting": view.get("reporting"),
                                       "silence_alarm": view.get("silence_alarm"),
                                       "newest_event_at": view.get("newest_event_at", ""),
-                                      "project_state": view.get("project_state")})
+                                      "project_state": view.get("project_state"),
+                                      "service": service_meta})
                     self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
                 elif path in ("/overview", "/all"):
                     html = render_project_html(current_view(root), live=True)
@@ -161,7 +176,10 @@ def make_handler(project_root: str | Path):
                         summary = build_report(run_file)
                         self._send(200, "text/html; charset=utf-8", render_html(summary).encode("utf-8"))
                 elif path == "/health":
-                    self._send(200, "application/json; charset=utf-8", b'{"status":"ok"}')
+                    payload = {"status": "ok", **service_meta,
+                               "project": str(root), "pid": os.getpid()}
+                    self._send(200, "application/json; charset=utf-8",
+                               json.dumps(payload, ensure_ascii=False).encode("utf-8"))
                 else:
                     self._send(404, "text/plain; charset=utf-8", b"not found")
             except Exception as exc:  # keep the server alive; report the failure
@@ -225,6 +243,8 @@ def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = Tr
     instead of failing with "address already in use".
     """
     root = Path(project_root)
+    service_meta = {"started_at": datetime.now(timezone.utc).isoformat(),
+                    "code": code_fingerprint(), "pid": os.getpid()}
     if not run_index.has_trace(root):
         raise SystemExit(
             f"没有找到 {root / 'workflow' / 'run_index.json'}（也没有 segments.json）：该项目还没有运行轨迹。"
@@ -235,7 +255,8 @@ def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = Tr
     httpd: ThreadingHTTPServer | None = None
     for candidate in candidates:
         try:
-            httpd = ThreadingHTTPServer(("127.0.0.1", candidate), make_handler(root))
+            httpd = ThreadingHTTPServer(("127.0.0.1", candidate),
+                                        make_handler(root, service_meta))
             port = candidate
             break
         except OSError as exc:
