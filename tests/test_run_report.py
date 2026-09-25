@@ -87,6 +87,59 @@ def test_the_step_table_carries_the_verdict_per_step():
     who produced it, who checked it, and whether anything backs it up.
     """
     html = render_html(summarize(STATE))
-    assert "生产模型" in html and "QA 模型" in html
+    assert "生产 → QA" in html
     assert "协议步骤" in html
     assert "class=\"vp " in html
+
+
+def test_the_table_is_led_by_the_gate_not_the_skill_slug():
+    """A person reads Gates, not Skill ids.
+
+    The board used to print `short-drama-production-router` with an empty Gate
+    column, because no mapping from Skill to Gate existed. The Gate is the
+    protocol's own vocabulary, so it has to lead - and every declared Skill has
+    to have one, or the column goes back to being empty.
+    """
+    from production_control import gate_map
+    from production_control.step_audit import load_chain
+
+    html = render_html(summarize(STATE))
+    # The Gate letters and the Chinese Gate name are separate elements, so the
+    # assertion is on both rather than on one concatenated string.
+    assert 'class="gate">G1<' in html
+    assert "秒表脚本" in html
+    assert "脚本拆解为镜头与生产单元" in html  # and not the raw slug as the label
+
+    # Every Skill the protocol declares must map to a Gate, and every Gate it
+    # names must be a real Gate. The mapping is only useful if it is total.
+    for row in load_chain().get("steps", []):
+        skill = row["skill"]
+        gates = gate_map.gates_of(skill)
+        assert gates, f"{skill} has no Gate"
+        for gate in gates:
+            assert gate in gate_map.GATE_NAMES, f"{skill} maps to unknown {gate}"
+
+
+def test_every_declared_skill_has_a_chinese_name():
+    """The board must never show a bare slug as the primary label."""
+    from production_control import gate_map
+    from production_control.step_audit import load_chain
+
+    for row in load_chain().get("steps", []):
+        skill = row["skill"]
+        label = gate_map.skill_label(skill)
+        assert label and label != skill, f"{skill} has no Chinese name"
+
+
+def test_an_unknown_step_still_renders_as_itself():
+    """A project may record a step the console has never heard of.
+
+    Substituting a placeholder would hide the one thing worth seeing: that the
+    step is not in the declared chain.
+    """
+    from production_control import gate_map
+
+    assert gate_map.skill_label("libtv-local-adapter") == "LibTV 提交适配"
+    assert gate_map.skill_label("someone-elses-custom-step") == "someone-elses-custom-step"
+    assert gate_map.gates_of("someone-elses-custom-step") == ()
+    assert gate_map.gate_badge("someone-elses-custom-step") == ""

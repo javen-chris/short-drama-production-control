@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from . import gate_token, run_index, skill_audit, step_audit
+from . import gate_map, gate_token, run_index, skill_audit, step_audit
 from .outcomes import OUTCOME_LABELS
 from .run_compliance import STEP_PROTOCOL_REQUIREMENTS, verify_run_compliance
 
@@ -924,8 +924,11 @@ def step_audit_block(summary: dict) -> str:
             note = "证据文件不存在：" + (row.get("evidence") or "未填写 evidence")
         elif not row.get("claimed"):
             note = "协议要求这一步，轨迹里没有它"
+        step = row["step"]
         rows.append(
-            f"<tr><td><code>{escape(row['step'])}</code></td>"
+            f'<tr><td><span class="gate">{escape(gate_map.gate_badge(step) or "链外")}</span></td>'
+            f"<td>{escape(gate_map.skill_label(step))}"
+            f'<div class="sid">{escape(step)}</div></td>'
             f"<td>{badge(row['verdict'])}</td>"
             f"<td>{'是' if row.get('claimed') else '否'}</td>"
             f"<td class='dim'>{escape(row.get('evidence') or '-')}</td>"
@@ -965,7 +968,7 @@ def step_audit_block(summary: dict) -> str:
     {error_block}
     {qa_block}
     <table>
-      <thead><tr><th>协议步骤</th><th>对账结论</th><th>自报</th><th>证据</th><th>时间</th><th>说明</th></tr></thead>
+      <thead><tr><th>Gate</th><th>步骤</th><th>对账结论</th><th>自报</th><th>证据</th><th>时间</th><th>说明</th></tr></thead>
       <tbody>{''.join(rows)}</tbody>
     </table>
   </section>"""
@@ -988,9 +991,11 @@ def qa_gate_block(summary: dict) -> str:
     rows = []
     for row in rows_data:
         state = row.get("state", "")
+        step = row["step"]
         rows.append(
-            f"<tr><td><code>{escape(row['step'])}</code></td>"
-            f"<td>{escape(row.get('gate') or '-')}</td>"
+            f'<tr><td><span class="gate">{escape(gate_map.gate_badge(step) or "链外")}</span></td>'
+            f"<td>{escape(gate_map.skill_label(step))}"
+            f'<div class="sid">{escape(step)}</div></td>'
             f'<td><span class="verdict {cls.get(state, "")}">{escape(mark.get(state, state))}</span></td>'
             f"<td><code>{escape(row.get('producer_actor') or '-')}</code></td>"
             f"<td><code>{escape(row.get('qa_actor') or '-')}</code></td>"
@@ -1008,10 +1013,48 @@ def qa_gate_block(summary: dict) -> str:
       等待 QA <b>{qa.get('awaiting', 0)}</b> ·
       QA 不通过 <b>{qa.get('failed', 0)}</b></div>
     <table>
-      <thead><tr><th>步骤</th><th>Gate</th><th>QA 状态</th><th>生产模型</th><th>QA 模型</th><th>时间</th></tr></thead>
+      <thead><tr><th>Gate</th><th>步骤</th><th>QA 状态</th><th>生产模型</th><th>QA 模型</th><th>时间</th></tr></thead>
       <tbody>{''.join(rows)}</tbody>
     </table>
   </section>"""
+
+
+#: Shared by both the live and the static page: filtering rows by verdict.
+#: Filters, not sorts - the question is always "what is still outstanding", and a
+#: filter answers it without reordering the protocol. The choice rides in the URL
+#: hash so it survives the 5-second auto-reload.
+_FILTER_SCRIPT = """
+    var FILTERS = {
+      all: function () { return true; },
+      open: function (v) { return v === 'todo' || v === 'wait' || v === 'warn'; },
+      ok: function (v) { return v === 'ok'; },
+      bad: function (v) { return v === 'bad'; }
+    };
+    var rows = [].slice.call(document.querySelectorAll('#steps tbody tr.srow'));
+    var empty = document.getElementById('empty');
+    function applyFilter(name) {
+      var test = FILTERS[name] || FILTERS.all;
+      var shown = 0;
+      rows.forEach(function (tr) {
+        var show = test(tr.getAttribute('data-verdict'));
+        tr.classList.toggle('hidden', !show);
+        if (show) { shown++; }
+      });
+      if (empty) { empty.hidden = shown > 0; }
+      [].forEach.call(document.querySelectorAll('.fbtn'), function (b) {
+        b.classList.toggle('on', b.getAttribute('data-filter') === name);
+      });
+    }
+    [].forEach.call(document.querySelectorAll('.fbtn'), function (b) {
+      b.addEventListener('click', function () {
+        var name = b.getAttribute('data-filter');
+        applyFilter(name);
+        location.hash = name;
+      });
+    });
+    var current = location.hash.slice(1);
+    if (current && FILTERS[current]) { applyFilter(current); }
+"""
 
 
 def _verdict_pill(step_row: dict, qa_row: dict) -> tuple[str, str]:
@@ -1032,28 +1075,94 @@ def _verdict_pill(step_row: dict, qa_row: dict) -> tuple[str, str]:
     return "等待 QA", "wait"
 
 
+def _step_row_html(row: dict) -> str:
+    """One step, Gate first.
+
+    The Gate is what the protocol calls this step, so it leads. The Skill id is
+    still there but demoted to a tooltip and a footnote line - a person reading
+    the board wants "G3 资产锁定 / 资产映射与最小必要路线", not
+    `short-drama-asset-router`.
+    """
+    gate_cell = (
+        f'<span class="gate">{escape(row["gate_letters"])}</span>'
+        f'<div class="gname">{escape(row["gate_name"])}</div>'
+        if row["gate_letters"] else '<span class="dim">链外</span>'
+    )
+    skill_cell = (
+        f'<div class="sname">{escape(row["skill_name"])}'
+        + ('<span class="alt" title="三个提交适配是三选一，本次只会用一个">三选一</span>'
+           if row["alternative"] else "")
+        + "</div>"
+        f'<div class="sid" title="{escape(row["step"])}">{escape(row["step"])}</div>'
+    )
+    who = ""
+    if row["producer"] or row["qa_actor"]:
+        who = (f'<span class="who">{escape(row["producer"] or "—")}</span>'
+               f'<span class="arrow">→</span>'
+               f'<span class="who">{escape(row["qa_actor"] or "—")}</span>')
+    else:
+        who = '<span class="dim">—</span>'
+    detail = ""
+    if row["note"] or row["evidence"]:
+        detail = (
+            '<div class="detail">'
+            + (f'<div class="note">{escape(row["note"])}</div>' if row["note"] else "")
+            + (f'<div class="ev"><span class="evk">证据</span>'
+               f'<code>{escape(row["evidence"])}</code></div>' if row["evidence"] else "")
+            + (f'<div class="ev"><span class="evk">时间</span>'
+               f'<code>{escape(row["at"][:19])}</code></div>' if row["at"] else "")
+            + "</div>"
+        )
+    return (
+        f'<tr class="srow {row["cls"]}" data-verdict="{escape(row["cls"])}">'
+        f'<td class="cgate">{gate_cell}</td>'
+        f'<td class="cskill">{skill_cell}{detail}</td>'
+        f'<td class="cwho">{who}</td>'
+        f'<td class="cvp"><span class="vp {row["cls"]}">{escape(row["label"])}</span></td>'
+        "</tr>"
+    )
+
+
 def _unified_step_rows(summary: dict) -> list[dict]:
     """Merge the reconciliation and the QA verdict into one row per step.
 
     These were two tables saying overlapping things. A step's story is one line:
     was it done, by whom, was it proofed, by whom, and does anything back it up.
     Everything else on the page was noise around that line.
+
+    Each row carries the Gate it belongs to and a Chinese name for the Skill,
+    because the raw Skill id (`short-drama-production-router`) told the user
+    nothing about where in the protocol they were. The Gate is the label the
+    protocol itself uses, so that is what leads.
     """
     audit_rows = summary.get("audit", {}).get("steps", {}).get("rows") or []
     qa_rows = {row["step"]: row for row in (summary.get("qa_passes") or {}).get("rows") or []}
     out = []
     for row in audit_rows:
-        qa_row = qa_rows.get(row["step"], {})
+        step = row["step"]
+        qa_row = qa_rows.get(step, {})
         label, cls = _verdict_pill(row, qa_row)
         note = ""
         if row.get("missing_reads"):
             note = "未记录读取：" + "、".join(row["missing_reads"])
         elif row["verdict"] == step_audit.CLAIMED_NO_EVIDENCE:
             note = "证据文件不存在"
-        out.append({"step": row["step"], "gate": row.get("gate", ""),
-                    "producer": row.get("actor", ""), "qa_actor": qa_row.get("qa_actor", ""),
-                    "label": label, "cls": cls, "note": note,
-                    "evidence": row.get("evidence", ""), "at": row.get("at", "")})
+        elif row["verdict"] == step_audit.EXTRA:
+            note = "协议声明的链里没有这一步"
+        elif row["verdict"] == step_audit.NOT_CLAIMED:
+            note = "协议要求这一步，轨迹里没有它"
+        gate_letters = gate_map.gates_for(step, row.get("modes"))
+        out.append({
+            "step": step,
+            "gate_letters": gate_map.gate_badge(step, row.get("modes")),
+            "gate": gate_map.annotated_gate(step, row.get("modes")) or row.get("gate", ""),
+            "gate_name": gate_map.GATE_NAMES.get(gate_letters[0], "") if gate_letters else "",
+            "skill_name": gate_map.skill_label(step),
+            "alternative": gate_map.is_alternative(step),
+            "producer": row.get("actor", ""), "qa_actor": qa_row.get("qa_actor", ""),
+            "label": label, "cls": cls, "note": note,
+            "evidence": row.get("evidence", ""), "at": row.get("at", ""),
+        })
     return out
 
 
@@ -1095,17 +1204,22 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
       if (box && box.checked) {{ timer = setTimeout(function () {{ location.reload(); }}, 5000); }}
     }}
     if (box) {{ box.addEventListener('change', applyAuto); applyAuto(); }}
-  </script>
+{_FILTER_SCRIPT}
+</script>
 """
         if live
-        else """
+        else f"""
   <div class="toolbar">
-    <span>这是<b>静态快照</b>：切换段落与刷新按钮不会生效（静态文件没有后端，点了会报 AccessDenied）。</span>
+    <span>这是<b>静态快照</b>：切换段落与刷新按钮不会生效（静态文件没有后端，点了会报 AccessDenied）。
+      表格下方的筛选按钮仍然可用。</span>
   </div>
   <div class="toolbar">
     <span class="dim">要看实时进度并在段之间来回切换，双击 <code>启动-运行总表.cmd</code>，
       或运行：<code>python tools\\render_run_report.py &lt;项目目录&gt; --serve</code></span>
   </div>
+  <script>
+{_FILTER_SCRIPT}
+  </script>
 """
     )
 
@@ -1117,7 +1231,11 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         if compliance.get("errors")
         else '<div class="clean">合规检查通过：每一步都记录了 Skill、证据与必需的协议读取。</div>'
     )
-    pending = "".join(f"<li><code>{escape(s)}</code></li>" for s in summary["pending"])
+    pending = "".join(
+        f"<li><b>{escape(gate_map.gate_badge(s) or '链外')}</b> "
+        f"{escape(gate_map.skill_label(s))} <code>{escape(s)}</code></li>"
+        for s in summary["pending"]
+    )
     pending_block = f'<div class="pending"><h2>尚未执行（{len(summary["pending"])}）</h2><ul>{pending}</ul></div>' if summary["pending"] else ""
     halt = (
         f'<div class="halt"><strong>等待决定：</strong>{escape(summary["pending_decision"])}</div>'
@@ -1156,16 +1274,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     strip_bits.append(f'最后回传 <b class="{hb_level}">{escape(hb.get("label") or "从未回传")}</b>')
     strip = ' <span class="sep">·</span> '.join(strip_bits)
 
-    rows_html = "".join(
-        f'<tr><td><code>{escape(r["step"])}</code>'
-        + (f'<div class="note">{escape(r["note"])}</div>' if r["note"] else "")
-        + f'</td><td>{escape(r["gate"] or "-")}</td>'
-        + f'<td><code>{escape(r["producer"] or "-")}</code></td>'
-        + f'<td><code>{escape(r["qa_actor"] or "-")}</code></td>'
-        + f'<td><span class="vp {r["cls"]}">{escape(r["label"])}</span></td>'
-        + f'<td class="evidence">{escape(r["evidence"] or "-")}</td></tr>'
-        for r in unified
-    )
+    rows_html = "".join(_step_row_html(r) for r in unified)
     offchain_note = (
         '<div class="quiet">链外步骤（协议未声明，已计入进度，需要确认是否替换了协议步骤）：'
         + "、".join(f"<code>{escape(s)}</code>" for s in offchain) + "</div>"
@@ -1238,6 +1347,36 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .pill.bad {{ color:#cf222e; border-color:#cf222e; }}
   .pill.ok {{ color:#1a7f37; border-color:#1a7f37; }}
   table.steps td {{ vertical-align:top; }}
+  .tablehead {{ display:flex; gap:16px; align-items:flex-start; justify-content:space-between;
+                flex-wrap:wrap; margin-bottom:10px; }}
+  .tablehead .sub {{ margin-bottom:0; max-width:620px; }}
+  .filters {{ display:flex; gap:6px; flex:none; }}
+  .fbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:999px; cursor:pointer;
+           border:1px solid var(--line); background:var(--bg); color:var(--muted); }}
+  .fbtn:hover {{ border-color:var(--fg); color:var(--fg); }}
+  .fbtn.on {{ background:var(--fg); border-color:var(--fg); color:var(--bg); font-weight:600; }}
+  table.steps {{ width:100%; border-collapse:collapse; font-size:13.5px; }}
+  table.steps th {{ text-align:left; font-weight:600; font-size:12px; color:var(--muted);
+                    padding:0 12px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }}
+  table.steps td {{ padding:10px 12px; border-bottom:1px solid var(--line); }}
+  table.steps tr.srow:hover {{ background:var(--card); }}
+  table.steps tr.hidden {{ display:none; }}
+  .cgate {{ width:132px; }} .cskill {{ }} .cwho {{ width:190px; }}
+  .cvp {{ width:92px; text-align:right; }}
+  .gate {{ font-weight:700; font-size:14px; letter-spacing:.3px; }}
+  .gname {{ font-size:11.5px; color:var(--muted); margin-top:1px; }}
+  .sname {{ font-weight:500; }}
+  .alt {{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px; font-size:10.5px;
+          font-weight:400; color:var(--muted); border:1px dashed var(--line); vertical-align:1px; }}
+  .sid {{ font-size:11px; color:var(--muted); font-family:ui-monospace, Consolas, monospace;
+          margin-top:1px; word-break:break-all; }}
+  .who {{ font-family:ui-monospace, Consolas, monospace; font-size:12px; }}
+  .arrow {{ color:var(--muted); margin:0 5px; font-size:11px; }}
+  .detail {{ margin-top:5px; }}
+  .ev {{ font-size:11.5px; color:var(--muted); margin-top:2px; }}
+  .evk {{ display:inline-block; min-width:30px; }}
+  .ev code {{ font-size:11.5px; word-break:break-all; }}
+  .empty {{ padding:24px; text-align:center; color:var(--muted); font-size:13.5px; }}
   .vp {{ font-weight:500; white-space:nowrap; }}
   .vp.ok {{ color:#1a7f37; }} .vp.bad {{ color:#cf222e; }}
   .vp.warn, .vp.wait {{ color:#bf8700; }}
@@ -1297,11 +1436,25 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   {halt}
   {not_started_block}
 
-  <h2>协议步骤 <span class="dim">协议声明 {declared_total} 项 · 链外 {offchain_total} 项 · 共 {total_rows} 行</span></h2>
-  <table class="steps">
-    <thead><tr><th>步骤</th><th>Gate</th><th>生产模型</th><th>QA 模型</th><th>结论</th><th>证据</th></tr></thead>
+  <div class="tablehead">
+    <div>
+      <h2>协议步骤 <span class="dim">G0–G8 · 声明 {declared_total} 项 · 链外 {offchain_total} 项</span></h2>
+      <div class="sub">按 Gate 顺序看一行就够：<strong>Gate</strong> 是协议里的步骤名，
+        <strong>步骤</strong>是执行它的 Skill，<strong>结论</strong>是它现在到底算不算完成。
+        <strong>只有独立 QA 写过「通过」才算通过</strong>；生产模型的「已提交」不算。</div>
+    </div>
+    <div class="filters" role="group" aria-label="按结论过滤">
+      <button type="button" class="fbtn on" data-filter="all">全部</button>
+      <button type="button" class="fbtn" data-filter="open">待办</button>
+      <button type="button" class="fbtn" data-filter="ok">已通过</button>
+      <button type="button" class="fbtn" data-filter="bad">有风险</button>
+    </div>
+  </div>
+  <table class="steps" id="steps">
+    <thead><tr><th class="cgate">Gate</th><th class="cskill">步骤</th><th class="cwho">生产 → QA</th><th class="cvp">结论</th></tr></thead>
     <tbody>{rows_html}</tbody>
   </table>
+  <div class="empty" id="empty" hidden>当前筛选下没有步骤。</div>
   {offchain_note}
 
   <details class="more">
