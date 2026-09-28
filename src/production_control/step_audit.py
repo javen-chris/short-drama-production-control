@@ -185,7 +185,12 @@ def _evidence_ok(event: dict, root: Path | None) -> bool:
         return False
     if root is None:
         return True
-    return (root / evidence).exists()
+    # Older agents sometimes stored several evidence entries in one event.
+    # Treat those as a set of references; an invalid member must not crash the
+    # entire project dashboard while the audit still reports the claim safely.
+    references = evidence if isinstance(evidence, list) else [evidence]
+    return all(isinstance(reference, str) and reference.strip()
+               and (root / reference).exists() for reference in references)
 
 
 def audit_steps(state: dict, project_root: str | Path | None = None,

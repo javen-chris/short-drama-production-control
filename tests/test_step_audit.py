@@ -94,6 +94,36 @@ def test_a_step_claimed_without_its_evidence_is_not_a_pass(tmp_path):
     assert any("CLAIMED_NO_EVIDENCE" in e for e in step_audit.audit_run(_state(root), root, CHAIN)["errors"])
 
 
+def test_legacy_list_evidence_is_audited_without_crashing(tmp_path):
+    root = _project(tmp_path)
+    _write(root, "workflow/one.md")
+    state = _state(root)
+    state["events"].append({
+        "step": "protocol_bootstrap", "outcome": "COMPLETED",
+        "evidence": ["workflow/one.md", "workflow/missing.md"],
+    })
+
+    result = step_audit.audit_steps(state, root, CHAIN)
+    row = next(item for item in result["rows"] if item["step"] == "protocol_bootstrap")
+    assert row["verdict"] == step_audit.EXTRA
+    assert row["evidence_ok"] is False
+
+
+def test_legacy_list_evidence_with_existing_refs_does_not_crash(tmp_path):
+    root = _project(tmp_path)
+    _write(root, "workflow/one.md")
+    _write(root, "workflow/two.md")
+    state = _state(root)
+    state["events"].append({
+        "step": "protocol_bootstrap", "outcome": "COMPLETED",
+        "evidence": ["workflow/one.md", "workflow/two.md"],
+    })
+
+    result = step_audit.audit_steps(state, root, CHAIN)
+    row = next(item for item in result["rows"] if item["step"] == "protocol_bootstrap")
+    assert row["evidence_ok"] is True
+
+
 def test_a_declared_step_nobody_did_is_reported_as_missing(tmp_path):
     root = _project(tmp_path)
     _write(root, "workflow/router_note.md")

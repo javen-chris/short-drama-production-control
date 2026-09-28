@@ -148,6 +148,33 @@ def test_recent_events_are_kept_for_the_live_refresh_signature():
     assert summary["last_event"]["outcome"] == "PAUSED_EXCEPTION"
 
 
+def test_project_overview_survives_legacy_run_with_list_evidence(tmp_path):
+    from production_control.run_report import summarize_project
+
+    root = tmp_path / "project"
+    run_dir = root / "workflow" / "runs"
+    run_dir.mkdir(parents=True)
+    state = {
+        "run_id": "RUN-LEGACY", "contract_id": "C1", "current_step": "",
+        "status": "RUNNING", "pipeline": [], "completed_steps": [],
+        "events": [{"step": "protocol_bootstrap", "outcome": "COMPLETED",
+                    "evidence": ["workflow/project_state.json", "workflow/missing.json"]}],
+    }
+    (run_dir / "RUN-LEGACY.json").write_text(json.dumps(state), encoding="utf-8")
+    index = {"active_run_id": "RUN-LEGACY", "runs": [{
+        "run_id": "RUN-LEGACY", "status": "RUNNING", "progress": {"total": 0, "completed": 0},
+    }]}
+
+    view = summarize_project(index, root)
+
+    detail = view["runs"][0]["detail"]
+    assert detail is not None
+    assert detail["audit"]["steps"]["counts"]["EXTRA"] == 1
+    page = render_html(detail)
+    assert "workflow/project_state.json" in page
+    assert "workflow/missing.json" in page
+
+
 def test_historical_post_generation_qa_is_not_mistaken_for_current_version_pass():
     state = json.loads(json.dumps(STATE))
     state["events"].append({

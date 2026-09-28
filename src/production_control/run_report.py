@@ -301,6 +301,13 @@ def _badge(outcome: str, label: str) -> str:
     return f'<span class="badge" style="--c:{color}">{escape(label)}</span>'
 
 
+def _evidence_text(value: object) -> str:
+    """Render both current scalar evidence and legacy evidence lists safely."""
+    if isinstance(value, (list, tuple)):
+        return "；".join(str(item) for item in value if item)
+    return str(value or "")
+
+
 def _steps_html(summary: dict) -> list[str]:
     rows: list[str] = []
     for item in summary["steps"]:
@@ -322,7 +329,7 @@ def _steps_html(summary: dict) -> list[str]:
         if item["attestation_id"]:
             meta.append(f"<span>读取证明：<code>{escape(item['attestation_id'])}</code></span>")
         if item["evidence"]:
-            meta.append(f"<span>证据：<code>{escape(item['evidence'])}</code></span>")
+            meta.append(f"<span>证据：<code>{escape(_evidence_text(item['evidence']))}</code></span>")
         if item["at"]:
             meta.append(f"<span class=\"dim\">{escape(item['at'])}</span>")
         reason = f'<p class="reason">{escape(item["reason"])}</p>' if item["reason"] else ""
@@ -1210,7 +1217,7 @@ def step_audit_block(summary: dict) -> str:
             f'<div class="sid">{escape(step)}</div></td>'
             f"<td>{badge(row['verdict'])}</td>"
             f"<td>{'是' if row.get('claimed') else '否'}</td>"
-            f"<td class='dim'>{escape(row.get('evidence') or '-')}</td>"
+            f"<td class='dim'>{escape(_evidence_text(row.get('evidence')) or '-')}</td>"
             f"<td class='dim'>{escape((row.get('at') or '')[:19] or '-')}</td>"
             f"<td class='dim'>{escape(note)}</td></tr>"
         )
@@ -1404,7 +1411,7 @@ def _step_row_html(row: dict) -> str:
     if row["note"]:
         detail_rows.append(("备注", escape(row["note"])))
     if row["evidence"]:
-        detail_rows.append(("证据", f'<code>{escape(row["evidence"])}</code>'))
+        detail_rows.append(("证据", f'<code>{escape(_evidence_text(row["evidence"]))}</code>'))
     if row["at"]:
         detail_rows.append(("时间", f'<code>{escape(row["at"][:19])}</code>'))
 
