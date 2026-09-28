@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from production_control import execution_contract, orchestrator, run_report, step_audit
+from production_control import (execution_contract, orchestrator, protocol_attestation,
+                                protocol_fingerprint, run_report, run_state, step_audit)
 from production_control.progress import append_event
 
 
@@ -25,6 +26,32 @@ def _contract(project: Path, *, provider: str = "") -> dict:
     contract["current_step_id"] = "S08"
     contract["contract_id"] = "TEST-CONTRACT"
     return contract
+
+
+def _start_scoped_run(project: Path, chain: dict, contract: dict) -> dict:
+    state = orchestrator.start(
+        project / "unused.json", chain, contract["run_id"], contract["contract_id"],
+        project_root=project, segment=contract["segment"], contract=contract,
+    )
+    step_id = contract["current_step_id"]
+    current = next(item for item in contract["steps"] if item["id"] == step_id)
+    gate = current["gate"][0]
+    _, gate_refs, covered = protocol_attestation.scoped_protocols(contract, gate)
+    protocol_paths = gate_refs
+    state["protocol_attestation"] = {
+        "status": "PASS", "attestation_id": "ATTEST-ISOLATED",
+        "run_id": contract["run_id"], "task_id": contract["task_id"],
+        "contract_id": contract["contract_id"],
+        "manifest_fingerprint": contract["protocol_manifest_fingerprint"],
+        "scope_gate": gate, "covered_step_ids": covered,
+        "protocol_paths": sorted(protocol_paths | set(protocol_fingerprint.REQUIRED_CORE_FILES)
+                                  | (set(protocol_fingerprint.TARGET_MODE_PROTOCOL_FILES)
+                                     if contract.get("target_mode") else set())),
+        "challenge_ids": ["protocol-version"],
+        "verified_at": "2026-09-28T00:00:00Z",
+    }
+    run_state.write_task(project / "workflow" / "runs" / f"{contract['run_id']}.json", state)
+    return state
 
 
 def test_contract_requires_registered_model_and_existing_protocol(tmp_path):
@@ -75,11 +102,8 @@ def test_contract_marks_conditional_steps_and_only_selected_adapter(tmp_path):
 
 def test_isolated_run_submission_qa_and_board_audit_round_trip(tmp_path):
     contract = _contract(tmp_path)
-    state = orchestrator.start(
-        tmp_path / "unused.json", json.loads((CONSOLE / "skills" / "skill-chain.json").read_text(encoding="utf-8")),
-        "RUN-TEST-A1", "TEST-CONTRACT", project_root=tmp_path,
-        segment="A1", segment_title="测试段", contract=contract,
-    )
+    chain = json.loads((CONSOLE / "skills" / "skill-chain.json").read_text(encoding="utf-8"))
+    state = _start_scoped_run(tmp_path, chain, contract)
     artifact = tmp_path / "prompt-v1.md"
     qa_report = tmp_path / "qa-v1.md"
     artifact.write_text("isolated artifact", encoding="utf-8")
@@ -126,8 +150,7 @@ def test_isolated_run_submission_qa_and_board_audit_round_trip(tmp_path):
 def test_contract_rejects_off_plan_events_and_mismatched_version(tmp_path):
     chain = json.loads((CONSOLE / "skills" / "skill-chain.json").read_text(encoding="utf-8"))
     contract = _contract(tmp_path)
-    orchestrator.start(tmp_path / "unused.json", chain, "RUN-TEST-A1", "TEST-CONTRACT",
-                       project_root=tmp_path, segment="A1", contract=contract)
+    _start_scoped_run(tmp_path, chain, contract)
     evidence = tmp_path / "evidence.md"
     evidence.write_text("test", encoding="utf-8")
     with pytest.raises(ValueError, match="STEP_NOT_APPLICABLE"):
@@ -140,13 +163,26 @@ def test_contract_rejects_off_plan_events_and_mismatched_version(tmp_path):
                      protocol_refs=["12_真人短剧Prompt与故事本弹性标准_v3.0.md"])
 
 
-def test_contract_rejects_glm_writer_and_missing_evidence(tmp_path):
+def test_contract_event_requires_verified_protocol_scope(tmp_path):
     chain = json.loads((CONSOLE / "skills" / "skill-chain.json").read_text(encoding="utf-8"))
     contract = _contract(tmp_path)
     orchestrator.start(tmp_path / "unused.json", chain, "RUN-TEST-A1", "TEST-CONTRACT",
                        project_root=tmp_path, segment="A1", contract=contract)
+    evidence = tmp_path / "evidence.md"
+    evidence.write_text("isolated evidence", encoding="utf-8")
+    with pytest.raises(PermissionError, match="PROTOCOL_ATTESTATION_REQUIRED"):
+        append_event(tmp_path, "RUN-TEST-A1", step="S08", actor=MODEL, writer_model=QA_MODEL,
+                     task_id="TEST-A1", version="v1", qa_level="C", gate="G5",
+                     evidence="evidence.md", protocol_refs=["12_真人短剧Prompt与故事本弹性标准_v3.0.md"])
+
+
+def test_contract_rejects_glm_writer_and_missing_evidence(tmp_path):
+    chain = json.loads((CONSOLE / "skills" / "skill-chain.json").read_text(encoding="utf-8"))
+    contract = _contract(tmp_path)
+    _start_scoped_run(tmp_path, chain, contract)
     args = dict(project_root=tmp_path, run_id="RUN-TEST-A1", step="S08", actor=MODEL,
                 task_id="TEST-A1", version="v1", qa_level="C",
+                gate="G5",
                 protocol_refs=["12_真人短剧Prompt与故事本弹性标准_v3.0.md"])
     with pytest.raises(FileNotFoundError):
         append_event(**args, writer_model=QA_MODEL, evidence="missing.md")
@@ -163,8 +199,7 @@ def test_contract_rejects_skipping_ahead_of_current_step(tmp_path):
         segment="A1", version="v1", execution_model=MODEL, production_level="L1",
         image_assets_required=False, storyboard_required=False,
     )
-    orchestrator.start(tmp_path / "unused.json", chain, "RUN-ORDER", "ORDER",
-                       project_root=tmp_path, segment="A1", contract=contract)
+    _start_scoped_run(tmp_path, chain, contract)
     evidence = tmp_path / "evidence.md"
     evidence.write_text("test", encoding="utf-8")
     with pytest.raises(ValueError, match="STEP_OUT_OF_ORDER"):

@@ -6,9 +6,11 @@ the identity of a model session.
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from . import qa_policy
+from . import protocol_fingerprint
 
 
 class ContractError(ValueError):
@@ -26,7 +28,7 @@ def sha256_file(path: Path) -> str:
 def build_contract(*, chain: dict, project_root: str | Path, run_id: str,
                    task_id: str, segment: str, version: str, execution_model: str,
                    production_level: str, image_assets_required: bool,
-                   storyboard_required: bool, provider: str = "",
+                   storyboard_required: bool, provider: str = "", target_mode: bool = False,
                    protocol_root: str | Path | None = None) -> dict:
     """Resolve applicable steps and pin their referenced protocol files."""
     required = {
@@ -55,6 +57,13 @@ def build_contract(*, chain: dict, project_root: str | Path, run_id: str,
     authority = Path(authority_value).parent
     if not authority.is_dir():
         raise ContractError("找不到权威本地协议目录；请检查注册表 authority 路径")
+    manifest_path = authority / "protocol_manifest.json"
+    if not manifest_path.is_file():
+        raise ContractError("协议指纹清单不存在；先由维护者生成 protocol_manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    drift = protocol_fingerprint.check(authority)
+    if drift:
+        raise ContractError("协议指纹与权威文件不一致：" + "; ".join(drift))
     steps: list[dict] = []
     seen_ids: set[str] = set()
     for item in chain.get("steps", []):
@@ -106,9 +115,11 @@ def build_contract(*, chain: dict, project_root: str | Path, run_id: str,
         "project_root": str(root.resolve()), "run_id": run_id, "contract_id": task_id,
         "task_id": task_id,
         "protocol_root": str(authority.resolve()),
+        "protocol_manifest_fingerprint": manifest.get("fingerprint", ""),
         "segment": segment, "version": version, "execution_model": execution_model,
         "qa_model": route, "model_identity": "declared_unverified",
         "production_level": production_level,
+        "target_mode": target_mode,
         "image_assets_required": image_assets_required,
         "storyboard_required": production_level == "L2" or storyboard_required,
         "selected_provider": provider or None,

@@ -58,6 +58,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="本次是否需要完整故事本；L1 无需时传 --no-storyboard-required")
     parser.add_argument("--provider", choices=["runninghub", "xiaoyunque", "libtv"], default="",
                         help="可选：选定一个 G6 平台；不传表示当前 RUN 未进入平台提交")
+    parser.add_argument("--target-mode", action="store_true",
+                        help="目标模式任务：加入目标模式专属协议读取范围")
     args = parser.parse_args(argv)
 
     chain_path = Path(args.chain)
@@ -73,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
             production_level=args.production_level,
             image_assets_required=args.image_assets_required,
             storyboard_required=args.storyboard_required, provider=args.provider,
+            target_mode=args.target_mode,
         )
     except execution_contract.ContractError as exc:
         raise SystemExit(f"无法建立执行合同：{exc}") from exc
@@ -109,6 +112,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    {item['id']} {item['skill']}：本次不适用（{item['reason']}）")
     print()
     print("执行清单已写入 RUN 轨迹。当前控制台不会自动调用 Hermes/Codex Skill；")
+    print(f"  先查看本 Gate 的精确读取清单：python tools\\protocol_attestation.py --plan "
+          f"--project-root \"{root}\" --run-id {args.run}")
+    print(f"  阅读后提交证明：python tools\\protocol_attestation.py <证明.json> "
+          f"--project-root \"{root}\" --run-id {args.run}")
+    print("  证明 PASS 后才允许该 Gate 的正式事件写入；进入新 Gate 后按新范围重新证明。")
     print("执行 Agent 按合同完成产物后，由路由 QA GPT 审核并写入轨迹。")
     print("每个适用步骤完成后，证据文件要先落盘：")
     print(f'  python tools\\append_event.py "{root}" ^')

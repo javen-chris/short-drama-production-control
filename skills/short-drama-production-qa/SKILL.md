@@ -9,10 +9,16 @@ Do not generate or silently repair the artifact being reviewed. Store evidence p
 
 ## pre_generation
 
-Verify authority/version, time coverage, beat and script review, shot-to-unit mapping, continuity ledger, asset roles, risk route, storyboard composite when required, neutral PromptUnit, provider capability, Skill ID/version/hash, contract authorization, expected cost, and absence of secrets. Schema success alone is not content QA.
+Read the RUN contract's current QA level and applicable Gate protocol bundle. Use `capabilities/qa_policy.json` as the single source for A/B/C scope:
+
+- **A:** inspect only changed files and the context needed to understand the edit; finish within 180 seconds. Do not expand to a full review for a harmless wording change.
+- **B:** inspect the changed shot and its immediately adjacent shots, plus only the continuity evidence they depend on.
+- **C:** inspect the current candidate's required script, breakdown, Prompt, asset contract/references, relevant start/end states, and project state as one consolidated pre-generation review.
+
+Across levels, check authority/version, applicable protocol refs, evidence freshness, and only the content risks in scope. A schema pass is not content QA. Do not reload unrelated historical versions or the entire project when the contract identifies a narrower evidence bundle.
 
 ## post_generation
 
 Inspect the actual local media, not the task-success flag. Verify decode, duration, resolution/frame rate/audio; identity, face/hair/wardrobe/body/footwear; character count; blocking and screen direction; prop ownership/state; required action result; dialogue speaker/lip-sync/audio; VFX source/path; continuity against the prior real tail; black/flash/frozen/corrupt frames; unwanted text/watermark; and compliance with prohibitions.
 
-Write `PASS`, `FAIL`, or `UNCERTAIN`, per-check evidence, media path/hash, provider task ID, cost, reviewer identity, and the only permitted next step. Post-generation failure does not authorize retry or provider switching.
+Write per-check `PASS`, `FAIL`, or `UNCERTAIN` with evidence. On `FAIL`, group findings before returning them so the producer can make one consolidated repair. Permit at most one same-issue re-review on the same version; if the artifact changes materially, record a new version and run the appropriate QA once. A timeout is not a failure verdict: stop at the time limit, narrow the evidence bundle, and use only the policy-defined re-review.

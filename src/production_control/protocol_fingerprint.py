@@ -20,51 +20,36 @@ from pathlib import Path
 
 DEFAULT_ROOT = r"D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议"
 
-# Every file an agent must claim (and prove) it read before producing anything.
-# Names carry the _v3.0 suffix since the 2026-09-20 protocol upgrade.
+# Small baseline every task must read. The current Gate's protocol refs are
+# added from the execution contract; unrelated Gate documents are not required.
 REQUIRED_CORE_FILES = [
     "00_自动化生产唯一入口_v3.0.md",
     "核心自动化生产包/01_核心总则_v3.0.md",
     "核心自动化生产包/02_任务路由与Gate_v3.0.md",
-    "核心自动化生产包/03_生产与资产规则_v3.0.md",
-    "核心自动化生产包/04_专项规则_v3.0.md",
-    # 09: the shared creative rubric used by script breakdown and review.
-    "09_脚本优化与分镜拆解规范_v3.0.md",
-    # 04: 独立 QA 与归档的权威规则 - "谁复核、怎么归档"不能只靠记忆。
     "04_QA与文件治理_v3.0.md",
-    "11_目标模式自动建卡与连续执行规则_v3.0.md",
-    "13_模型执行前硬门禁_v3.0.md",
-    "14_RH生图渠道与GPT通道现状_v3.0.md",
-    # 15: 本机制自身的定义。要求别人证明读过的规则，自己却不在必读集里，说不通。
     "15_协议读取与合规证明_v3.0.md",
-    "16_生图渠道规则_v3.0.md",
-    # 17: 19 号禁止"零参考资产提交"，而参考资产怎么选正是 17 号。
-    # 少了它，Agent 可以在不懂参考资产选择的前提下就去提交。
-    "17_故事本图片与视频生成参考资产选择准则_v3.0.md",
     "18_运行轨迹与进度可视规则_v3.0.md",
-    "19_视频提交前确认报告与授权范围规则_v3.0.md",
 ]
+TARGET_MODE_PROTOCOL_FILES = ["11_目标模式自动建卡与连续执行规则_v3.0.md"]
 
 # Answers are normalized (trimmed, lowercased) before hashing.
 CHALLENGE_BANK = [
-    {"id": "image-model", "prompt": "本协议下生图唯一允许的图像模型是什么？", "expected": "gpt-image-2"},
-    {"id": "image-fallback", "prompt": "订阅额度耗尽且已授权时的生图兜底通道枚举值是什么？", "expected": "gpt_image2_runninghub_workflow"},
-    {"id": "image-unauthorized", "prompt": "常规（非全自动）模式下，Agent 是否可以自行执行生图？（是/否）", "expected": "否"},
-    {"id": "autonomous-asset-fill", "prompt": "全自动目标模式下资产评估发现缺 MASTER 时，Agent 应当？（填：立即生成 或 停下请示）", "expected": "立即生成"},
-    {"id": "degraded-route", "prompt": "复杂风险但未授权制作故事本时，生产单元走的路线枚举值是什么？", "expected": "degraded_direct"},
-    {"id": "master-gate", "prompt": "角色/场景/道具 MASTER 缺失时，生产停在哪个 Gate？（如 G5）", "expected": "g3"},
-    {"id": "tail-frame-blocking", "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）", "expected": "否"},
-    {"id": "max-submissions", "prompt": "一份合同授权的付费视频提交最多几次？（数字）", "expected": "1"},
-    {"id": "protocol-version", "prompt": "当前核心协议的主版本号是？（如 2.0）", "expected": "3.0"},
-    {"id": "run-trace-location", "prompt": "每段（每次运行）的轨迹文件存放在项目 workflow 下的哪个目录？（填目录名）", "expected": "runs"},
-    {"id": "run-trace-missing", "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）", "expected": "不算"},
-    {"id": "submit-requires-report", "prompt": "提交视频前必须落盘哪份产物？（填名称）", "expected": "确认报告"},
-    {"id": "empty-assets-submit", "prompt": "已获用户授权，但参考资产清单为空时是否允许提交？（允许/不允许）", "expected": "不允许"},
-    {"id": "script-visible-change", "prompt": "脚本节奏检查中，每 3–5 秒至少需要发生什么？", "expected": "可见变化"},
-    {"id": "script-revision-limit", "prompt": "生产拆解前的创作自查最多允许几轮集中候选修订？（数字）", "expected": "1"},
+    {"id": "image-model", "prompt": "本协议下生图唯一允许的图像模型是什么？", "expected": "gpt-image-2", "protocol_refs": ["16_生图渠道规则_v3.0.md"]},
+    {"id": "image-fallback", "prompt": "订阅额度耗尽且已授权时的生图兜底通道枚举值是什么？", "expected": "gpt_image2_runninghub_workflow", "protocol_refs": ["16_生图渠道规则_v3.0.md"]},
+    {"id": "image-unauthorized", "prompt": "常规（非全自动）模式下，Agent 是否可以自行执行生图？（是/否）", "expected": "否", "protocol_refs": ["16_生图渠道规则_v3.0.md"]},
+    {"id": "autonomous-asset-fill", "prompt": "全自动目标模式下资产评估发现缺 MASTER 时，Agent 应当？（填：立即生成 或 停下请示）", "expected": "立即生成", "protocol_refs": ["16_生图渠道规则_v3.0.md"]},
+    {"id": "degraded-route", "prompt": "复杂风险但未授权制作故事本时，生产单元走的路线枚举值是什么？", "expected": "degraded_direct", "protocol_refs": ["核心自动化生产包/03_生产与资产规则_v3.0.md"]},
+    {"id": "master-gate", "prompt": "角色/场景/道具 MASTER 缺失时，生产停在哪个 Gate？（如 G5）", "expected": "g3", "protocol_refs": ["核心自动化生产包/03_生产与资产规则_v3.0.md"]},
+    {"id": "tail-frame-blocking", "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）", "expected": "否", "protocol_refs": ["核心自动化生产包/03_生产与资产规则_v3.0.md"]},
+    {"id": "max-submissions", "prompt": "一份合同授权的付费视频提交最多几次？（数字）", "expected": "1", "protocol_refs": ["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
+    {"id": "protocol-version", "prompt": "当前核心协议的主版本号是？（如 2.0）", "expected": "3.0", "protocol_refs": ["15_协议读取与合规证明_v3.0.md"]},
+    {"id": "run-trace-location", "prompt": "每段（每次运行）的轨迹文件存放在项目 workflow 下的哪个目录？（填目录名）", "expected": "runs", "protocol_refs": ["18_运行轨迹与进度可视规则_v3.0.md"]},
+    {"id": "run-trace-missing", "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）", "expected": "不算", "protocol_refs": ["18_运行轨迹与进度可视规则_v3.0.md"]},
+    {"id": "submit-requires-report", "prompt": "提交视频前必须落盘哪份产物？（填名称）", "expected": "确认报告", "protocol_refs": ["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
+    {"id": "empty-assets-submit", "prompt": "已获用户授权，但参考资产清单为空时是否允许提交？（允许/不允许）", "expected": "不允许", "protocol_refs": ["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
+    {"id": "script-visible-change", "prompt": "脚本节奏检查中，每 3–5 秒至少需要发生什么？", "expected": "可见变化", "protocol_refs": ["09_脚本优化与分镜拆解规范_v3.0.md"]},
+    {"id": "script-revision-limit", "prompt": "生产拆解前的创作自查最多允许几轮集中候选修订？（数字）", "expected": "1", "protocol_refs": ["09_脚本优化与分镜拆解规范_v3.0.md"]},
 ]
-
-CHALLENGE_SAMPLE = 3
 
 
 def sha256_file(path: Path) -> str:
@@ -79,10 +64,18 @@ def normalize(answer: str) -> str:
     return " ".join(answer.split()).strip().lower()
 
 
+def registered_protocol_files() -> list[str]:
+    """Pin common rules and every protocol referenced by the unique step registry."""
+    registry_path = Path(__file__).resolve().parents[2] / "skills" / "skill-chain.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    refs = {ref for step in registry.get("steps", []) for ref in step.get("protocol_refs", [])}
+    return sorted(set(REQUIRED_CORE_FILES) | set(TARGET_MODE_PROTOCOL_FILES) | refs)
+
+
 def build_manifest(root: str | Path, *, seed: int | None = None, files: list[str] | None = None,
                    bank: list[dict] | None = None) -> dict:
     root = Path(root)
-    file_list = files if files is not None else REQUIRED_CORE_FILES
+    file_list = files if files is not None else registered_protocol_files()
     bank = bank if bank is not None else CHALLENGE_BANK
     entries = []
     for rel in file_list:
@@ -93,14 +86,16 @@ def build_manifest(root: str | Path, *, seed: int | None = None, files: list[str
     fingerprint = hashlib.sha256(
         "\n".join(f"{e['path']}:{e['sha256']}" for e in entries).encode("utf-8")
     ).hexdigest()
-    picks = random.Random(seed).sample(bank, min(CHALLENGE_SAMPLE, len(bank)))
+    challenge_items = list(bank)
+    random.Random(seed).shuffle(challenge_items)
     challenges = [
         {
             "id": item["id"],
             "prompt": item["prompt"],
             "answer_sha256": hashlib.sha256(normalize(item["expected"]).encode("utf-8")).hexdigest(),
+            "protocol_refs": item.get("protocol_refs", []),
         }
-        for item in picks
+        for item in challenge_items
     ]
     return {
         "manifest_version": "1.0",
@@ -124,6 +119,10 @@ def check(root: str | Path) -> list[str]:
         return [f"manifest not found: {path} (generate it first)"]
     manifest = json.loads(path.read_text(encoding="utf-8"))
     errors: list[str] = []
+    expected_paths = set(registered_protocol_files())
+    declared_paths = {entry.get("path") for entry in manifest.get("files", [])}
+    for path in sorted(expected_paths - declared_paths):
+        errors.append(f"{path}: missing from manifest; regenerate")
     for entry in manifest.get("files", []):
         target = root / entry["path"]
         if not target.is_file():

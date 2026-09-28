@@ -208,6 +208,16 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
             )
         if task_id != contract.get("task_id") or version != contract.get("version"):
             raise ValueError("EXECUTION_CONTRACT_MISMATCH：任务 ID 或版本与 RUN 执行合同不一致。")
+        attestation = state.get("protocol_attestation") or {}
+        if (attestation.get("status") != "PASS"
+                or attestation.get("contract_id") != contract.get("contract_id")
+                or attestation.get("manifest_fingerprint") != contract.get("protocol_manifest_fingerprint")):
+            raise PermissionError("PROTOCOL_ATTESTATION_REQUIRED：请先完成当前 RUN/Gate 的协议读取证明。")
+        if gate not in declared.get("gate", []) or attestation.get("scope_gate") != gate:
+            raise PermissionError("PROTOCOL_SCOPE_MISMATCH：当前事件不属于已验证的协议 Gate，请重新读取并证明。")
+        if not {ref["path"] for ref in declared.get("protocol_refs", [])}.issubset(
+                set(attestation.get("protocol_paths", []))):
+            raise PermissionError("PROTOCOL_SCOPE_INCOMPLETE：已验证的协议范围未覆盖本步骤要求。")
         if role == qa_policy.PRODUCER:
             if actor.strip().lower() != str(contract.get("execution_model", "")).strip().lower():
                 raise PermissionError("EXECUTION_MODEL_MISMATCH：提交者与 RUN 合同中的执行模型声明不一致。")
