@@ -5,7 +5,7 @@ description: Review a confirmed short-drama script and shot units for hook, beat
 
 # Short-drama Script Reviewer
 
-Read `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议\09_脚本优化与分镜拆解规范.md`, the confirmed script, and the complete objects produced by `short-drama-script-breakdown`. Review independently; do not generate or repair the reviewed objects in place. This Skill may identify problems and propose candidates, but must not silently rewrite confirmed plot, character relationships, world setting, or permissions.
+Read `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议\09_脚本优化与分镜拆解规范_v3.0.md`, the confirmed source, any separately saved candidate, and the complete objects produced by `short-drama-script-breakdown`. Review against the same five checks used by the breakdown Skill. Do not generate or repair the reviewed objects in place; do not silently rewrite confirmed plot, character relationships, world setting, or permissions.
 
 ## Required review record
 
@@ -17,6 +17,10 @@ For each production unit, record:
 - one visual cause per shot unit;
 - one explicit dialogue speaker and the post-dialogue state;
 - any high-risk action that requires keyframes or a storyboard.
+
+For every check, record `PASS / REVISE / UNCERTAIN`, the exact timecode/shot/line, the observed evidence, and why it matters. For camera choices, judge whether the framing or movement clarifies information, emotion, or action; do not fail a scene merely for using a repeated shot size when repetition is intentional. For hooks and reversals, distinguish a real story change from sound/effect/close-up emphasis alone. For generation feasibility, identify overloaded actions, unclear start/end states, space changes, speaker conflicts, and high-risk contact.
+
+If reviewing a revised candidate, compare it with its cited source version and verify that each change addresses a recorded issue without introducing new continuity, dialogue, permission, or story conflicts. Return no more than three blocking issues first, followed by optional craft improvements. This review is a content review, not proof of a different model identity or a substitute for the separately routed production QA.
 
 The record must be `PASS` before the Prompt Compiler can route a video prompt. `PENDING` or `FAIL` blocks provider adapters.
 

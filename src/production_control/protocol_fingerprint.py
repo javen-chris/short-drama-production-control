@@ -28,6 +28,8 @@ REQUIRED_CORE_FILES = [
     "核心自动化生产包/02_任务路由与Gate_v3.0.md",
     "核心自动化生产包/03_生产与资产规则_v3.0.md",
     "核心自动化生产包/04_专项规则_v3.0.md",
+    # 09: the shared creative rubric used by script breakdown and review.
+    "09_脚本优化与分镜拆解规范_v3.0.md",
     # 04: 独立 QA 与归档的权威规则 - "谁复核、怎么归档"不能只靠记忆。
     "04_QA与文件治理_v3.0.md",
     "11_目标模式自动建卡与连续执行规则_v3.0.md",
@@ -58,6 +60,8 @@ CHALLENGE_BANK = [
     {"id": "run-trace-missing", "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）", "expected": "不算"},
     {"id": "submit-requires-report", "prompt": "提交视频前必须落盘哪份产物？（填名称）", "expected": "确认报告"},
     {"id": "empty-assets-submit", "prompt": "已获用户授权，但参考资产清单为空时是否允许提交？（允许/不允许）", "expected": "不允许"},
+    {"id": "script-visible-change", "prompt": "脚本节奏检查中，每 3–5 秒至少需要发生什么？", "expected": "可见变化"},
+    {"id": "script-revision-limit", "prompt": "生产拆解前的创作自查最多允许几轮集中候选修订？（数字）", "expected": "1"},
 ]
 
 CHALLENGE_SAMPLE = 3

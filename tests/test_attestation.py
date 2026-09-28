@@ -116,7 +116,16 @@ def test_challenge_bank_covers_the_current_rulings():
 
     ids = {item["id"] for item in CHALLENGE_BANK}
     assert {"image-model", "image-unauthorized", "tail-frame-blocking", "protocol-version"} <= ids
+    assert {"script-visible-change", "script-revision-limit"} <= ids
     answers = {item["id"]: item["expected"] for item in CHALLENGE_BANK}
     assert answers["image-model"] == "gpt-image-2"
     assert answers["image-unauthorized"] == "否"
     assert answers["protocol-version"] == "3.0"
+    assert answers["script-visible-change"] == "可见变化"
+    assert answers["script-revision-limit"] == "1"
+
+
+def test_script_quality_protocol_is_part_of_the_attested_core():
+    from production_control.protocol_fingerprint import REQUIRED_CORE_FILES
+
+    assert "09_脚本优化与分镜拆解规范_v3.0.md" in REQUIRED_CORE_FILES
