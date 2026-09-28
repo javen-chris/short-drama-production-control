@@ -17,7 +17,7 @@ from pathlib import Path
 CONSOLE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CONSOLE / "src"))
 
-from production_control import orchestrator  # noqa: E402
+from production_control import execution_contract, orchestrator  # noqa: E402
 
 
 def resolve_contract_id(value: str) -> str:
@@ -47,13 +47,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--chain", default=str(CONSOLE / "skills" / "skill-chain.json"),
                         help="技能链声明（默认用仓库自带的 skill-chain.json）")
     parser.add_argument("--contract", default="", help="contract_id，或合同 JSON 的路径")
+    parser.add_argument("--task-id", required=True, help="本次生产任务 ID")
+    parser.add_argument("--version", required=True, help="当前待执行版本，例如 v1")
+    parser.add_argument("--execution-model", required=True,
+                        help="执行模型声明；不代表已认证的真实会话身份")
+    parser.add_argument("--production-level", required=True, choices=["L1", "L2"])
+    parser.add_argument("--image-assets-required", action=argparse.BooleanOptionalAction, required=True,
+                        help="本次是否需要新生/修复图片资产；未使用就传 --no-image-assets-required")
+    parser.add_argument("--storyboard-required", action=argparse.BooleanOptionalAction, required=True,
+                        help="本次是否需要完整故事本；L1 无需时传 --no-storyboard-required")
+    parser.add_argument("--provider", choices=["runninghub", "xiaoyunque", "libtv"], default="",
+                        help="可选：选定一个 G6 平台；不传表示当前 RUN 未进入平台提交")
     args = parser.parse_args(argv)
 
     chain_path = Path(args.chain)
     if not chain_path.is_file():
         raise SystemExit(f"找不到技能链：{chain_path}")
     chain = json.loads(chain_path.read_text(encoding="utf-8"))
-    contract_id = resolve_contract_id(args.contract)
+    contract_id = resolve_contract_id(args.contract) if args.contract else args.task_id
+    try:
+        contract = execution_contract.build_contract(
+            chain=chain, project_root=args.project_root, run_id=args.run,
+            task_id=args.task_id, segment=args.segment or args.run,
+            version=args.version, execution_model=args.execution_model,
+            production_level=args.production_level,
+            image_assets_required=args.image_assets_required,
+            storyboard_required=args.storyboard_required, provider=args.provider,
+        )
+    except execution_contract.ContractError as exc:
+        raise SystemExit(f"无法建立执行合同：{exc}") from exc
+    contract["contract_id"] = contract_id
 
     state = orchestrator.start(
         None,
@@ -65,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         segment_title=args.title,
         series=args.series,
         episode=args.episode,
+        contract=contract,
     )
 
     root = Path(args.project_root)
@@ -72,9 +96,21 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print(f"已开始：{args.run}  {args.title or args.segment or ''}".rstrip())
     print(f"  轨迹：{root / 'workflow' / 'runs' / (args.run + '.json')}")
-    print(f"  流水线 {len(steps)} 步，当前停止在：{steps[0] if steps else '（空）'}")
+    applicable = sum(1 for item in contract["steps"] if item["applicable"])
+    not_applicable = len(contract["steps"]) - applicable
+    print(f"  执行合同：{args.task_id} · {args.version} · 执行模型声明 {args.execution_model} "
+          f"→ QA 路由 {contract['qa_model']}（会话身份未认证）")
+    print(f"  本次适用 {applicable} 个注册步骤，不适用 {not_applicable} 个；平台提交授权：未授予")
+    print(f"  流水线 {len(steps)} 个不同 Skill，当前停止在：{steps[0] if steps else '（空）'}")
+    for item in contract["steps"]:
+        if item["applicable"]:
+            print(f"    {item['id']} {item['skill']}：适用")
+        else:
+            print(f"    {item['id']} {item['skill']}：本次不适用（{item['reason']}）")
     print()
-    print("接下来每完成一步就记一次（证据文件要先落盘）：")
+    print("执行清单已写入 RUN 轨迹。当前控制台不会自动调用 Hermes/Codex Skill；")
+    print("执行 Agent 按合同完成产物后，由路由 QA GPT 审核并写入轨迹。")
+    print("每个适用步骤完成后，证据文件要先落盘：")
     print(f'  python tools\\append_event.py "{root}" ^')
     print(f"    --run {args.run} --step <skill> --protocol <协议文件> \\")
     print("    --evidence <相对项目的文件路径> --outcome COMPLETED")

@@ -51,6 +51,7 @@ OK = "OK"
 CLAIMED_NO_EVIDENCE = "CLAIMED_NO_EVIDENCE"
 CLAIMED_NO_READ = "CLAIMED_NO_READ"
 NOT_CLAIMED = "NOT_CLAIMED"
+NOT_APPLICABLE = "NOT_APPLICABLE"
 EXTRA = "EXTRA"
 
 INDEPENDENT = "INDEPENDENT"
@@ -79,6 +80,7 @@ VERDICT_LABELS = {
     CLAIMED_NO_EVIDENCE: "声称完成但无实证",
     CLAIMED_NO_READ: "有实证但未记录协议读取",
     NOT_CLAIMED: "协议要求但未做",
+    NOT_APPLICABLE: "本次不适用",
     EXTRA: "不在协议声明链内",
 }
 
@@ -193,9 +195,11 @@ def audit_steps(state: dict, project_root: str | Path | None = None,
     declared = declared_steps(chain)
     declared_names = {row["step"] for row in declared}
     rows: list[dict] = []
+    qa_states = {row["step"]: row["state"] for row in audit_qa_passes(state, root)["rows"]}
 
     for item in declared:
         step = item["step"]
+        disposition = (state.get("step_dispositions") or {}).get(step, {})
         producer = _producer_event(state, step)
         reviewer = _qa_event(state, step)
         claimed = producer is not None and producer.get("outcome") in PRODUCER_OUTCOMES
@@ -211,8 +215,8 @@ def audit_steps(state: dict, project_root: str | Path | None = None,
             "validator": (producer or {}).get("validator", ""),
             # A step is only "passed" when someone other than the producer says
             # so. A producer's own COMPLETED is a claim, and stays a claim.
-            "qa_passed": bool(reviewer and reviewer.get("outcome") in QA_PASS_OUTCOMES),
-            "qa_failed": bool(reviewer and reviewer.get("outcome") == "FAILED"),
+            "qa_passed": qa_states.get(step) == QA_PASSED,
+            "qa_failed": qa_states.get(step) in {QA_FAILED, "QA_INVALID"},
             "qa_actor": (reviewer or {}).get("actor", ""),
             "gate": (producer or {}).get("gate", "") or (reviewer or {}).get("gate", ""),
             # How the recorded name got here. A step that was written under a
@@ -220,9 +224,15 @@ def audit_steps(state: dict, project_root: str | Path | None = None,
             # know the trace was corrected rather than typed correctly.
             "step_as_written": (producer or {}).get("step_as_written", ""),
             "step_matched_fuzzy": (producer or {}).get("step_matched_fuzzy", 0),
-            "step_id": (producer or {}).get("step_id", ""),
+            "step_id": (producer or {}).get("step_id", "") or disposition.get("step_id", ""),
             "missing_reads": [],
         }
+
+        if disposition and not disposition.get("applicable", True) and producer is None:
+            row["verdict"] = NOT_APPLICABLE
+            row["reason"] = disposition.get("reason", "本次执行合同标记为不适用")
+            rows.append(row)
+            continue
 
         if not claimed:
             # Blocked or waiting: not a claim, but still progress information.
@@ -395,6 +405,24 @@ def audit_qa_passes(state: dict, project_root: str | Path | None = None,
             metadata_ok = metadata_ok and isinstance(event.get("blocking_issues"), list)
             metadata_ok = metadata_ok and isinstance(event.get("affected_files"), list) and bool(event["affected_files"])
             producer_writer = ((producer_event or {}).get("writer_model") or "").strip().lower()
+            contract = state.get("execution_contract") or {}
+            contract_step = next((item for item in contract.get("steps", [])
+                                  if item.get("id") == event.get("step_id")), None)
+            contract_mismatch = bool(contract) and (
+                contract_step is None or not contract_step.get("applicable", False)
+                or event.get("contract_id") not in (None, "", contract.get("contract_id", contract.get("task_id")))
+                or (producer_event or {}).get("contract_id") not in (
+                    None, "", contract.get("contract_id", contract.get("task_id")))
+                or event.get("task_id") != contract.get("task_id")
+                or event.get("version") != contract.get("version")
+                or (event.get("actor") or "").strip().lower() != str(contract.get("qa_model", "")).lower()
+                or (event.get("writer_model") or "").strip().lower() != str(contract.get("qa_model", "")).lower()
+                or (event.get("execution_model") or "").strip().lower() != str(contract.get("execution_model", "")).lower()
+                or (producer_event or {}).get("task_id") != contract.get("task_id")
+                or (producer_event or {}).get("version") != contract.get("version")
+                or ((producer_event or {}).get("actor") or "").strip().lower()
+                   != str(contract.get("execution_model", "")).lower()
+            )
             prior_reviews = [e for e in events[:event_index]
                              if e.get("step") == step
                              and (e.get("role") or qa_policy.PRODUCER) == qa_policy.QA
@@ -416,7 +444,7 @@ def audit_qa_passes(state: dict, project_root: str | Path | None = None,
             }.get(event.get("qa_conclusion"), False)
             if event.get("qa_level") == "A" and (event.get("elapsed_seconds") or 0) > 180:
                 outcome_ok = outcome_ok and event.get("qa_conclusion") == "TIMEOUT"
-            if (not routed or writer.lower() != (event.get("actor") or "").strip().lower()
+            if (contract_mismatch or not routed or writer.lower() != (event.get("actor") or "").strip().lower()
                     or producer_writer != (expected_writer or "") or not metadata_ok
                     or (event.get("execution_model") or "").strip().lower() != producer.strip().lower()
                     or (producer_event or {}).get("version") not in (None, "", event.get("version"))

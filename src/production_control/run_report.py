@@ -65,6 +65,7 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
     steps = state.get("pipeline") or []
     completed = set(state.get("completed_steps", []) or [])
     events = _events_by_step(state)
+    dispositions = state.get("step_dispositions") or {}
 
     rendered = []
     for step in steps:
@@ -103,8 +104,9 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
                 "step": step,
                 "outcome": outcome,
                 "state_label": (
-                    OUTCOME_LABELS.get(outcome)
-                    or outcome
+                    "本次不适用：" + dispositions[step].get("reason", "未说明原因")
+                    if step in dispositions and not dispositions[step].get("applicable", True)
+                    else OUTCOME_LABELS.get(outcome) or outcome
                     or ("未开始" if step not in completed else "已完成")
                 ),
                 "at": event.get("at", ""),
@@ -131,12 +133,26 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
                          if event.get("step") == post_qa_skill and
                          (event.get("gate") == "G7" or event.get("mode") == "post_generation")),
                         key=lambda event: event.get("at", ""), default={})
+    contract = state.get("execution_contract") or {}
     events_fingerprint = hashlib.sha256(json.dumps(
         state.get("events", []) or [], ensure_ascii=False, sort_keys=True,
         separators=(",", ":")).encode("utf-8")).hexdigest()
     return {
         "run_id": state.get("run_id", ""),
         "contract_id": state.get("contract_id", ""),
+        "execution_contract": {
+            "task_id": contract.get("task_id", ""),
+            "version": contract.get("version", ""),
+            "execution_model": contract.get("execution_model", ""),
+            "qa_model": contract.get("qa_model", ""),
+            "model_identity": contract.get("model_identity", "declared_unverified"),
+            "current_step_id": contract.get("current_step_id", ""),
+            "current_owner": contract.get("current_owner", ""),
+            "next_action": contract.get("next_action", ""),
+            "selected_provider": contract.get("selected_provider"),
+            "provider_authorized": contract.get("provider_authorized", False),
+            "steps": contract.get("steps", []),
+        } if contract else {},
         "segment": state.get("segment", ""),
         "segment_title": state.get("segment_title", ""),
         "status": state.get("status", ""),
@@ -1173,7 +1189,8 @@ def step_audit_block(summary: dict) -> str:
              "NOT_CLAIMED": "未做", "EXTRA": "额外"}
 
     def badge(verdict: str) -> str:
-        cls = "ok" if verdict == step_audit.OK else "bad"
+        cls = ("ok" if verdict == step_audit.OK else
+               "dim" if verdict == step_audit.NOT_APPLICABLE else "bad")
         return (f'<span class="verdict {cls}">{escape(marks.get(verdict, verdict))}'
                 f'<span class="dim"> {escape(step_audit.VERDICT_LABELS.get(verdict, ""))}</span></span>')
 
@@ -1613,11 +1630,17 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     last_step = last.get("step") or "暂无事件"
     last_outcome = OUTCOME_LABELS.get(last.get("outcome", "")) or last.get("outcome", "") or "暂无结果"
     current_step = summary.get("current_step", "")
+    contract_view = summary.get("execution_contract") or {}
+    contract_step_id = contract_view.get("current_step_id", "")
+    contract_entry = step_registry.by_id(contract_step_id) if contract_step_id else None
+    if contract_entry:
+        current_step = contract_entry.skill
     last_is_current = last.get("step") == current_step
     current_modes = [last.get("mode", "")] if last_is_current else []
     current_modes = [mode for mode in current_modes if mode]
-    current_entry = (step_registry.by_id(last.get("step_id", "")) if last_is_current
-                     else step_registry.by_skill(current_step))
+    current_entry = (contract_entry if contract_entry else
+                     step_registry.by_id(last.get("step_id", "")) if last_is_current else
+                     step_registry.by_skill(current_step))
     current_gate = ((last.get("gate") if last_is_current else "") or
                     gate_map.gate_badge(current_step, current_modes) or "G1–G6")
     if current_gate in {"G5", "G7"} and not current_modes:
@@ -1626,7 +1649,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     a1_state = project_state.get("a1") or {}
     version_hint = (Path(a1_state.get("authority_script", "")).name
                     or a1_state.get("main_unit") or project_state.get("stage") or "未登记")
-    next_action = project_state.get("next_step") or summary.get("pending_decision") or "等待 Agent 下一条上报"
+    next_action = (contract_view.get("next_action") or project_state.get("next_step")
+                   or summary.get("pending_decision") or "等待 Agent 下一条上报")
     next_action = " ".join(str(next_action).split())
     if len(next_action) > 82:
         next_action = next_action[:79] + "…"
@@ -1667,6 +1691,11 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         f'<div>生产版本：<code>{escape(version_hint)}</code> · '
         f'轨迹记录执行者：<code>{escape(last.get("actor") or "未记录")}</code> · '
         f'轨迹声明写入者：<code>{escape(last.get("writer_model") or "未记录")}</code></div>'
+        f'<div>执行合同：<code>{escape(contract_view.get("task_id") or "未登记")}</code> · '
+        f'合同版本：<code>{escape(contract_view.get("version") or "未登记")}</code> · '
+        f'当前责任方：<code>{escape(contract_view.get("current_owner") or "未登记")}</code> · '
+        f'QA 路由声明：<code>{escape(contract_view.get("qa_model") or "未登记")}</code> '
+        f'（身份{escape(contract_view.get("model_identity") or "未认证")}）</div>'
         '</details></section>'
     ) if activity_rows else '<section class="recent"><h2>最近活动</h2><div class="activity-meta">暂无 Agent 事件</div></section>'
     icon = {"bad": "⛔", "wait": "◷", "warn": "⚠", "ok": "✓"}.get(status_class, "●")

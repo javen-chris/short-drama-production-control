@@ -87,6 +87,9 @@ def verify_run_compliance(state: dict, chain: dict | None = None, manifest: dict
     completed = set(state.get("completed_steps", []))
 
     for step in steps:
+        disposition = (state.get("step_dispositions") or {}).get(step, {})
+        if disposition and not disposition.get("applicable", True):
+            continue
         if step not in completed:
             continue
         event = _last_completed_event(state, step)
@@ -109,11 +112,14 @@ def verify_run_compliance(state: dict, chain: dict | None = None, manifest: dict
                     errors.append(f"{step}: {path} hash does not match the protocol manifest")
 
     covered = [s for s in steps if s in completed]
+    not_applicable = [s for s in steps
+                      if (state.get("step_dispositions") or {}).get(s, {}).get("applicable") is False]
     return {
         "status": "PASS" if not errors else "NON_COMPLIANT",
         "run_id": state.get("run_id"),
         "completed_steps": covered,
-        "pending_steps": [s for s in steps if s not in completed],
+        "pending_steps": [s for s in steps if s not in completed and s not in not_applicable],
+        "not_applicable_steps": not_applicable,
         "errors": errors,
     }
 

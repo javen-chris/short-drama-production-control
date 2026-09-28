@@ -21,7 +21,33 @@
     },
     "current_step": {
       "type": "string",
-      "minLength": 1
+      "minLength": 0
+    },
+    "pipeline": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "segment": {"type": "string"},
+    "segment_title": {"type": "string"},
+    "series": {"type": "string"},
+    "episode": {"type": "string"},
+    "project_root": {"type": "string"},
+    "updated_at": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "version": {"type": "string", "minLength": 1},
+    "execution_model": {"type": "string", "minLength": 1},
+    "qa_model": {"type": "string", "minLength": 1},
+    "execution_contract": {"type": "object"},
+    "step_dispositions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["applicable", "reason", "step_id", "disposition"],
+        "properties": {
+          "applicable": {"type": "boolean"},
+          "reason": {"type": "string", "minLength": 1},
+          "step_id": {"type": "string", "minLength": 1},
+          "disposition": {"enum": ["pending", "not_applicable"]}
+        },
+        "additionalProperties": false
+      }
     },
     "status": {
       "enum": [
@@ -29,6 +55,11 @@
         "WAITING_APPROVAL",
         "PAUSED_EXCEPTION",
         "COMPLETED",
+        "COMPLETED_WITH_CONTINUITY_CAVEAT",
+        "USABLE_WITH_SCENE_CONTINUITY_FAIL",
+        "SUBMITTED_FOR_QA",
+        "SUBMITTED_IN_PROGRESS",
+        "FAILED",
         "BLOCKED"
       ]
     },
@@ -83,6 +114,7 @@
           "role": {"enum": ["producer", "qa"]},
           "step_as_written": {"type": "string"},
           "step_id": {"type": "string", "minLength": 1},
+          "contract_id": {"type": "string", "minLength": 1},
           "step_matched_fuzzy": {"type": "number", "minimum": 0, "maximum": 1},
           "task_id": {"type": "string", "minLength": 1},
           "version": {"type": "string", "minLength": 1},
@@ -145,8 +177,7 @@
             "minLength": 1
           },
           "validator": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           }
         },
         "allOf": [

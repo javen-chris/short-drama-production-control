@@ -191,6 +191,41 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
 
     state = json.loads(path.read_text(encoding="utf-8"))
 
+    contract = state.get("execution_contract") or {}
+    if contract and not off_protocol:
+        contract_steps = contract.get("steps", [])
+        declared = next((item for item in contract_steps if item.get("id") == step_id), None)
+        if declared is None:
+            raise ValueError(f"STEP_NOT_IN_EXECUTION_CONTRACT：{step_id} 不属于本次 RUN 执行清单。")
+        if not declared.get("applicable", False):
+            raise ValueError(
+                f"STEP_NOT_APPLICABLE：{step_id} 本次不适用：{declared.get('reason', '未说明原因')}"
+            )
+        if step_id != contract.get("current_step_id"):
+            raise ValueError(
+                f"STEP_OUT_OF_ORDER：当前合同步骤是 {contract.get('current_step_id') or '无'}，"
+                f"拒绝提前记录 {step_id}。"
+            )
+        if task_id != contract.get("task_id") or version != contract.get("version"):
+            raise ValueError("EXECUTION_CONTRACT_MISMATCH：任务 ID 或版本与 RUN 执行合同不一致。")
+        if role == qa_policy.PRODUCER:
+            if actor.strip().lower() != str(contract.get("execution_model", "")).strip().lower():
+                raise PermissionError("EXECUTION_MODEL_MISMATCH：提交者与 RUN 合同中的执行模型声明不一致。")
+            if writer_model.strip().lower() != str(contract.get("qa_model", "")).strip().lower():
+                raise PermissionError("QA_WRITER_ROUTE_MISMATCH：提交事件必须由合同路由的 QA GPT 写入。")
+        elif role == qa_policy.QA:
+            if actor.strip().lower() != str(contract.get("qa_model", "")).strip().lower():
+                raise PermissionError("QA_ACTOR_ROUTE_MISMATCH：QA actor 不是本 RUN 路由的 GPT 模型。")
+            if execution_model.strip().lower() != str(contract.get("execution_model", "")).strip().lower():
+                raise ValueError("EXECUTION_MODEL_MISMATCH：QA 声明的执行模型与 RUN 合同不一致。")
+        expected_refs = {ref["path"] for ref in declared.get("protocol_refs", [])}
+        supplied_refs = {str(ref).replace("\\", "/") for ref in (protocol_refs or [])}
+        if not expected_refs.issubset(supplied_refs):
+            missing_refs = sorted(expected_refs - supplied_refs)
+            raise ValueError("CONTRACT_PROTOCOLS_MISSING：本步骤没有声明读取全部适用协议：" + ", ".join(missing_refs))
+        protocol_refs = [dict(ref) for ref in declared.get("protocol_refs", [])]
+        protocol_refs.extend({"path": ref} for ref in sorted(supplied_refs - expected_refs))
+
     validate_outcome(outcome)
 
     if role == qa_policy.QA:
@@ -323,11 +358,14 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         # step becomes an invisible one. `skill_id` is still accepted for callers
         # that pass it, but the canonical name wins.
         "skill_id": canonical_step,
-        "protocol_refs": [{"path": p} for p in (protocol_refs or [])],
+        "protocol_refs": [dict(p) if isinstance(p, dict) else {"path": p}
+                          for p in (protocol_refs or [])],
         "evidence": evidence,
         "validator": validator,
         "writer_model": writer_model,
     }
+    if contract:
+        event["contract_id"] = contract.get("contract_id", contract.get("task_id", ""))
     optional_fields = {
         "task_id": task_id, "version": version, "qa_level": qa_level,
         "qa_conclusion": qa_conclusion, "elapsed_seconds": elapsed_seconds,
@@ -353,6 +391,60 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     _refuse_self_review(state, event, allow_self_qa=allow_self_qa)
 
     state.setdefault("events", []).append(event)
+
+    if contract and not off_protocol:
+        contract_item = next((item for item in contract.get("steps", [])
+                              if item.get("id") == step_id), None)
+        if contract_item is not None:
+            if role == qa_policy.PRODUCER and outcome == "SUBMITTED_FOR_QA":
+                contract_item["disposition"] = "submitted_for_qa"
+                contract["current_owner"] = "qa"
+                contract["next_action"] = f"由 {contract.get('qa_model')} 独立审核 {step_id} 当前版本并记录结论"
+            elif role == qa_policy.PRODUCER and outcome in {"BLOCKED", "WAITING_APPROVAL", "FAILED"}:
+                contract_item["disposition"] = outcome.lower()
+                contract["current_owner"] = "user"
+                contract["next_action"] = reason or f"处理 {step_id} 的阻断后再继续"
+            elif role == qa_policy.QA:
+                contract_item["disposition"] = {
+                    "COMPLETED": "qa_passed",
+                    "FAILED": "qa_failed",
+                    "WAITING_APPROVAL": "waiting_decision",
+                }.get(outcome, "qa_recorded")
+                if outcome == "COMPLETED":
+                    current_gates = set(contract_item.get("gate", []))
+                    pregen_qa = next((item for item in contract.get("steps", [])
+                                      if item.get("mode") == "pre_generation"
+                                      and item.get("applicable")
+                                      and item.get("disposition") == "pending"
+                                      and current_gates.intersection(item.get("gate", []))), None)
+                    if pregen_qa:
+                        pregen_qa["disposition"] = "qa_passed"
+                        pregen_qa["evidence_step_id"] = step_id
+                    index = next((i for i, item in enumerate(contract.get("steps", []))
+                                  if item.get("id") == step_id), -1)
+                    next_item = next((item for item in contract.get("steps", [])[index + 1:]
+                                      if item.get("applicable") and item.get("disposition") == "pending"), None)
+                    if next_item:
+                        contract["current_step_id"] = next_item["id"]
+                        if next_item.get("approval"):
+                            contract["current_owner"] = "user"
+                            contract["next_action"] = f"等待用户确认：{next_item['approval']}"
+                        elif next_item.get("mode") in {"pre_generation", "post_generation"}:
+                            contract["current_owner"] = "qa"
+                            contract["next_action"] = f"由 {contract.get('qa_model')} 执行 {next_item['id']} 独立 QA"
+                        else:
+                            contract["current_owner"] = "producer"
+                            contract["next_action"] = f"执行 {next_item['id']} {next_item['skill']} 并提交证据"
+                    else:
+                        contract["current_step_id"] = ""
+                        contract["current_owner"] = "complete"
+                        contract["next_action"] = "本 RUN 的适用步骤已完成；不得据此扩大生成或付费授权"
+                elif outcome == "FAILED":
+                    contract["current_owner"] = "producer"
+                    contract["next_action"] = "汇总问题；修订后递增版本并建立新执行合同，再提交独立 QA"
+                else:
+                    contract["current_owner"] = "user"
+                    contract["next_action"] = next_step or reason or "停止并等待用户决定"
 
     pipeline = state.get("pipeline") or []
     if outcome in COMPLETING_OUTCOMES:

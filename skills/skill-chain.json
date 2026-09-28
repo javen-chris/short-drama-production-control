@@ -122,6 +122,9 @@
       "after": [
         "short-drama-asset-router"
       ],
+      "applicability": {
+        "kind": "requires_image_assets"
+      },
       "when": "any image asset must be produced or repaired; gpt-image-2 only"
     },
     {
@@ -144,6 +147,9 @@
       "after": [
         "short-drama-image-generator"
       ],
+      "applicability": {
+        "kind": "storyboard_or_key_state"
+      },
       "when": "L2 or storyboard-required; L1 uses key-state planning only"
     },
     {
@@ -275,6 +281,9 @@
         "xiaoyunque-local-adapter",
         "libtv-local-adapter"
       ],
+      "applicability": {
+        "kind": "generated_video_present"
+      },
       "mode": "post_generation"
     }
   ],

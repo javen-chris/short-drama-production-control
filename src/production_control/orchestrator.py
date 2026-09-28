@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import run_state
 from . import step_registry
+from . import execution_contract
 
 SKILL_CHAIN = "skills/skill-chain.json"
 
@@ -52,7 +53,7 @@ def load_chain(path: str | Path = SKILL_CHAIN) -> dict:
 
 def start(state_path: str | Path, chain: dict, run_id: str, contract_id: str, *,
           project_root: str | Path | None = None, segment: str = "", segment_title: str = "",
-          series: str = "", episode: str = "") -> dict:
+          series: str = "", episode: str = "", contract: dict | None = None) -> dict:
     """Begin one segment run.
 
     With project_root set, the run file lands in <project>/workflow/runs/<run_id>.json
@@ -61,7 +62,9 @@ def start(state_path: str | Path, chain: dict, run_id: str, contract_id: str, *,
     segment_title is the human-readable name shown in reports, e.g.
     "B-2A（物理格斗）" rather than a bare code.
     """
-    steps = plan_steps(chain)
+    steps = [item["skill"] for item in contract["steps"]
+             if item["applicable"]] if contract else plan_steps(chain)
+    steps = list(dict.fromkeys(steps))
     if project_root:
         from . import run_index
 
@@ -77,6 +80,29 @@ def start(state_path: str | Path, chain: dict, run_id: str, contract_id: str, *,
     state["segment_title"] = segment_title
     state["series"] = series
     state["episode"] = episode
+    if contract:
+        state["execution_contract"] = contract
+        current = execution_contract.contract_step(contract, contract.get("current_step_id", ""))
+        if current:
+            state["current_step"] = current["skill"]
+            state["checkpoint"] = current["skill"]
+        # The registry can legitimately reuse one Skill for multiple stable
+        # steps (for example, pre-generation and post-generation QA). Keep the
+        # dashboard's Skill-level summary applicable if any matching step is;
+        # the full per-step decisions remain in execution_contract.steps.
+        dispositions: dict[str, dict] = {}
+        for item in contract["steps"]:
+            current_disposition = dispositions.get(item["skill"])
+            if current_disposition is None or (item["applicable"] and not current_disposition["applicable"]):
+                dispositions[item["skill"]] = {
+                    "applicable": item["applicable"], "reason": item["reason"],
+                    "step_id": item["id"], "disposition": item["disposition"],
+                }
+        state["step_dispositions"] = dispositions
+        state["task_id"] = contract["task_id"]
+        state["version"] = contract["version"]
+        state["execution_model"] = contract["execution_model"]
+        state["qa_model"] = contract["qa_model"]
     if project_root:
         state["project_root"] = str(project_root)
     run_state.write_task(state_path, state)
