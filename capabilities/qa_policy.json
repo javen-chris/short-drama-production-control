@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "3.0.0",
   "authority": "短剧生产小改与独立 QA 规则（本地控制台执行配置）",
   "principle": "生产模型只提交产物与执行信息；按执行模型路由的不同 GPT QA 模型独立审查，并由该 QA 模型本人写入看板轨迹。执行模型不得自审、自签通过或直接写轨迹。",
   "producer_models": [],
@@ -7,10 +7,20 @@
   "qa_routes": {
     "gpt-5.6-luna": "gpt-5.6-terra",
     "gpt-5.6-terra": "gpt-5.6-sol",
-    "gpt-5.6-sol": "gpt-5.6-luna"
+    "gpt-5.6-sol": "gpt-5.6-luna",
+    "gpt-6-luna": "gpt-6-sol",
+    "gpt-6-sol": "gpt-6.1-sol",
+    "gpt-6.1-sol": "gpt-5.6-terra"
   },
   "unsupported_execution_model": "reject",
-  "writer_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
+  "writer_models": [
+    "gpt-5.6-luna",
+    "gpt-5.6-terra",
+    "gpt-5.6-sol",
+    "gpt-6-sol",
+    "gpt-6.1-sol",
+    "gpt-6-astra"
+  ],
   "quick_qa_timeout_seconds": 180,
   "max_review_attempts_per_version_level": 2,
   "max_same_issue_rereviews_per_version": 1,
@@ -22,30 +32,137 @@
   },
   "roles": {
     "producer": {
-      "may_write": ["SUBMITTED_FOR_QA", "BLOCKED", "FAILED", "WAITING_APPROVAL", "PAUSED_EXCEPTION", "SUBMITTED_IN_PROGRESS"]
+      "may_write": [
+        "STEP_COMPLETED",
+        "SUBMITTED_FOR_QA",
+        "BLOCKED",
+        "FAILED",
+        "WAITING_APPROVAL",
+        "PAUSED_EXCEPTION",
+        "SUBMITTED_IN_PROGRESS"
+      ]
     },
     "qa": {
-      "may_write": ["COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT", "USABLE_WITH_SCENE_CONTINUITY_FAIL", "BLOCKED", "FAILED", "WAITING_APPROVAL", "PAUSED_EXCEPTION"]
+      "may_write": [
+        "COMPLETED",
+        "COMPLETED_WITH_CONTINUITY_CAVEAT",
+        "USABLE_WITH_SCENE_CONTINUITY_FAIL",
+        "BLOCKED",
+        "FAILED",
+        "WAITING_APPROVAL",
+        "PAUSED_EXCEPTION"
+      ]
+    },
+    "executor": {
+      "may_write": [
+        "TASK_SUBMITTED",
+        "SUBMITTED_IN_PROGRESS",
+        "TASK_SUCCEEDED",
+        "TASK_FAILED",
+        "TASK_UNVERIFIED"
+      ]
     }
   },
   "gates": {
-    "G0": {"name": "项目接入", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]},
-    "G1": {"name": "脚本确认", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]},
-    "G2": {"name": "镜头确认", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]},
-    "G3": {"name": "资产锁定", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]},
-    "G4": {"name": "故事本确认", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]},
-    "G5": {"name": "视频 Prompt 确认", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]},
-    "G6": {"name": "生成提交", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]},
-    "G7": {"name": "审片", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]},
-    "G8": {"name": "剪辑发布", "qa_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]}
+    "G0": {
+      "name": "项目接入与 RUN 恢复",
+      "qa_models": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra"
+      ]
+    },
+    "G1": {
+      "name": "权威脚本与节拍整理",
+      "qa_models": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra"
+      ]
+    },
+    "G2": {
+      "name": "镜头与生产单元",
+      "qa_models": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra"
+      ]
+    },
+    "G3": {
+      "name": "资产映射与身份锁定",
+      "qa_models": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra"
+      ]
+    },
+    "G4": {
+      "name": "可选故事本/关键状态图",
+      "qa_models": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra"
+      ]
+    },
+    "G5": {
+      "name": "Prompt 编译与生成前 QA",
+      "qa_models": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra"
+      ]
+    },
+    "G6": {
+      "name": "授权提交与任务查询",
+      "qa_models": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra"
+      ]
+    }
   },
   "notes": [
-    "QA 路由严格按执行模型查 qa_routes；未登记的模型一律拒绝，不回退到 GLM、同一个模型或人工猜测。当前实际可用路线为 Luna 执行、Terra QA。",
-    "只有路由选出的 QA 模型可以写看板轨迹。生产模型无写权限；生产提交记录由 QA 模型代写，actor 保留实际执行模型，writer_model 记录 QA 写入模型。QA 结论事件的 actor 与 writer_model 必须相同。",
-    "模型名参数是声明值，不是会话身份认证；不得展示成已认证身份。QA 报告、任务会话与轨迹事件必须相互留证。",
+    "新生产 Gate 仅 G0-G6；历史 G7/G8 事件由旧 RUN 版本兼容读取，不在新合同中启用。成片分析是独立的用户请求任务。",
+    "QA 路由严格按执行模型查 qa_routes；未登记模型一律拒绝，不回退到同级、较低级模型或人工猜测。",
+    "GPT-6 路由：gpt-6-luna → gpt-6-sol → gpt-6.1-sol；2026-10-10用户指定 gpt-6.1-sol → gpt-5.6-terra，不使用 Astra 审核此执行模型。最高档 Astra 没有更高独立审核模型时阻断。当前模型目录没有 gpt-6-terra，禁止伪造别名。",
+    "GPT-5.6 现有路由保留：gpt-5.6-luna → gpt-5.6-terra，gpt-5.6-terra → gpt-5.6-sol，gpt-5.6-sol → gpt-5.6-luna；这是旧生产线兼容路径，不回写历史轨迹。",
+    "只有路由表允许的 QA 模型可写看板轨迹；producer_models 为空时不限制生产者名单，但每个生产者仍须有独立 QA 路由。",
+    "模型名参数是声明值，不是会话身份认证；不得把配置字符串显示成已认证身份。提交事件、QA 结论和证据仍须相互留证。",
+    "QA 必须由与执行模型不同且按路由指定的 GPT 模型独立完成，并由 QA 模型写入结论。",
     "PASS 映射为 COMPLETED；FAIL 映射为 FAILED；CONDITIONAL/TIMEOUT 映射为 WAITING_APPROVAL，绝不标绿。",
-    "A 级只做单次快速 QA，180 秒上限；B 级仅检查受影响镜头与前后相邻镜头；C 级完整生产前 QA；FINAL 为生成后的真实成片 QA。",
-    "稳定候选版本同等级 QA 默认一次；失败后先合并全部问题再统一修改，禁止逐条调用完整 QA。仅失败后的同问题复核，或超时后缩小输入的单次复核，可用 attempt=2；两者都必须填写 issue_id。同版本最多一次复核。",
+    "A 级只做单次快速 QA，180 秒上限；B 级仅检查受影响镜头与前后相邻镜头；C 级完整生产前 QA；FINAL 仅用于独立用户请求的成片分析，不属于生成 RUN。",
+    "稳定候选版本同等级 QA 默认一次；失败后先合并问题再统一修改，只允许一次同问题复核；改动实质内容须新版本并重做相应 QA。",
     "生产前 QA 通过不授予生图、视频生成、付费、导出或发布权限；这些仍由 production_contract 与用户授权控制。"
+  ],
+  "updated_at": "2026-10-01",
+  "model_catalog_snapshot": [
+    "gpt-6-luna",
+    "gpt-6-sol",
+    "gpt-6.1-sol",
+    "gpt-6-astra"
+  ],
+  "unavailable_model_ids": [
+    "gpt-6-terra"
   ]
 }

@@ -24,11 +24,12 @@ from jsonschema import Draft202012Validator
 
 from . import protocol_fingerprint
 from . import run_state
+from . import protocol_versions
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMAS = ROOT / "schemas"
 
-MANIFEST_DEFAULT = Path(r"D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议\protocol_manifest.json")
+MANIFEST_DEFAULT = Path(protocol_fingerprint.DEFAULT_ROOT) / "protocol_manifest.json"
 
 
 def schema_errors(attestation: dict) -> list[str]:
@@ -75,12 +76,22 @@ def _required_challenge_ids(task_id: str, scope_gate: str, gate_refs: set[str], 
 
 def _valid_prior_attestations(contract: dict, manifest: dict,
                               prior_attestations: list[dict] | None) -> list[dict]:
+    hashes = {e['path']: e['sha256'] for e in manifest['files']}
+    def compatible(item):
+        if item.get('manifest_fingerprint') == manifest.get('fingerprint'):
+            return True
+        pinned = item.get('protocol_hashes', {})
+        if not pinned:
+            archive = Path(contract.get('protocol_root', '')) / '.protocol_versions' / (str(item.get('manifest_fingerprint')) + '.json')
+            if archive.is_file():
+                pinned = {e['path']: e['sha256'] for e in json.loads(archive.read_text(encoding='utf-8'))['files']}
+        return bool(pinned) and all(pinned.get(p) == hashes.get(p) for p in item.get('protocol_paths', []))
     return [item for item in (prior_attestations or [])
             if item.get("status") == "PASS"
             and item.get("run_id") == contract.get("run_id")
             and item.get("task_id") == contract.get("task_id")
             and item.get("contract_id") == contract.get("contract_id")
-            and item.get("manifest_fingerprint") == manifest.get("fingerprint")]
+            and compatible(item)]
 
 
 def build_attestation_plan(contract: dict, manifest: dict,
@@ -219,9 +230,10 @@ def main() -> int:
         return 2
     state = json.loads(run_path.read_text(encoding="utf-8"))
     contract = state.get("execution_contract") or {}
-    if contract.get("protocol_manifest_fingerprint") != manifest.get("fingerprint"):
+    scope_errors = protocol_versions.check_current(contract)
+    if scope_errors:
         print(json.dumps({"status": "REJECTED", "errors": [
-            "RUN contract protocol fingerprint is missing or stale; create a new RUN contract"
+            *scope_errors
         ]}, ensure_ascii=False, indent=2))
         return 1
     if state.get("run_id") != args.run_id:
@@ -256,6 +268,7 @@ def main() -> int:
             "contract_id": contract["contract_id"], "manifest_fingerprint": manifest["fingerprint"],
             "scope_gate": attestation["scope_gate"], "covered_step_ids": covered,
             "protocol_paths": sorted(prior_paths | required),
+            "protocol_hashes": {e['path']: e['sha256'] for e in manifest['files'] if e['path'] in (prior_paths | required)},
             "challenge_ids": sorted(prior_challenges | challenge_ids),
             "verified_at": attestation["declared_at"],
         }

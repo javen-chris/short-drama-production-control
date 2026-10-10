@@ -15,10 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
 
-#: Gates the chain has to cover. Taken from the protocol's own G0-G8 vocabulary:
-#: G8 is post-production and deliberately outside this chain, which stops at
-#: handover, so the chain owes G0-G7.
-REQUIRED_GATES = ("G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7")
+#: G0 is non-blocking project intake; production ends at G6 task monitoring.
+REQUIRED_GATES = ("G0", "G1", "G2", "G3", "G4", "G5", "G6")
 
 
 def validate_chain(path: Path = SKILLS / "skill-chain.json") -> list[str]:
@@ -54,6 +52,11 @@ def validate_chain(path: Path = SKILLS / "skill-chain.json") -> list[str]:
             seen_ids[step_id] = name
         if not step.get("gate"):
             errors.append(f"{name}: declares no Gate")
+        for provider, refs in (step.get("provider_protocol_refs") or {}).items():
+            if provider not in {"runninghub", "xiaoyunque", "libtv"}:
+                errors.append(f"{name}: unknown provider_protocol_refs key {provider}")
+            if not isinstance(refs, list) or not all(isinstance(ref, str) and ref for ref in refs):
+                errors.append(f"{name}: provider protocol refs must be non-empty path lists")
         gates.update(step.get("gate", []) or [])
         if step.get("mode"):
             modes.append(step["mode"])
@@ -86,8 +89,14 @@ def validate_chain(path: Path = SKILLS / "skill-chain.json") -> list[str]:
 
     missing_gates = [g for g in REQUIRED_GATES if g not in gates]
     errors.extend(f"no step declares Gate {g}" for g in missing_gates)
-    if "pre_generation" not in modes and "post_generation" not in modes:
-        errors.append("no QA step declared: the chain must gate on an independent review")
+    if "pre_generation" not in modes:
+        errors.append("no pre-generation QA step declared: G5 must have an independent review")
+    if "post_generation" in modes:
+        errors.append("post-generation QA is not part of the production chain")
+    for step in data.get("steps", []):
+        display_id = step.get("display_id", "")
+        if not display_id.startswith("G") or "-S" not in display_id:
+            errors.append(f"{step.get('id')}: missing display_id in Gx-Snn format")
     return errors
 
 

@@ -43,6 +43,21 @@ def _project(tmp_path: Path) -> Path:
     return root
 
 
+def test_starting_an_existing_run_refuses_to_reset_its_history(tmp_path):
+    root = _project(tmp_path)
+    path = run_index.run_path(root, "RUN-EP02-N3-A2")
+    state = json.loads(path.read_text(encoding="utf-8"))
+    state["events"].append({"outcome": "TASK_SUBMITTED", "provider_task_id": "REAL-1"})
+    state["submission_count"] = 1
+    path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(FileExistsError, match="RUN_ALREADY_EXISTS"):
+        orchestrator.start(None, CHAIN, "RUN-EP02-N3-A2", "C1", project_root=root,
+                           segment="N3-A2", segment_title="苍烛陨落")
+    preserved = json.loads(path.read_text(encoding="utf-8"))
+    assert preserved["events"][-1]["provider_task_id"] == "REAL-1"
+    assert preserved["submission_count"] == 1
+
+
 def _fake_evidence(root: Path, step: str) -> str:
     """Write a real artefact so a helper call can satisfy the evidence rule.
 
@@ -137,7 +152,7 @@ def test_same_version_same_level_qa_cannot_be_repeated(tmp_path):
     step = "short-drama-production-router"
     _submit(root, "RUN-EP02-N3-A2", step)
     _pass(root, "RUN-EP02-N3-A2", step)
-    with pytest.raises(ValueError, match="QA_ATTEMPT_DUPLICATE"):
+    with pytest.raises(ValueError, match="QA_FINGERPRINT_DUPLICATE"):
         _pass(root, "RUN-EP02-N3-A2", step)
 
 
@@ -343,6 +358,64 @@ def test_the_cli_accepts_a_submitted_outcome(tmp_path):
     assert result.returncode == 0, result.stderr
     state = json.loads(run_index.run_path(root, "RUN-EP02-N3-A2").read_text(encoding="utf-8"))
     assert state["events"][-1]["outcome"] == "SUBMITTED_IN_PROGRESS"
+
+
+@pytest.mark.parametrize(("outcome", "expected_status"), [
+    ("TASK_SUCCEEDED", "COMPLETED"),
+    ("TASK_FAILED", "FAILED"),
+    ("TASK_UNVERIFIED", "PAUSED_EXCEPTION"),
+])
+def test_g6_monitor_records_terminal_state_without_post_generation_qa(tmp_path, outcome, expected_status):
+    root = _project(tmp_path)
+    state_path = run_index.run_path(root, "RUN-EP02-N3-A2")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    chain = json.loads((Path(__file__).resolve().parents[1] / "skills" / "skill-chain.json").read_text(encoding="utf-8"))
+    step = next(item for item in chain["steps"] if item["id"] == "S12")
+    contract = {
+        "contract_id": "C1", "task_id": "RUN-EP02-N3-A2", "version": "v1",
+        "selected_provider": "libtv", "provider_task_id": "REAL-TASK-42",
+        "protocol_manifest_fingerprint": "a" * 64, "current_step_id": "S12",
+        "steps": [{"id": "S12", "skill": step["skill"], "gate": ["G6"],
+                   "applicable": True, "disposition": "pending",
+                   "protocol_refs": [{"path": p} for p in step["protocol_refs"]]}],
+    }
+    authority = Path(__file__).resolve().parents[2] / "短剧制作核心协议"
+    manifest = json.loads((authority / "protocol_manifest.json").read_text(encoding="utf-8"))
+    contract["protocol_root"] = str(authority)
+    contract["protocol_manifest_fingerprint"] = manifest["fingerprint"]
+    contract["protocol_snapshot_hashes"] = {e["path"]: e["sha256"] for e in manifest["files"]}
+    for ref in contract["steps"][0]["protocol_refs"]:
+        ref["sha256"] = contract["protocol_snapshot_hashes"][ref["path"]]
+    state["pipeline"] = [step["skill"]]
+    state["current_step"] = step["skill"]
+    state["execution_contract"] = contract
+    state["protocol_attestation"] = {
+        "status": "PASS", "attestation_id": "A1", "run_id": state["run_id"],
+        "task_id": contract["task_id"], "contract_id": "C1",
+        "manifest_fingerprint": contract["protocol_manifest_fingerprint"],
+        "scope_gate": "G6", "covered_step_ids": ["S12"],
+        "protocol_paths": step["protocol_refs"], "challenge_ids": [],
+        "verified_at": "2026-10-10T00:00:00Z",
+    }
+    state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    evidence = _fake_evidence(root, step["skill"])
+    result = _append_event(
+        root, state["run_id"], step="G6-S12", protocol_refs=step["protocol_refs"],
+        evidence=evidence, outcome=outcome, role="executor", gate="G6",
+        task_id=contract["task_id"], version="v1", source_adapter="libtv",
+        provider_task_id="REAL-TASK-42", provider_status=outcome,
+        output_urls=["https://provider.example/video.mp4"] if outcome == "TASK_SUCCEEDED" else [],
+        reason="回执状态冲突，需核实" if outcome == "TASK_UNVERIFIED" else "",
+    )
+    assert result["status"] == expected_status
+    assert not any(e.get("mode") == "post_generation" for e in result["events"])
+    if outcome == "TASK_SUCCEEDED":
+        assert result["execution_contract"]["current_step_id"] == ""
+        assert result["execution_contract"]["steps"][0]["output_urls"] == ["https://provider.example/video.mp4"]
+    elif outcome == "TASK_FAILED":
+        assert result["execution_contract"]["current_step_id"] == ""
+    else:
+        assert result["pending_decision"] == "回执状态冲突，需核实"
 
 
 # --- The write boundary keeps unplaceable names out of the trace ---------------

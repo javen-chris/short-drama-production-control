@@ -90,14 +90,26 @@ def test_contract_marks_conditional_steps_and_only_selected_adapter(tmp_path):
     by_id = {item["id"]: item for item in contract["steps"]}
     assert by_id["S06"]["disposition"] == "not_applicable"
     assert "无需新生" in by_id["S06"]["reason"]
-    assert by_id["S07"]["applicable"] is True
-    assert by_id["S07"]["mode"] == "key_state_only"
-    assert by_id["S10"]["applicable"] is False
-    assert by_id["S11"]["applicable"] is False
+    assert by_id["S07"]["applicable"] is False
+    assert by_id["S07"]["disposition"] == "not_applicable"
+    assert by_id["A01"]["applicable"] is False
+    assert by_id["A02"]["applicable"] is False
+    assert by_id["A03"]["applicable"] is True
     assert by_id["S12"]["applicable"] is True
     assert contract["provider_authorized"] is False
     assert contract["qa_model"] == QA_MODEL
     assert contract["model_identity"] == "declared_unverified"
+
+
+def test_runninghub_final_packet_protocol_is_not_loaded_for_other_targets(tmp_path):
+    rh = _contract(tmp_path, provider="runninghub")
+    xyq = _contract(tmp_path, provider="xiaoyunque")
+    for step_id in ("S09", "S11", "A01"):
+        refs = {ref["path"] for ref in next(s for s in rh["steps"] if s["id"] == step_id)["protocol_refs"]}
+        assert "23_RH最终提交包与资产快照规则_v1.md" in refs
+    for step_id in ("S09", "S11", "A02"):
+        refs = {ref["path"] for ref in next(s for s in xyq["steps"] if s["id"] == step_id)["protocol_refs"]}
+        assert "23_RH最终提交包与资产快照规则_v1.md" not in refs
 
 
 def test_isolated_run_submission_qa_and_board_audit_round_trip(tmp_path):
@@ -134,7 +146,7 @@ def test_isolated_run_submission_qa_and_board_audit_round_trip(tmp_path):
     declared_audit = step_audit.audit_steps(final_state, tmp_path)
     rows_by_step = {row["step_id"]: row for row in declared_audit["rows"] if row.get("step_id")}
     assert rows_by_step["S06"]["verdict"] == step_audit.NOT_APPLICABLE
-    assert rows_by_step["S10"]["verdict"] == step_audit.NOT_APPLICABLE
+    assert rows_by_step["A01"]["verdict"] == step_audit.NOT_APPLICABLE
     summary = run_report.summarize(final_state, project_root=tmp_path)
     assert summary["qa_passes"]["passed"] == 1
 

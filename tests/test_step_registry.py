@@ -68,7 +68,7 @@ def test_markers_are_recognised_but_not_part_of_the_chain():
     ("  short-drama-prompt-compiler  ", "short-drama-prompt-compiler"),
     ("prompt-compiler", "short-drama-prompt-compiler"),
     ("libtv", "libtv-local-adapter"),
-    ("S12", "libtv-local-adapter"),
+    ("S12", "short-drama-task-monitor"),
     ("runninghub", "runninghub-local-adapter"),
     ("protocol-attestation", "protocol-attestation"),
 ])
@@ -222,7 +222,9 @@ def test_the_docs_only_name_steps_the_registry_declares(doc):
 
     # Slugs that look like step names but are deliberately something else.
     allowed = {"skills-local", "append-event"}
-    known_ids = {s.id for s in step_registry.load()}
+    known_ids = {s.id for s in step_registry.load()} | {
+        s.display_id.rsplit("-", 1)[-1] for s in step_registry.load() if s.display_id
+    }
     known_skills = {s.skill for s in step_registry.load()}
     known_aliases = {a for s in step_registry.load() for a in s.aliases}
 

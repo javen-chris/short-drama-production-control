@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from . import step_registry
 from .orchestrator import plan_steps
+from .outcomes import COMPLETING_OUTCOMES
 
 # The documents each step is expected to have actually open. Kept explicit in the
 # registry so a missing read is a named failure, not a vague "did not follow
@@ -26,7 +27,7 @@ STEP_PROTOCOL_REQUIREMENTS = _protocol_requirements()
 
 def _last_completed_event(state: dict, step: str) -> dict | None:
     for event in reversed(state.get("events", [])):
-        if event.get("step") == step and event.get("outcome") == "COMPLETED":
+        if event.get("step") == step and event.get("outcome") in COMPLETING_OUTCOMES:
             return event
     return None
 
@@ -94,7 +95,7 @@ def verify_run_compliance(state: dict, chain: dict | None = None, manifest: dict
             continue
         event = _last_completed_event(state, step)
         if event is None:
-            errors.append(f"{step}: marked completed but has no COMPLETED event")
+            errors.append(f"{step}: marked completed but has no completing event")
             continue
         if not event.get("skill_id"):
             errors.append(f"{step}: event records no skill_id")
@@ -103,7 +104,16 @@ def verify_run_compliance(state: dict, chain: dict | None = None, manifest: dict
         if not event.get("evidence"):
             errors.append(f"{step}: event records no evidence path")
         refs = _read_paths(event)
-        for path in missing_required_reads(event, step):
+        contract_steps = (state.get('execution_contract') or {}).get('steps', [])
+        historical_step = next((s for s in contract_steps if s.get('id') == event.get('step_id')
+                                or (not event.get('step_id') and s.get('skill') == step)), None)
+        if historical_step is not None:
+            recorded = {normalise_ref(p) for p in refs}
+            missing = [r['path'] for r in historical_step.get('protocol_refs', [])
+                       if normalise_ref(r['path']) not in recorded]
+        else:
+            missing = missing_required_reads(event, step)
+        for path in missing:
             errors.append(f"{step}: did not record reading {path}")
         if manifest:
             by_path = {entry["path"]: entry["sha256"] for entry in manifest.get("files", [])}

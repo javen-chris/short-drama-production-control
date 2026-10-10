@@ -14,41 +14,55 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_ROOT = r"D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议"
+_LOCAL_AUTHORITY = Path(__file__).resolve().parents[3] / "短剧制作核心协议"
+_BUNDLED_AUTHORITY = Path(__file__).resolve().parents[2] / "protocol_release" / "3.6" / "短剧制作核心协议"
+DEFAULT_ROOT = str(Path(os.environ.get("SHORT_DRAMA_PROTOCOL_ROOT", "")) if os.environ.get("SHORT_DRAMA_PROTOCOL_ROOT")
+                   else (_LOCAL_AUTHORITY if _LOCAL_AUTHORITY.is_dir() else _BUNDLED_AUTHORITY))
 
 # Small baseline every task must read. The current Gate's protocol refs are
 # added from the execution contract; unrelated Gate documents are not required.
 REQUIRED_CORE_FILES = [
     "00_自动化生产唯一入口_v3.0.md",
+    "G0-G8_本地短剧生产协议全流程说明_20260929.md",
+    "AGENTS.md",
+    "VERSION.md",
+    "01_标准项目目录与文件职责_v3.0.md",
+    "02_每段视频制作流程_v3.0.md",
     "核心自动化生产包/01_核心总则_v3.0.md",
     "核心自动化生产包/02_任务路由与Gate_v3.0.md",
     "04_QA与文件治理_v3.0.md",
     "15_协议读取与合规证明_v3.0.md",
     "18_运行轨迹与进度可视规则_v3.0.md",
+    "22_用户决策交互与版本防循环规则_v3.0.md",
 ]
 TARGET_MODE_PROTOCOL_FILES = ["11_目标模式自动建卡与连续执行规则_v3.0.md"]
+# Runtime step approvals are part of the executable protocol and must be pinned too.
+RUNTIME_CONTROL_FILES = ["../短剧生产线控制台/skills/skill-chain.json",
+                         "../短剧生产线控制台/capabilities/qa_policy.json"]
 
 # Answers are normalized (trimmed, lowercased) before hashing.
 CHALLENGE_BANK = [
     {"id": "image-model", "prompt": "本协议下生图唯一允许的图像模型是什么？", "expected": "gpt-image-2", "protocol_refs": ["16_生图渠道规则_v3.0.md"]},
     {"id": "image-fallback", "prompt": "订阅额度耗尽且已授权时的生图兜底通道枚举值是什么？", "expected": "gpt_image2_runninghub_workflow", "protocol_refs": ["16_生图渠道规则_v3.0.md"]},
     {"id": "image-unauthorized", "prompt": "常规（非全自动）模式下，Agent 是否可以自行执行生图？（是/否）", "expected": "否", "protocol_refs": ["16_生图渠道规则_v3.0.md"]},
-    {"id": "autonomous-asset-fill", "prompt": "全自动目标模式下资产评估发现缺 MASTER 时，Agent 应当？（填：立即生成 或 停下请示）", "expected": "立即生成", "protocol_refs": ["16_生图渠道规则_v3.0.md"]},
+    {"id": "autonomous-asset-fill", "prompt": "G3-S06 缺失身份资产时，未取得当前范围授权能否生成？", "expected": "仅按授权补齐；未授权不得生成", "protocol_refs": ["24_资产索引与RUN恢复规则_v1.md"]},
     {"id": "degraded-route", "prompt": "复杂风险但未授权制作故事本时，生产单元走的路线枚举值是什么？", "expected": "degraded_direct", "protocol_refs": ["核心自动化生产包/03_生产与资产规则_v3.0.md"]},
     {"id": "master-gate", "prompt": "角色/场景/道具 MASTER 缺失时，生产停在哪个 Gate？（如 G5）", "expected": "g3", "protocol_refs": ["核心自动化生产包/03_生产与资产规则_v3.0.md"]},
     {"id": "tail-frame-blocking", "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）", "expected": "否", "protocol_refs": ["核心自动化生产包/03_生产与资产规则_v3.0.md"]},
     {"id": "max-submissions", "prompt": "一份合同授权的付费视频提交最多几次？（数字）", "expected": "1", "protocol_refs": ["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
-    {"id": "protocol-version", "prompt": "当前核心协议的主版本号是？（如 2.0）", "expected": "3.0", "protocol_refs": ["15_协议读取与合规证明_v3.0.md"]},
+    {"id": "protocol-version", "prompt": "当前核心协议的版本号是？", "expected": "3.6", "protocol_refs": ["VERSION.md"]},
     {"id": "run-trace-location", "prompt": "每段（每次运行）的轨迹文件存放在项目 workflow 下的哪个目录？（填目录名）", "expected": "runs", "protocol_refs": ["18_运行轨迹与进度可视规则_v3.0.md"]},
     {"id": "run-trace-missing", "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）", "expected": "不算", "protocol_refs": ["18_运行轨迹与进度可视规则_v3.0.md"]},
     {"id": "submit-requires-report", "prompt": "提交视频前必须落盘哪份产物？（填名称）", "expected": "确认报告", "protocol_refs": ["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
     {"id": "empty-assets-submit", "prompt": "已获用户授权，但参考资产清单为空时是否允许提交？（允许/不允许）", "expected": "不允许", "protocol_refs": ["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
     {"id": "script-visible-change", "prompt": "脚本节奏检查中，每 3–5 秒至少需要发生什么？", "expected": "可见变化", "protocol_refs": ["09_脚本优化与分镜拆解规范_v3.0.md"]},
     {"id": "script-revision-limit", "prompt": "生产拆解前的创作自查最多允许几轮集中候选修订？（数字）", "expected": "1", "protocol_refs": ["09_脚本优化与分镜拆解规范_v3.0.md"]},
+    {"id": "material-change-approval", "prompt": "修复需要改变已锁定的动作/结尾或生成范围，用户尚未回答时应如何处理？", "expected": "停在当前版本，在当前对话提出含选项的明确问题；不得改版、重开RUN、复审或进入依赖下游", "protocol_refs": ["22_用户决策交互与版本防循环规则_v3.0.md"]},
 ]
 
 
@@ -64,18 +78,28 @@ def normalize(answer: str) -> str:
     return " ".join(answer.split()).strip().lower()
 
 
-def registered_protocol_files() -> list[str]:
+def runtime_control_files(root: str | Path | None = None) -> list[str]:
+    """Runtime controls are external siblings in local installs and live code in releases."""
+    target = Path(root) if root else Path(DEFAULT_ROOT)
+    if (target / "protocol_release.json").is_file():
+        return ["../../../skills/skill-chain.json", "../../../capabilities/qa_policy.json"]
+    return list(RUNTIME_CONTROL_FILES)
+
+
+def registered_protocol_files(root: str | Path | None = None) -> list[str]:
     """Pin common rules and every protocol referenced by the unique step registry."""
     registry_path = Path(__file__).resolve().parents[2] / "skills" / "skill-chain.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     refs = {ref for step in registry.get("steps", []) for ref in step.get("protocol_refs", [])}
-    return sorted(set(REQUIRED_CORE_FILES) | set(TARGET_MODE_PROTOCOL_FILES) | refs)
+    refs.update(ref for step in registry.get("steps", [])
+                for scoped in (step.get("provider_protocol_refs") or {}).values() for ref in scoped)
+    return sorted(set(REQUIRED_CORE_FILES) | set(TARGET_MODE_PROTOCOL_FILES) | set(runtime_control_files(root)) | refs)
 
 
 def build_manifest(root: str | Path, *, seed: int | None = None, files: list[str] | None = None,
                    bank: list[dict] | None = None) -> dict:
     root = Path(root)
-    file_list = files if files is not None else registered_protocol_files()
+    file_list = files if files is not None else registered_protocol_files(root)
     bank = bank if bank is not None else CHALLENGE_BANK
     entries = []
     for rel in file_list:
@@ -100,7 +124,7 @@ def build_manifest(root: str | Path, *, seed: int | None = None, files: list[str
     return {
         "manifest_version": "1.0",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "protocol_root": str(root),
+        "protocol_root": "." if (root / "protocol_release.json").is_file() else str(root),
         "files": entries,
         "fingerprint": fingerprint,
         "challenges": challenges,
@@ -111,7 +135,7 @@ def manifest_path(root: str | Path) -> Path:
     return Path(root) / "protocol_manifest.json"
 
 
-def check(root: str | Path) -> list[str]:
+def check(root: str | Path, *, paths: set[str] | None = None) -> list[str]:
     """Detect drift between the manifest and the documents on disk."""
     root = Path(root)
     path = manifest_path(root)
@@ -119,11 +143,13 @@ def check(root: str | Path) -> list[str]:
         return [f"manifest not found: {path} (generate it first)"]
     manifest = json.loads(path.read_text(encoding="utf-8"))
     errors: list[str] = []
-    expected_paths = set(registered_protocol_files())
+    expected_paths = set(registered_protocol_files(root)) if paths is None else paths
     declared_paths = {entry.get("path") for entry in manifest.get("files", [])}
     for path in sorted(expected_paths - declared_paths):
         errors.append(f"{path}: missing from manifest; regenerate")
     for entry in manifest.get("files", []):
+        if paths is not None and entry['path'] not in paths:
+            continue
         target = root / entry["path"]
         if not target.is_file():
             errors.append(f"{entry['path']}: file missing")
@@ -180,6 +206,25 @@ def check_links(root: str | Path, skip: set[str] | None = None) -> list[str]:
 def generate(root: str | Path, *, seed: int | None = None, out: str | Path | None = None) -> dict:
     manifest = build_manifest(root, seed=seed)
     target = Path(out) if out else manifest_path(root)
+    from .protocol_versions import snapshot
+    # Archive both manifests. Old bytes are copied only if still identical;
+    # changed legacy text cannot be reconstructed and is reported as unknown.
+    if target.is_file():
+        old = json.loads(target.read_text(encoding='utf-8'))
+        store = Path(root) / '.protocol_versions'
+        store.mkdir(parents=True, exist_ok=True)
+        archived = store / (old['fingerprint'] + '.json')
+        if not archived.exists():
+            archived.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding='utf-8')
+        objects = store / 'objects'
+        objects.mkdir(exist_ok=True)
+        for entry in old['files']:
+            source = Path(root) / entry['path']
+            if source.is_file() and sha256_file(source) == entry['sha256']:
+                saved = objects / entry['sha256']
+                if not saved.exists():
+                    saved.write_bytes(source.read_bytes())
+    snapshot(Path(root), manifest)
     target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return manifest
 

@@ -1,4 +1,4 @@
-"""The one place that answers: which Gate does this Skill belong to?
+"""Project the canonical step registry into Gate and display labels.
 
 `skills/skill-chain.json` declares *executors* - the twelve Skills that run in
 order. It says nothing about Gates, so every UI that wanted to show "which step
@@ -7,7 +7,7 @@ Skill slug. That is why the board showed a column of
 `short-drama-production-router` with an empty Gate column next to it: the
 mapping did not exist anywhere in the repository.
 
-The authoritative Gate list is `02_每段视频制作流程_v3.0.md` (G0-G8) and the
+The authoritative Gate list is `02_每段视频制作流程_v3.0.md` (G0-G6) and the
 routing table in `核心自动化生产包/02_任务路由与Gate_v3.0.md`. This module is the
 projection of that list onto the Skill chain - a lookup table, not a new rule.
 
@@ -38,17 +38,15 @@ def _registry_entries() -> list[dict]:
     return list(data.get("steps", []) or [])
 
 
-#: Canonical Gate names, in protocol order. G0-G8 from `02_每段视频制作流程_v3.0.md`.
+#: Canonical active Gate names. Historical G7/G8 events remain readable from their RUN registry version.
 GATE_NAMES = {
-    "G0": "接入与连续性核对",
-    "G1": "秒表脚本",
-    "G2": "镜头确认",
-    "G3": "资产锁定",
-    "G4": "故事本确认",
-    "G5": "视频 Prompt 确认",
-    "G6": "生成",
-    "G7": "独立视频 QA 与用户审片",
-    "G8": "剪辑、字幕、封面、发布",
+    "G0": "项目接入与 RUN 恢复",
+    "G1": "权威脚本与节拍整理",
+    "G2": "镜头与生产单元",
+    "G3": "资产映射与身份锁定",
+    "G4": "可选故事本/关键状态图",
+    "G5": "Prompt 编译与生成前 QA",
+    "G6": "授权提交与任务查询",
 }
 
 #: Which Gate each declared Skill serves, and its Chinese name - both read from
@@ -57,11 +55,7 @@ GATE_NAMES = {
 #: were one of four places the same list existed, and every divergence between
 #: them was a silent mis-join on the board.
 #:
-#: `short-drama-production-qa` is the exception: it appears twice in the chain,
-#: as pre-generation QA (a G5 gate) and post-generation QA (the G7 gate). A
-#: single fixed Gate would put a G7 row before G6 and make the protocol read
-#: out of order, so its Gate comes from the chain's own `mode` - see
-#: `gate_badge` / `annotated_gate`.
+#: A QA Skill is associated only with the active pre-generation G5 review.
 def _gates_of_skill() -> dict[str, tuple[str, ...]]:
     mapping: dict[str, tuple[str, ...]] = {}
     for step in step_registry.declared():
@@ -76,12 +70,8 @@ def _names_of_skill() -> dict[str, str]:
 GATE_OF_SKILL = _gates_of_skill()
 SKILL_NAMES = _names_of_skill()
 
-#: A QA Skill's real Gate depends on which round it is. Pre-generation QA signs
-#: off the Prompt, so it belongs to G5; post-generation QA signs off the video,
-#: so it belongs to G7. Without this the chain would read G5 -> G7 -> G6.
 GATE_OF_QA_MODE = {
     "pre_generation": "G5",
-    "post_generation": "G7",
 }
 
 #: Skills whose Gate depends on `mode` rather than being fixed: exactly those the
@@ -104,7 +94,6 @@ QA_SKILLS = _qa_skills()
 #: before anything is submitted; `post_generation` runs on the finished video.
 QA_MODE_LABELS = {
     "pre_generation": "生成前 QA",
-    "post_generation": "成片 QA",
 }
 
 #: Provider adapters are alternatives, not a sequence. Showing them as three
@@ -129,7 +118,7 @@ def gates_for(skill: str, modes: list[str] | tuple[str, ...] | None = None) -> t
     """The Gate(s) this particular occurrence of the Skill serves.
 
     Only a QA step resolves its Gate from `mode`: pre-generation QA is the G5
-    gate, post-generation QA is the G7 gate. For every other Skill `mode` is
+    gate. For every other Skill `mode` is
     ignored - the chain uses the field for other things too, and reading it
     unconditionally would relabel unrelated steps.
     """
@@ -137,6 +126,7 @@ def gates_for(skill: str, modes: list[str] | tuple[str, ...] | None = None) -> t
         resolved = [GATE_OF_QA_MODE[m] for m in modes if m in GATE_OF_QA_MODE]
         if resolved:
             return tuple(dict.fromkeys(resolved))
+        return ()
     return gates_of(skill)
 
 

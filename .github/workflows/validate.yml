@@ -19,6 +19,9 @@ jobs:
       - run: python -m production_control.pipeline_validator examples/pipeline_bundle.valid.json
       - run: python -m production_control.preflight_gate examples/preflight.valid.json
       - run: python -m production_control.skill_chain_validator
+      - run: python tools/validate_asset_index.py examples/asset_index.example.json
+      - run: python -m production_control.protocol_fingerprint check --root "protocol_release/3.6/短剧制作核心协议"
+      - run: python -m production_control.protocol_fingerprint links --root "protocol_release/3.6/短剧制作核心协议"
       - run: pytest
       - run: python -c "from production_control.security_scan import scan; e=scan('.'); print(*e, sep='\n'); raise SystemExit(bool(e))"
       # An external $ref must never be resolved by a CI run: all schemas stay local.

@@ -1,6 +1,6 @@
 # Protocol mapping
 
-> **对应协议版本：3.0**（2026-09-20 定版）。协议升版时本文件需同步复核；协议文件名的 `_v3.0` 后缀变更必须同时更新 `protocol_fingerprint.REQUIRED_CORE_FILES` 与 `run_compliance.STEP_PROTOCOL_REQUIREMENTS`。
+> **对应协议版本：3.5**（2026-10-10）。协议升版时本文件需同步复核；协议文件名的 `_v3.0` 后缀变更必须同时更新 `protocol_fingerprint.REQUIRED_CORE_FILES` 与 `run_compliance.STEP_PROTOCOL_REQUIREMENTS`。
 
 Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议`. This repository implements offline checks only.
 
@@ -21,7 +21,7 @@ Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及�
 | L1 key states and L2 storyboard plan | `short-drama-storyboard-planner` |
 | Character/scene/prop/tail-frame responsibilities remain distinct | explicit asset roles and policy checks |
 | Three generation channels | provider enum: `runninghub`, `xiaoyunque`, `libtv` |
-| Independent QA before and after generation | `short-drama-production-qa` in `pre_generation` and `post_generation` modes |
+| Independent content QA before generation | `short-drama-production-qa` only in the active `pre_generation` G5-S09 step; post-generation analysis is a separate user-requested task |
 | Local-only provider translation/submission boundary | `runninghub-local-adapter`, `xiaoyunque-local-adapter`, `libtv-local-adapter` |
 | One allowed image model with two channels: local subscription first, RunningHub workflow as authorized paid fallback | `image_channel.py`, `image_channel.schema.json`, and `IMAGE_CAPABILITIES` in `capabilities.py` |
 | Tail frames and storyboards are authorization-gated; missing ones degrade instead of blocking | `authorization.allow_tail_frame_generation` / `allow_storyboard_generation`, `DEGRADED_DIRECT` route, `fallback_notes` |
@@ -43,11 +43,11 @@ Authoritative production rules remain in `D:\AIGC短剧本地工作流规则及�
 | Image assets exist only via GPT-Image-2, subscription channel first; seedream, banana, and qwen-image retired by user ruling 2026-09-20 | `short-drama-image-generator` Skill, `image_channel.py`, `image_channel.schema.json` |
 | Image generation itself requires prior user confirmation | `requires_user_confirmation` gate on the `short-drama-image-generator` Skill (see `16_生图渠道规则_v3.0.md` §5) |
 
-The complete order is machine-checked from `skills/skill-chain.json`; CI must fail when a declared Skill is missing or a dependency appears after its consumer.
+The current order is G0-S01 through G6-S12 and is machine-checked from `skills/skill-chain.json`. Provider adapters A01-A03 are mutually exclusive implementations of display step G6-S10. Internal key, display label, and legacy IDs are separate. G6-S12 ends the RUN after a verified provider terminal state and output link; it performs no download or post-generation QA. Prompt-only contracts stop at G5-S09.
 
 ## Gate checks and task knowledge (2026-09-25)
 
-The same registry now contains `gate_checks` for auxiliary work. These checks explain the 18 historical EP03/A1 activity names without adding them to the Skill chain: 17 map to Gate checks; `protocol-attestation` remains marker M02. G5.1 Skill audit is a required G5 check under protocol 21. G6 pre-submit checks follow protocols 19 and 20. A check's BLOCKED result can warn on a Gate card, but a submitted check cannot certify a formal step or independent QA PASS.
+The same registry now contains `gate_checks` for auxiliary work. These checks explain the 18 historical EP03/A1 activity names without adding them to the Skill chain: 17 map to Gate checks; `protocol-attestation` remains marker M02. G5 Skill provenance is checked with the prompt and parameters in one pre-generation review. G6 pre-submit checks follow protocols 19 and 20. Protocol fingerprint maintenance runs from the console: `py -3 tools/protocol_fingerprint.py generate --root "D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议"`; migrate an existing RUN in place with `tools/migrate_run_protocol.py` and re-attest the current Gate. A check's BLOCKED result can warn on a Gate card, but a submitted check cannot certify a formal step or independent QA PASS.
 
 The implementation and later knowledge-base phases are specified in [任务知识库实施策略.md](任务知识库实施策略.md).
 

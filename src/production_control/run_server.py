@@ -133,6 +133,7 @@ def make_handler(project_root: str | Path, service_meta: dict | None = None):
                                       "episode": view["episode"],
                                       "reporting": view.get("reporting"),
                                       "silence_alarm": view.get("silence_alarm"),
+                                      "recent_work_files": view.get("recent_work_files", []),
                                       "newest_event_at": view.get("newest_event_at", ""),
                                       "project_state": view.get("project_state"),
                                       "service": service_meta})

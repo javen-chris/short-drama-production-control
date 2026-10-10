@@ -25,3 +25,7 @@ If reviewing a revised candidate, compare it with its cited source version and v
 The record must be `PASS` before the Prompt Compiler can route a video prompt. `PENDING` or `FAIL` blocks provider adapters.
 
 Also fail on uncovered or overlapping time, duplicate IDs, missing source evidence, a shot assigned to multiple production units, output/input state discontinuity without an explicit hard cut, or a production unit that combines incompatible space, costume, speaker, or high-risk contact. Store findings and evidence separately from the generated breakdown.
+
+## Decision boundary
+
+Report evidence and classify whether a correction stays within approved content. Do not silently select or apply a material story/action/ending/scope change. Follow `22_用户决策交互与版本防循环规则_v3.0.md` and provide decision-ready options.

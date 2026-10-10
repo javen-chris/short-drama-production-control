@@ -1,0 +1,37 @@
+{
+  "registry_version": "2.0",
+  "series_id": "DEMO_SERIES",
+  "updated_at": "2026-10-10",
+  "note": "Schema-only sample. Replace paths and hashes with confirmed project values.",
+  "assets": [
+    {
+      "asset_id": "CHAR-DEMO-01",
+      "object_name": "示例角色",
+      "role": "character_master",
+      "form": "常态",
+      "wardrobe": "基础服装",
+      "asset_version": "v1",
+      "path": "资产库/人物/CHAR-DEMO-01/常态/基础服装/v1/master.png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "status": "APPROVED",
+      "confirmation_status": "CONFIRMED",
+      "confirmed_by": "项目用户确认记录中的用户",
+      "confirmation_evidence": "workflow/确认记录/asset-confirmation.json",
+      "reference_responsibility": ["人物身份", "脸型与发型", "外观基准"],
+      "allowed_use": ["本系列已确认生产单元的人物身份参考"],
+      "forbidden_substitutes": ["故事本拼版", "视频截图", "候选图"],
+      "image_channel": "gpt_image2_local_subscription",
+      "qa_evidence": "workflow/qa_reports/asset-identity.json",
+      "updated_at": "2026-10-10"
+    }
+  ],
+  "change_log": [
+    {
+      "at": "2026-10-10",
+      "asset_id": "CHAR-DEMO-01",
+      "change": "用户确认角色身份 MASTER v1",
+      "evidence": "workflow/确认记录/asset-confirmation.json",
+      "new_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

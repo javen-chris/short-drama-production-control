@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--blocking-issue", action="append", default=[], help="阻塞项，可重复")
     parser.add_argument("--next-step", default="", help="精确下一步")
     parser.add_argument("--evidence", default="", help="QA 报告文件（相对项目根）")
+    parser.add_argument('--qa-invocation-evidence', default='', help='最终包 QA 客户端启动/会话/完成记录')
     parser.add_argument("--reason", default="", help="不通过的原因 / 说明")
     parser.add_argument("--protocol", action="append", default=[], help="QA 依据的协议文件（可重复）")
     parser.add_argument("--status", action="store_true", help="只读查看该 run 的 QA 状态，不写入")
@@ -125,8 +126,14 @@ def main(argv: list[str] | None = None) -> int:
     if conclusion == "TIMEOUT" and not args.issue_id:
         args.issue_id = "TIMEOUT"
 
+    state_path = run_index.resolve_run_path(args.project_root, args.run)
+    try:
+        route_contract = json.loads(state_path.read_text(encoding='utf-8')).get('execution_contract') or {}
+    except (OSError, ValueError):
+        route_contract = {}
     allowed, why = qa_policy.qa_model_allowed(
-        args.gate, args.qa_actor, execution_model=args.execution_model
+        args.gate, args.qa_actor, execution_model=args.execution_model,
+        final_packet=bool(route_contract.get('final_packet_qa_required'))
     )
     if not allowed:
         print(f"失败：{why}")
@@ -174,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             qa_attempt=args.attempt, blocking_issues=args.blocking_issue,
             next_step=args.next_step, affected_files=args.affected_file,
             allow_missing_evidence=conclusion == "TIMEOUT",
+            qa_invocation_evidence=args.qa_invocation_evidence,
         )
     except UnknownStepError as exc:
         print()

@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.protocol_versions/
+**/.protocol_versions/
 .pytest_cache/
 .env
 .env.*

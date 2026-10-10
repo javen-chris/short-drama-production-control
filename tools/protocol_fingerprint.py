@@ -26,6 +26,7 @@ from production_control.protocol_fingerprint import (  # noqa: E402
     manifest_path,
     normalize,
     registered_protocol_files,
+    runtime_control_files,
     sha256_file,
 )
 
@@ -43,6 +44,7 @@ __all__ = [
     "manifest_path",
     "normalize",
     "registered_protocol_files",
+    "runtime_control_files",
     "sha256_file",
 ]
 

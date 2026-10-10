@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--protocol", action="append", default=[], help="这一步读过的协议文件（可重复）")
     parser.add_argument("--evidence", default="", help="证据文件路径（相对项目根）")
     parser.add_argument("--outcome", default="SUBMITTED_FOR_QA", choices=list(OUTCOMES),
-                        help="这一步的结果；默认 SUBMITTED_FOR_QA（生产者只能提交待审，不能写 COMPLETED）")
+        help="这一步的结果；STEP_COMPLETED 只记录产物存在，不是 QA 通过")
     parser.add_argument("--actor", default="", help="实际执行这一步的模型标识，例如 gpt-5")
     parser.add_argument("--writer-model", default="", help="实际写入看板的模型；必须是执行模型对应的 GPT QA 模型")
     parser.add_argument("--task-id", default="", help="任务 ID（提交待 QA 时必填）")
@@ -69,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="本次修改/审查涉及的文件，可重复；提交待 QA 时至少一个")
     parser.add_argument("--gate", default="", help="这一步所属的 Gate，例如 G5")
     parser.add_argument("--reason", default="", help="暂停/异常的原因")
+    parser.add_argument("--elapsed-seconds", type=int, default=None, help="本事件阶段耗时秒数")
+    parser.add_argument("--elapsed-phase", choices=["context_reading", "production", "qa", "user_wait", "upload", "provider_queue", "download"], default="", help="耗时分类；download 仅供独立后续任务")
     parser.add_argument("--validator", default="", help="使用的校验器")
     parser.add_argument("--allow-missing-evidence", action="store_true",
                         help="确实没有本步产物时才用；默认要求 --evidence 指向的文件真实存在")
@@ -106,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             actor=args.actor, role="producer", writer_model=args.writer_model,
             gate=args.gate, task_id=args.task_id, version=args.version, qa_level=args.qa_level,
             affected_files=args.affected_file,
+            elapsed_seconds=args.elapsed_seconds, elapsed_phase=args.elapsed_phase,
             off_protocol=args.off_protocol,
         )
     except UnknownStepError as exc:
@@ -142,16 +145,18 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(f"⚠ 这是一个协议链外的辅助记录（{canonical.get('step')}）。")
         print("  它会显示在看板的「链外」区，不会让任何 G 步骤前进。")
-    print("已提交待审。这一步要显示为「通过」，必须由另一个模型的 QA 出结论：")
-    print(f"  python tools/qa_verdict.py \"{args.project_root}\" --run {args.run} "
-          f"--step {canonical.get('step_id') or args.step} --execution-model {args.actor} "
-          f"--qa-actor {args.writer_model} --task-id {args.task_id} --version {args.version} "
-          f"--qa-level {args.qa_level} --elapsed-seconds <秒> --conclusion <PASS/FAIL/CONDITIONAL/TIMEOUT> "
-          f"--next-step <下一步>"
-          f" --artifact-evidence {args.evidence} --evidence <QA报告>"
-          + (f" --gate {args.gate}" if args.gate else "")
-          + "".join(f" --affected-file {path}" for path in args.affected_file)
-          + "")
+    if args.outcome == "SUBMITTED_FOR_QA":
+        print("已提交待审；只有路由的独立 QA 模型可以记录 QA 结论。")
+        print(f"  python tools/qa_verdict.py \"{args.project_root}\" --run {args.run} "
+              f"--step {canonical.get('step_id') or args.step} --execution-model {args.actor} "
+              f"--qa-actor {args.writer_model} --task-id {args.task_id} --version {args.version} "
+              f"--qa-level {args.qa_level} --elapsed-seconds <秒> --conclusion <PASS/FAIL/CONDITIONAL/TIMEOUT> "
+              f"--next-step <下一步>"
+              f" --artifact-evidence {args.evidence} --evidence <QA报告>"
+              + (f" --gate {args.gate}" if args.gate else "")
+              + "".join(f" --affected-file {path}" for path in args.affected_file))
+    else:
+        print("此事件只记录步骤产物和证据状态；不代表内容 QA PASS。")
     print("刷新运行总表页面即可看到变化。")
     return 0
 

@@ -40,8 +40,9 @@ QA_MODES = {"pre_generation", "post_generation"}
 #: a producer can no longer write it, and such an event is treated as a claim
 #: that was never QA'd, not as a pass.
 PRODUCER_OUTCOMES = frozenset({
-    "SUBMITTED_FOR_QA", "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT",
-    "USABLE_WITH_SCENE_CONTINUITY_FAIL",
+    "STEP_COMPLETED", "SUBMITTED_FOR_QA", "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT",
+    "USABLE_WITH_SCENE_CONTINUITY_FAIL", "TASK_SUBMITTED", "SUBMITTED_IN_PROGRESS",
+    "TASK_SUCCEEDED", "TASK_FAILED",
 })
 QA_PASS_OUTCOMES = frozenset({
     "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT", "USABLE_WITH_SCENE_CONTINUITY_FAIL",
@@ -130,8 +131,9 @@ def declared_steps(chain: dict | None = None) -> list[dict]:
 
 
 def _completed_event(state: dict, step: str) -> dict | None:
+    from .outcomes import COMPLETING_OUTCOMES
     for event in reversed(state.get("events", []) or []):
-        if event.get("step") == step and event.get("outcome") == "COMPLETED":
+        if event.get("step") == step and event.get("outcome") in COMPLETING_OUTCOMES:
             return event
     return None
 
@@ -335,9 +337,10 @@ def audit_qa_independence(state: dict, chain: dict | None = None) -> dict:
         else:
             from . import qa_policy
             allowed, _ = qa_policy.qa_model_allowed(
-                event.get("gate", ""), qa_actor, execution_model=producer_actor
+                event.get("gate", ""), qa_actor, execution_model=producer_actor,
+                final_packet=bool(event.get('reviewed_packet_sha256'))
             )
-            expected_writer = qa_policy.qa_model_for_execution(producer_actor)
+            expected_writer = qa_policy.qa_model_for_execution(producer_actor, final_packet=bool(event.get('reviewed_packet_sha256')))
             if (not allowed or (event.get("writer_model") or "").strip().lower() != qa_actor.lower()
                     or producer_writer.lower() != (expected_writer or "")):
                 status = QA_ROUTE_VIOLATION
@@ -399,9 +402,9 @@ def audit_qa_passes(state: dict, project_root: str | Path | None = None,
             producer = (producer_event or {}).get("actor", "")
             routed, _ = qa_policy.qa_model_allowed(
                 event.get("gate", ""), event.get("actor", ""),
-                policy=policy, execution_model=producer,
+                policy=policy, execution_model=producer, final_packet=bool(event.get('reviewed_packet_sha256')),
             )
-            expected_writer = qa_policy.qa_model_for_execution(producer)
+            expected_writer = qa_policy.qa_model_for_execution(producer, final_packet=bool(event.get('reviewed_packet_sha256')))
             writer = (event.get("writer_model") or "").strip()
             metadata_ok = all(event.get(k) for k in (
                 "task_id", "version", "qa_level", "qa_conclusion", "next_step"

@@ -125,22 +125,32 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
     compliance = verify_run_compliance(state, chain, manifest)
     reconciliation = step_audit.audit_run(state, project_root, chain)
     qa_passes = step_audit.audit_qa_passes(state, project_root)
+    contract = state.get("execution_contract") or {}
+    registry_version = str(contract.get("registry_version", ""))
+    legacy_registry = registry_version.startswith(("1.", "2.")) or registry_version in {"1.x-2.0.0", "2.0.0"}
+    legacy_ids = {"S10", "S11", "S12", "S13", "S14"} if legacy_registry else set()
     last_event = max((event for event in state.get("events", []) or []),
                      key=lambda event: event.get("at", ""), default={})
-    post_qa_entry = step_registry.by_id("S13")
-    post_qa_skill = post_qa_entry.skill if post_qa_entry else ""
     post_qa_event = max((event for event in state.get("events", []) or []
-                         if event.get("step") == post_qa_skill and
-                         (event.get("gate") == "G7" or event.get("mode") == "post_generation")),
+                         if ((event.get("step_id") == "S14" and legacy_registry) or
+                             (event.get("gate") == "G7" and
+                              (event.get("mode") in {"post_generation", "", None})))),
                         key=lambda event: event.get("at", ""), default={})
-    contract = state.get("execution_contract") or {}
     events_fingerprint = hashlib.sha256(json.dumps(
         state.get("events", []) or [], ensure_ascii=False, sort_keys=True,
         separators=(",", ":")).encode("utf-8")).hexdigest()
+    timing: dict[str, int] = {}
+    for event in state.get("events", []) or []:
+        phase, seconds = event.get("elapsed_phase"), event.get("elapsed_seconds")
+        if phase and isinstance(seconds, int) and seconds >= 0:
+            timing[phase] = timing.get(phase, 0) + seconds
+    qa_fingerprints = [event.get("artifact_fingerprint") for event in state.get("events", []) or []
+                       if event.get("role") == "qa" and event.get("artifact_fingerprint")]
     return {
         "run_id": state.get("run_id", ""),
         "contract_id": state.get("contract_id", ""),
         "execution_contract": {
+            "registry_version": contract.get("registry_version", ""),
             "task_id": contract.get("task_id", ""),
             "version": contract.get("version", ""),
             "execution_model": contract.get("execution_model", ""),
@@ -196,8 +206,13 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
                                 key=lambda item: item.get("at", ""), reverse=True)[:10]
         ],
         "event_count": len(state.get("events", []) or []),
+        "timing_seconds_by_phase": timing,
+        "duplicate_qa_fingerprint_count": len(qa_fingerprints) - len(set(qa_fingerprints)),
         "events_fingerprint": events_fingerprint,
         "post_generation_qa_event": post_qa_event,
+        "legacy_step_events": [event for event in state.get("events", []) or []
+                                if (event.get("step_id") or event.get("step")) in legacy_ids or
+                                (event is post_qa_event and bool(post_qa_event))],
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -248,6 +263,15 @@ def render_text(summary: dict) -> str:
     lines.append(f"状态：{summary['status']}    进度：{summary['progress']['completed']}/{summary['progress']['total']} 步")
     if summary.get("pending_decision"):
         lines.append(f"等待决定：{summary['pending_decision']}")
+    timing = summary.get("timing_seconds_by_phase") or {}
+    if timing:
+        labels = {"context_reading": "资料读取", "production": "生产", "qa": "QA",
+                  "user_wait": "用户等待", "upload": "上传", "provider_queue": "供应商排队/生成",
+                  "download": "下载（独立任务）"}
+        lines.append("耗时：" + "；".join(f"{labels.get(key, key)} {seconds}s"
+                                             for key, seconds in sorted(timing.items())))
+    if summary.get("duplicate_qa_fingerprint_count"):
+        lines.append(f"重复 QA 指纹：{summary['duplicate_qa_fingerprint_count']} 次（需调查是否违反复用规则）")
     lines.append("")
     lines.append("步骤明细：")
     for item in summary["steps"]:
@@ -389,6 +413,30 @@ def minutes_since(iso: str) -> int | None:
     return int((datetime.now(timezone.utc) - moment).total_seconds() // 60)
 
 
+def _recent_work_files(project_root: str | Path | None, *, limit: int = 3) -> list[dict]:
+    """Show recently touched drafting files without changing trail semantics."""
+    if not project_root:
+        return []
+    root = Path(project_root)
+    if not root.is_dir():
+        return []
+    excluded = {".git", "__pycache__", "runs", "_backups"}
+    candidates = []
+    for path in root.rglob("*"):
+        if (not path.is_file() or any(part in excluded for part in path.parts)
+                or path.suffix.lower() not in {".md", ".txt", ".json", ".py"}):
+            continue
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            continue
+        candidates.append((stamp, path))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return [{"name": path.name, "path": str(path),
+             "at": datetime.fromtimestamp(stamp, timezone.utc).isoformat()}
+            for stamp, path in candidates[:limit]]
+
+
 def _is_index_behind(newest_event: str, index_time: str) -> bool:
     """Is the index genuinely older than the newest event?
 
@@ -506,6 +554,7 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         "stale": _is_index_behind(newest_event, index_time),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project_state": project_state,
+        "recent_work_files": _recent_work_files(root),
         "gate_tokens": gate_token.load_tokens(root) if root else [],
         "skill_audits": skill_audit.load_audits(root) if root else [],
         "idle_minutes": idle_minutes,
@@ -1445,9 +1494,23 @@ def _unified_step_rows(summary: dict) -> list[dict]:
     """
     audit_rows = summary.get("audit", {}).get("steps", {}).get("rows") or []
     qa_rows = {row["step"]: row for row in (summary.get("qa_passes") or {}).get("rows") or []}
+    contract = summary.get("execution_contract") or {}
+    selected_provider = contract.get("selected_provider") or ""
+    adapter_steps = [step for step in step_registry.declared()
+                     if step_registry.repo_root() and step_registry.by_skill(step.skill)
+                     and gate_map.alternative_group(step.skill) == "submit-adapter"]
+    selected_adapter = next((step.skill for step in adapter_steps
+                             if selected_provider and any(
+                                 item.get("skill") == step.skill and item.get("provider") == selected_provider
+                                 and item.get("applicable")
+                                 for item in contract.get("steps", []))), "")
+    if not selected_adapter and adapter_steps:
+        selected_adapter = adapter_steps[0].skill
     out = []
     for row in audit_rows:
         step = row["step"]
+        if gate_map.alternative_group(step) == "submit-adapter" and step != selected_adapter:
+            continue
         qa_row = qa_rows.get(step, {})
         label, cls = _verdict_pill(row, qa_row)
         note = ""
@@ -1479,46 +1542,37 @@ def _unified_step_rows(summary: dict) -> list[dict]:
         entry = step_registry.by_skill(step)
         out.append({
             "step": step,
-            "step_id": entry.id if entry else "",
+            "step_id": (entry.display_id or entry.id) if entry else "",
+            "step_key": entry.id if entry else "",
             "gate_letters": gate_map.gate_badge(step, row.get("modes")),
             "gate": gate_map.annotated_gate(step, row.get("modes")) or row.get("gate", ""),
             "gate_name": gate_map.GATE_NAMES.get(gate_letters[0], "") if gate_letters else "",
-            "skill_name": gate_map.skill_label(step),
+            "skill_name": "平台适配（按本 RUN 选择一个）"
+            if gate_map.alternative_group(step) == "submit-adapter" else gate_map.skill_label(step),
             "alternative": gate_map.is_alternative(step),
             "producer": row.get("actor", ""), "qa_actor": qa_row.get("qa_actor", ""),
             "label": label, "cls": cls, "note": note,
             "offchain": row["verdict"] == step_audit.EXTRA,
             "evidence": row.get("evidence", ""), "at": row.get("at", ""),
         })
-    # The same QA Skill is registered twice (S09 before generation, S13 after).
-    # The reconciliation groups by Skill, so add the post-generation occurrence
-    # from the authoritative registry rather than silently losing S13.
-    post_entry = step_registry.by_id("S13")
-    post = post_entry.as_dict() if post_entry else None
-    if post:
-        event = summary.get("post_generation_qa_event") or {}
+    # Old S10-S14 meanings are shown with explicit labels and never joined to
+    # current G6 steps. The RUN registry version controls this compatibility view.
+    for event in summary.get("legacy_step_events", []):
+        old_id = event.get("step_id") or event.get("step")
+        old_name = {"S10": "旧 RunningHub 适配", "S11": "旧小云雀适配",
+                    "S12": "旧 LibTV 适配", "S13": "旧任务查询/下载",
+                    "S14": "旧成片 QA"}.get(old_id, "旧步骤")
         outcome = event.get("outcome", "")
-        is_historical = bool(event and event.get("at") != (summary.get("last_event") or {}).get("at"))
-        if is_historical:
-            label, cls = "旧版需复核", "warn"
-        elif outcome in {"BLOCKED", "FAILED", "PAUSED_EXCEPTION"}:
-            label, cls = OUTCOME_LABELS.get(outcome, outcome), "bad"
-        elif outcome.startswith("COMPLETED"):
-            label, cls = "待核验", "warn"
-        elif event:
-            label, cls = OUTCOME_LABELS.get(outcome, outcome or "已记录"), "warn"
-        else:
-            label, cls = "生成后执行", "todo"
         out.append({
-            "step": post.get("skill", ""), "step_id": post.get("id", "S13"),
-            "gate_letters": "G7", "gate": "G7 成片独立 QA", "gate_name": "成片 QA",
-            "skill_name": post.get("name_zh", "成片独立 QA"), "alternative": False,
-            "producer": event.get("actor", ""), "qa_actor": "", "label": label,
-            "cls": cls,
-            "note": ("G6 完成并生成成片后执行；当前没有成片独立 QA 证据"
-                     if not event else "G7 事件已记录；独立 QA 结论仍需证据核验"),
-            "offchain": False, "evidence": event.get("evidence", ""),
-            "at": event.get("at", ""),
+            "step": event.get("step", old_name), "step_id": f"旧 {old_id}",
+            "step_key": f"legacy-{old_id}", "gate_letters": "旧 G7",
+            "gate": old_name, "gate_name": old_name, "skill_name": old_name,
+            "alternative": False, "producer": event.get("actor", ""), "qa_actor": "",
+            "label": "旧版需复核" if old_id == "S14"
+                     else OUTCOME_LABELS.get(outcome, outcome or "已记录"),
+            "cls": "warn" if old_id in {"S13", "S14"} else "bad",
+            "note": "旧 RUN 历史记录；仅按旧编号含义展示，不属于当前生产步骤",
+            "offchain": False, "evidence": event.get("evidence", ""), "at": event.get("at", ""),
         })
     return out
 
@@ -1580,25 +1634,32 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
       if (refreshButton) refreshButton.disabled = true;
       try {{
         const response = await fetch(endpoint + '?_=' + Date.now(), {{cache:'no-store'}});
-        if (!response.ok) throw new Error('HTTP ' + response.status);
+        if (!response.ok) {{
+          const httpError = new Error('看板服务返回 HTTP ' + response.status);
+          httpError.kind = 'service';
+          throw httpError;
+        }}
         const data = await response.json();
-        if (data.run_id !== runId) throw new Error('RUN 不匹配');
-        if (projectPath && !data.project_path) throw new Error('服务代码较旧，请通过桌面按钮重开一次');
-        if (projectPath && data.project_path.toLowerCase() !== projectPath.toLowerCase()) throw new Error('项目路径不匹配');
+        if (data.run_id !== runId) {{ const runError = new Error('RUN 不匹配'); runError.kind = 'run'; throw runError; }}
+        if (projectPath && !data.project_path) {{ const versionError = new Error('服务代码较旧，请通过桌面按钮重开一次'); versionError.kind = 'service'; throw versionError; }}
+        if (projectPath && data.project_path.toLowerCase() !== projectPath.toLowerCase()) {{ const projectError = new Error('项目路径不匹配'); projectError.kind = 'run'; throw projectError; }}
         if (serviceNode) serviceNode.textContent = '● 已连接 · PID ' + (data.service ? data.service.pid : '-');
         if (readNode) readNode.textContent = stamp();
         const latest = data.last_event || {{}};
         const signature = data.refresh_fingerprint || data.events_fingerprint || (String(data.event_count || 0) + '|' + (latest.at || '') + '|' + (latest.outcome || ''));
         if (signature !== initialSignature) {{
-          sessionStorage.setItem('board-refresh-result', '发现新事件，正在更新页面');
+          const eventChanged = Number(data.event_count || 0) !== Number({summary.get("event_count", 0)});
+          sessionStorage.setItem('board-refresh-result', eventChanged ? '发现新事件，正在更新页面' : '发现 RUN 状态变化，正在更新页面');
           sessionStorage.setItem('board-scroll-y', String(window.scrollY));
           location.reload();
           return;
         }}
         showState('读取成功 · 数据未变化' + (latest.at ? ' · 最近上报 ' + latest.at.slice(0,19).replace('T',' ') : ''), 'same');
       }} catch (error) {{
-        if (serviceNode) serviceNode.textContent = '● 连接失败';
-        showState('未能读取：' + error.message + ' · 当前页面保留', 'error');
+        const kind = error.kind || 'connection';
+        if (serviceNode) serviceNode.textContent = kind === 'run' ? '● RUN 校验失败' : kind === 'service' ? '● 服务错误' : '● 连接失败';
+        const prefix = kind === 'run' ? 'RUN 错误' : kind === 'service' ? '看板服务错误' : '连接错误';
+        showState(prefix + '：' + error.message + ' · 当前页面保留', 'error');
       }} finally {{
         running = false;
         if (refreshButton) refreshButton.disabled = false;
@@ -1651,11 +1712,19 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     current_gate = ((last.get("gate") if last_is_current else "") or
                     gate_map.gate_badge(current_step, current_modes) or "G1–G6")
     if current_gate in {"G5", "G7"} and not current_modes:
-        if current_entry and current_entry.id in {"S09", "S13"}:
+        if current_entry and current_entry.id == "S09":
             current_gate = current_entry.gate[0] if current_entry.id == "S09" else current_entry.gate[-1]
     a1_state = project_state.get("a1") or {}
-    version_hint = (Path(a1_state.get("authority_script", "")).name
-                    or a1_state.get("main_unit") or project_state.get("stage") or "未登记")
+    active_work_files = meta.get("recent_work_files") or []
+    active_prompt = (project_state.get("active_prompt") or
+                     (project_state.get("a2_1_current_assets") or {}).get("prompt") or
+                     project_state.get("current_prompt"))
+    version_hint = (Path(active_prompt).name if active_prompt else "")
+    if not version_hint:
+        version_hint = (active_work_files[0].get("name") if active_work_files else "")
+    if not version_hint:
+        version_hint = (Path(a1_state.get("authority_script", "")).name
+                        or a1_state.get("main_unit") or project_state.get("stage") or "未登记")
     next_action = (contract_view.get("next_action") or project_state.get("next_step")
                    or summary.get("pending_decision") or "等待 Agent 下一条上报")
     next_action = " ".join(str(next_action).split())
@@ -1712,6 +1781,13 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         f'<div class="hero-title">{escape(status_text)}{auth_badge}</div></div>'
         f'<div class="hero-next"><b>下一步</b> {escape(next_action)}</div></section>'
     )
+    work_file_html = ""
+    if active_work_files:
+        work_file_html = (
+            '<div class="fact wide"><div class="label">最近触碰的工作文件（只读）</div><div class="value">'
+            + " · ".join(escape(item.get("name", "")) for item in active_work_files[:3])
+            + '</div><div class="subvalue">文件变化只说明生产窗口在工作，不代表提交、QA 通过或生成成功。</div></div>'
+        )
     agent_box = f'''
   <section class="agentbox {status_class}" aria-label="当前 Agent 运行状态">
     <div class="fact"><div class="label">当前流程</div><div class="value">{escape(current_gate)} · {escape(current_label)}</div></div>
@@ -1720,6 +1796,7 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     <div class="fact"><div class="label">服务</div><div class="value" id="serviceState">● 本机看板已连接</div></div>
     <div class="fact"><div class="label">最后读取</div><div class="value" id="lastRead">{escape(summary.get("generated_at", "")[:19])}</div></div>
     <div class="fact wide"><div class="label">刷新反馈</div><div class="value" id="refreshState" aria-live="polite">读取完成 · 共 {summary.get("event_count", 0)} 条事件</div></div>
+    {work_file_html}
   </section>'''
     gate_flow = gate_flow_block(summary)
     rows = _steps_html(summary)
@@ -1776,6 +1853,11 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     ]
     if passes.get("failed"):
         strip_bits.append(f'<span class="bad">QA 不通过 <b>{passes["failed"]}</b></span>')
+    timing = summary.get("timing_seconds_by_phase") or {}
+    if timing:
+        strip_bits.append("阶段耗时 " + " / ".join(f"{key}:{seconds}s" for key, seconds in sorted(timing.items())))
+    if summary.get("duplicate_qa_fingerprint_count"):
+        strip_bits.append(f'<span class="warn">同哈希重复 QA <b>{summary["duplicate_qa_fingerprint_count"]}</b></span>')
     if offchain_total:
         strip_bits.append(f'<span class="warn">辅助审计 <b>{offchain_total}</b>'
                           f'{" · 待归类 " + str(len(unknown_activity)) if unknown_activity else ""}</span>')

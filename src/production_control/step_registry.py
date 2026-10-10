@@ -11,7 +11,8 @@ that one design choice.
 
 Names are for people. Machines need a key that cannot drift, so:
 
-* `id`      - the join key. `S01`..`S12`. Short, stable, never renamed.
+* `id`      - the internal join key, stable across display renumbering.
+* `display_id` - the human-facing `Gx-Snn` label; provider alternatives may share one label.
 * `skill`   - the executor, kept for display and for the tooling that spawns it.
 * `name_zh` - what a person reads.
 * `aliases` - short forms a model is likely to type instead.
@@ -54,6 +55,8 @@ class Step:
 
     id: str
     skill: str
+    display_id: str = ""
+    legacy_ids: tuple[str, ...] = ()
     name_zh: str = ""
     gate: tuple[str, ...] = ()
     aliases: tuple[str, ...] = ()
@@ -65,7 +68,8 @@ class Step:
 
     def as_dict(self) -> dict:
         return {
-            "id": self.id, "skill": self.skill, "name_zh": self.name_zh,
+            "id": self.id, "display_id": self.display_id or self.id,
+            "legacy_ids": list(self.legacy_ids), "skill": self.skill, "name_zh": self.name_zh,
             "gate": list(self.gate), "aliases": list(self.aliases),
             "approval": self.approval, "marker": self.marker,
         }
@@ -133,6 +137,8 @@ def load(path: str | Path | None = None) -> tuple[Step, ...]:
         steps.append(Step(
             id=(entry.get("id") or "").strip().upper(),
             skill=skill,
+            display_id=(entry.get("display_id") or entry.get("id") or "").strip().upper(),
+            legacy_ids=tuple((value or "").strip().upper() for value in entry.get("legacy_ids", [])),
             name_zh=entry.get("name_zh", ""),
             gate=tuple(entry.get("gate", []) or []),
             aliases=tuple(entry.get("aliases", []) or []),
@@ -146,6 +152,7 @@ def load(path: str | Path | None = None) -> tuple[Step, ...]:
         steps.append(Step(
             id=(entry.get("id") or "").strip().upper(),
             skill=skill,
+            display_id=(entry.get("display_id") or entry.get("id") or "").strip().upper(),
             name_zh=entry.get("name_zh", ""),
             aliases=tuple(entry.get("aliases", []) or []),
             marker=True,
@@ -166,13 +173,18 @@ def by_skill(skill: str, path: str | Path | None = None) -> Step | None:
 
 
 def by_id(step_id: str, path: str | Path | None = None) -> Step | None:
+    text = (step_id or "").strip().upper()
     want = _collapse_id(step_id)
-    if not want:
-        return None
-    for step in load(path):
-        if step.id == want:
-            return step
-    return None
+    steps = load(path)
+    # Current stable keys win over colliding historical IDs. Historical
+    # interpretation requires the RUN's registry version and is handled at the
+    # compatibility layer, never by changing today's canonical join key.
+    exact = [step for step in steps if step.id == want]
+    if len(exact) == 1:
+        return exact[0]
+    matches = [step for step in steps
+               if step.id == want or text in {step.display_id, *step.legacy_ids}]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _keys(step: Step) -> list[tuple[str, str]]:
@@ -200,6 +212,13 @@ def resolve(text: str, path: str | Path | None = None) -> Resolution:
         for kind, literal in _keys(step):
             if literal.lower() == lowered:
                 return Resolution(step=step, matched_by=kind, query=query, score=1.0)
+
+    display_matches = [step for step in steps if step.display_id and
+                       _normalise(step.display_id) == _normalise(query)]
+    if len(display_matches) == 1:
+        return Resolution(step=display_matches[0], matched_by="alias", query=query, score=1.0)
+    if len(display_matches) > 1:
+        return Resolution(step=None, query=query, suggestions=tuple(display_matches))
 
     folded_wanted = _normalise(query)
     collapsed_wanted = _collapse_id(query)
@@ -232,7 +251,7 @@ def qa_steps(path: str | Path | None = None) -> tuple[Step, ...]:
     A QA step is identified by carrying a QA `mode`, not by its name, so renaming
     the Skill cannot quietly turn a review into an ordinary step.
     """
-    qa_modes = {"pre_generation", "post_generation"}
+    qa_modes = {"pre_generation"}
     target = Path(path) if path else repo_root() / CHAIN_RELPATH
     try:
         data = json.loads(target.read_text(encoding="utf-8"))
@@ -258,7 +277,7 @@ def approval_breakpoints(path: str | Path | None = None) -> dict[str, str]:
 
 def describe(step: Step) -> str:
     """A one-line label for a step: `S08 · 视频 Prompt 编译`."""
-    return f"{step.id} · {step.name_zh or step.skill}" if step else ""
+    return f"{step.display_id or step.id} · {step.name_zh or step.skill}" if step else ""
 
 
 def format_choices(path: str | Path | None = None, *, width: int = 78) -> str:
@@ -273,7 +292,8 @@ def format_choices(path: str | Path | None = None, *, width: int = 78) -> str:
     for step in load(path):
         where = "标记" if step.marker else ("/".join(step.gate) or "-")
         alias = (" / ".join(step.aliases[:3]))[:34]
-        head = (f"  {step.id:<4} {where:<7} {step.skill:<32} "
+        label = f"{step.display_id or step.id} [{step.id}]"
+        head = (f"  {label:<18} {where:<7} {step.skill:<32} "
                 f"{step.name_zh or '-'}")
         lines.append(head[:width])
         if alias:

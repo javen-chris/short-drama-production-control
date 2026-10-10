@@ -17,7 +17,7 @@ from pathlib import Path
 CONSOLE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CONSOLE / "src"))
 
-from production_control import execution_contract, orchestrator  # noqa: E402
+from production_control import execution_contract, orchestrator, final_submission, run_index  # noqa: E402
 
 
 def resolve_contract_id(value: str) -> str:
@@ -58,8 +58,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="本次是否需要完整故事本；L1 无需时传 --no-storyboard-required")
     parser.add_argument("--provider", choices=["runninghub", "xiaoyunque", "libtv"], default="",
                         help="可选：选定一个 G6 平台；不传表示当前 RUN 未进入平台提交")
+    parser.add_argument("--goal", choices=["prompt", "video"], default="prompt",
+                        help="prompt 任务止于 G5；video 任务必须选定平台并规划 G6-S10..S12")
     parser.add_argument("--target-mode", action="store_true",
                         help="目标模式任务：加入目标模式专属协议读取范围")
+    parser.add_argument('--confirmed-assets', default='', help='已确认资产清单 JSON；建卡同时保存内容寻址快照')
     args = parser.parse_args(argv)
 
     chain_path = Path(args.chain)
@@ -76,10 +79,18 @@ def main(argv: list[str] | None = None) -> int:
             image_assets_required=args.image_assets_required,
             storyboard_required=args.storyboard_required, provider=args.provider,
             target_mode=args.target_mode,
+            video_submission_requested=(args.goal == "video"),
         )
     except execution_contract.ContractError as exc:
         raise SystemExit(f"无法建立执行合同：{exc}") from exc
     contract["contract_id"] = contract_id
+    if args.confirmed_assets:
+        root = Path(args.project_root).resolve()
+        if run_index.run_path(root, args.run).exists():
+            raise SystemExit('RUN_ALREADY_EXISTS: restore existing RUN; do not recreate asset versions')
+        manifest = json.loads(Path(args.confirmed_assets).read_text(encoding='utf-8'))
+        contract['confirmed_asset_snapshots'] = final_submission.freeze_assets(
+            manifest, root / 'workflow' / 'asset_snapshots' / args.run, [root])
 
     state = orchestrator.start(
         None,

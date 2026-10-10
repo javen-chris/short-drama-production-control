@@ -22,7 +22,7 @@ CHAIN = {
 REFS_BREAKDOWN = [{"path": "09_脚本优化与分镜拆解规范_v3.0.md"}]
 REFS_REVIEWER = [{"path": "09_脚本优化与分镜拆解规范_v3.0.md"}]
 REFS_IMAGE = [{"path": "16_生图渠道规则_v3.0.md"}, {"path": "14_RH生图渠道与GPT通道现状_v3.0.md"}]
-REFS_QA = [{"path": "04_QA与文件治理_v3.0.md"}]
+REFS_QA = [{"path": "04_QA与文件治理_v3.0.md"}, {"path": "23_RH最终提交包与资产快照规则_v1.md"}]
 
 
 def _result(step, refs, **extra):

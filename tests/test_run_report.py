@@ -111,8 +111,8 @@ def test_the_table_is_led_by_the_gate_not_the_skill_slug():
     # The Gate's Chinese name travels with the letter as a tooltip rather than as
     # a second visible label: `G1 秒表脚本` beside `脚本拆解为镜头与生产单元` says the
     # same thing twice and makes every row wider than it needs to be.
-    assert "秒表脚本" in html, "the Gate's own name must still be reachable on the row"
-    assert "秒表脚本" in html
+    assert "权威脚本与节拍整理" in html, "the Gate's own name must still be reachable on the row"
+    assert "权威脚本与节拍整理" in html
     assert "脚本拆解为镜头与生产单元" in html  # and not the raw slug as the label
 
     # Every Skill the protocol declares must map to a Gate, and every Gate it
@@ -133,11 +133,21 @@ def test_live_board_puts_status_card_styles_on_the_segment_view_and_keeps_s13_vi
     })
     styles = html.split("</style>", 1)[0]
     assert ".agentbox {" in styles
-    assert "成片独立 QA" in html
-    assert "生成后执行" in html
+    assert "成片独立 QA" not in html
+    assert "生成后执行" not in html
     assert "生成未授权" in html
     assert "服务代码较旧，请通过桌面按钮重开一次" in html
     assert "data-persist-key=\"audit\"" in html
+
+
+def test_live_refresh_distinguishes_new_events_from_run_and_service_errors():
+    html = render_html(summarize(STATE), live=True, project_meta={
+        "project": "D:/isolated/project", "service": {"project": "D:/isolated/project"},
+    })
+    assert "发现 RUN 状态变化，正在更新页面" in html
+    assert "RUN 校验失败" in html
+    assert "看板服务错误" in html
+    assert "连接错误" in html
 
 
 def test_recent_events_are_kept_for_the_live_refresh_signature():
@@ -178,7 +188,7 @@ def test_project_overview_survives_legacy_run_with_list_evidence(tmp_path):
 def test_historical_post_generation_qa_is_not_mistaken_for_current_version_pass():
     state = json.loads(json.dumps(STATE))
     state["events"].append({
-        "step": "short-drama-production-qa", "step_id": "S13", "gate": "G7",
+        "step": "short-drama-production-qa", "step_id": "S14", "gate": "G7",
         "outcome": "FAILED", "at": "2026-09-20T13:10:00Z", "actor": "gpt-reviewer",
     })
     state["events"].append({
@@ -187,7 +197,7 @@ def test_historical_post_generation_qa_is_not_mistaken_for_current_version_pass(
     })
     summary = summarize(state)
     from production_control.run_report import _unified_step_rows
-    row = next(row for row in _unified_step_rows(summary) if row["step_id"] == "S13")
+    row = next(row for row in _unified_step_rows(summary) if row["step_id"] == "旧 S14")
     assert row["label"] == "旧版需复核"
     assert row["cls"] == "warn"
     assert row["cls"] != "ok"

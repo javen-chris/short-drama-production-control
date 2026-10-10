@@ -130,9 +130,13 @@ def test_a_declared_step_nobody_did_is_reported_as_missing(tmp_path):
     _submit(root, "short-drama-production-router",
             skill_id="short-drama-production-router", evidence="workflow/router_note.md",
             protocol_refs=["00_自动化生产唯一入口_v3.0.md",
-                           "核心自动化生产包/02_任务路由与Gate_v3.0.md"])
+                           "核心自动化生产包/02_任务路由与Gate_v3.0.md",
+                           "24_资产索引与RUN恢复规则_v1.md"])
     _pass(root, "short-drama-production-router",
-          skill_id="short-drama-production-router", evidence="workflow/router_note.md")
+          skill_id="short-drama-production-router", evidence="workflow/router_note.md",
+          protocol_refs=["00_自动化生产唯一入口_v3.0.md",
+                         "核心自动化生产包/02_任务路由与Gate_v3.0.md",
+                         "24_资产索引与RUN恢复规则_v1.md"])
 
     result = step_audit.audit_steps(_state(root), root, CHAIN)
     rows = _rows({"steps": result})
@@ -274,7 +278,7 @@ def test_the_board_shows_the_one_table_that_matters(tmp_path):
     assert "协议步骤" in page
     assert "无实证" in page          # claimed, nothing behind it
     assert "生产 → QA" in page       # who produced and who signed it off, one line
-    assert 'data-gate="G5"' in page and "视频 Prompt 确认" in page  # and which Gate
+    assert 'data-gate="G5"' in page and "Prompt 编译与生成前 QA" in page  # and which Gate
     # This run has no off-chain events, so the page must not mention any: a
     # permanent "链外步骤 0" is a row of noise explaining nothing. The count
     # appears in the progress strip only when there is something to count.

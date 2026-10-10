@@ -1,7 +1,7 @@
 {
-  "version": "2.0.0",
-  "authority": "D:\\AIGC短剧本地工作流规则及协议\\短剧制作核心协议\\00_自动化生产唯一入口_v3.0.md",
-  "_note": "这是全系统唯一的步骤注册表。看板、写入端、合规校验都从这里取数据，不要再在代码里另抄一份名字。连接键是 id（S01…S12），不是名字——名字只用来显示。",
+  "version": "3.1.0",
+  "authority": "../短剧制作核心协议/00_自动化生产唯一入口_v3.0.md",
+  "_note": "Canonical execution registry. id is the per-step join key; display_id is the user-facing Gx-Snn label; skill is executor identity. Provider adapters A01-A03 all project to G6-S10 and exactly one applies per RUN. Historical IDs are resolved using the RUN registry version and legacy mappings.",
   "steps": [
     {
       "id": "S01",
@@ -19,9 +19,11 @@
       ],
       "protocol_refs": [
         "00_自动化生产唯一入口_v3.0.md",
-        "核心自动化生产包/02_任务路由与Gate_v3.0.md"
+        "核心自动化生产包/02_任务路由与Gate_v3.0.md",
+        "24_资产索引与RUN恢复规则_v1.md"
       ],
-      "after": []
+      "after": [],
+      "display_id": "G0-S01"
     },
     {
       "id": "S02",
@@ -36,32 +38,13 @@
         "脚本拆解",
         "拆解"
       ],
-      "approval": "确认秒表脚本与节拍链",
       "protocol_refs": [
         "09_脚本优化与分镜拆解规范_v3.0.md"
       ],
       "after": [
         "short-drama-production-router"
-      ]
-    },
-    {
-      "id": "S03",
-      "skill": "short-drama-script-reviewer",
-      "gate": [
-        "G1"
       ],
-      "name_zh": "脚本节奏与镜头复核",
-      "aliases": [
-        "script-reviewer",
-        "脚本复核"
-      ],
-      "approval": "确认镜头拆解与角色/空间调度",
-      "protocol_refs": [
-        "09_脚本优化与分镜拆解规范_v3.0.md"
-      ],
-      "after": [
-        "short-drama-script-breakdown"
-      ]
+      "display_id": "G1-S02"
     },
     {
       "id": "S04",
@@ -80,8 +63,29 @@
         "03_资产与连续性规则_v3.0.md"
       ],
       "after": [
-        "short-drama-script-reviewer"
-      ]
+        "short-drama-script-breakdown"
+      ],
+      "display_id": "G2-S03"
+    },
+    {
+      "id": "S03",
+      "skill": "short-drama-script-reviewer",
+      "gate": [
+        "G2"
+      ],
+      "name_zh": "脚本节奏与镜头复核",
+      "aliases": [
+        "script-reviewer",
+        "脚本复核"
+      ],
+      "protocol_refs": [
+        "09_脚本优化与分镜拆解规范_v3.0.md"
+      ],
+      "after": [
+        "short-drama-script-breakdown",
+        "short-drama-scene-continuity"
+      ],
+      "display_id": "G2-S04"
     },
     {
       "id": "S05",
@@ -98,11 +102,13 @@
       ],
       "protocol_refs": [
         "核心自动化生产包/03_生产与资产规则_v3.0.md",
-        "17_故事本图片与视频生成参考资产选择准则_v3.0.md"
+        "17_故事本图片与视频生成参考资产选择准则_v3.0.md",
+        "24_资产索引与RUN恢复规则_v1.md"
       ],
       "after": [
         "short-drama-scene-continuity"
-      ]
+      ],
+      "display_id": "G3-S05"
     },
     {
       "id": "S06",
@@ -126,7 +132,8 @@
       "applicability": {
         "kind": "requires_image_assets"
       },
-      "when": "any image asset must be produced or repaired; gpt-image-2 only"
+      "when": "any image asset must be produced or repaired; gpt-image-2 only",
+      "display_id": "G3-S06"
     },
     {
       "id": "S07",
@@ -152,7 +159,8 @@
       "applicability": {
         "kind": "storyboard_or_key_state"
       },
-      "when": "L2 or storyboard-required; L1 uses key-state planning only"
+      "when": "L2 or storyboard-required; L1 uses key-state planning only",
+      "display_id": "G4-S07"
     },
     {
       "id": "S08",
@@ -167,20 +175,19 @@
         "提示词编译",
         "视频prompt"
       ],
-      "approval": "确认视频 Prompt、参数与本次成本",
       "protocol_refs": [
         "12_真人短剧Prompt与故事本弹性标准_v3.0.md"
       ],
       "after": [
         "short-drama-image-generator"
-      ]
+      ],
+      "display_id": "G5-S08"
     },
     {
       "id": "S09",
       "skill": "short-drama-production-qa",
       "gate": [
-        "G5",
-        "G7"
+        "G5"
       ],
       "name_zh": "独立 QA",
       "aliases": [
@@ -189,17 +196,20 @@
         "独立qa",
         "质检"
       ],
-      "approval": "确认生成前 QA 结论与放行",
       "protocol_refs": [
         "04_QA与文件治理_v3.0.md"
       ],
+      "provider_protocol_refs": {
+        "runninghub": ["23_RH最终提交包与资产快照规则_v1.md"]
+      },
       "after": [
         "short-drama-prompt-compiler"
       ],
-      "mode": "pre_generation"
+      "mode": "pre_generation",
+      "display_id": "G5-S09"
     },
     {
-      "id": "S10",
+      "id": "A01",
       "skill": "runninghub-local-adapter",
       "gate": [
         "G6"
@@ -210,20 +220,24 @@
         "rh-adapter",
         "runninghub适配"
       ],
-      "approval": "明确授权本次付费提交",
       "protocol_refs": [
         "13_模型执行前硬门禁_v3.0.md",
         "19_视频提交前确认报告与授权范围规则_v3.0.md",
-        "17_故事本图片与视频生成参考资产选择准则_v3.0.md"
+        "17_故事本图片与视频生成参考资产选择准则_v3.0.md",
+        "23_RH最终提交包与资产快照规则_v1.md"
       ],
       "after": [
         "short-drama-production-qa"
       ],
       "provider": "runninghub",
-      "alternative_group": "submit-adapter"
+      "alternative_group": "submit-adapter",
+      "display_id": "G6-S10",
+      "legacy_ids": [
+        "S10"
+      ]
     },
     {
-      "id": "S11",
+      "id": "A02",
       "skill": "xiaoyunque-local-adapter",
       "gate": [
         "G6"
@@ -234,7 +248,6 @@
         "小云雀",
         "xyq-adapter"
       ],
-      "approval": "明确授权本次付费提交",
       "protocol_refs": [
         "13_模型执行前硬门禁_v3.0.md",
         "19_视频提交前确认报告与授权范围规则_v3.0.md",
@@ -244,10 +257,14 @@
         "short-drama-production-qa"
       ],
       "provider": "xiaoyunque",
-      "alternative_group": "submit-adapter"
+      "alternative_group": "submit-adapter",
+      "display_id": "G6-S10",
+      "legacy_ids": [
+        "S11"
+      ]
     },
     {
-      "id": "S12",
+      "id": "A03",
       "skill": "libtv-local-adapter",
       "gate": [
         "G6"
@@ -258,7 +275,6 @@
         "lib-tv",
         "libtv适配"
       ],
-      "approval": "明确授权本次付费提交",
       "protocol_refs": [
         "13_模型执行前硬门禁_v3.0.md",
         "19_视频提交前确认报告与授权范围规则_v3.0.md",
@@ -268,43 +284,262 @@
         "short-drama-production-qa"
       ],
       "provider": "libtv",
-      "alternative_group": "submit-adapter"
+      "alternative_group": "submit-adapter",
+      "display_id": "G6-S10",
+      "legacy_ids": [
+        "S12"
+      ]
     },
     {
-      "id": "S13",
-      "skill": "short-drama-production-qa",
-      "gate": [
-        "G7"
+      "id": "S11",
+      "display_id": "G6-S11",
+      "skill": "short-drama-authorized-submit",
+      "name_zh": "授权提交、幂等保护与任务 ID 留档",
+      "aliases": [
+        "authorized-submit",
+        "提交视频",
+        "付费提交"
       ],
-      "name_zh": "成片独立 QA",
-      "aliases": [],
+      "approval": "明确授权本次付费提交",
       "protocol_refs": [
-        "04_QA与文件治理_v3.0.md"
+        "19_视频提交前确认报告与授权范围规则_v3.0.md",
+        "20_G6生成提交与平台调用规则_v3.0.md"
       ],
+      "provider_protocol_refs": {
+        "runninghub": ["23_RH最终提交包与资产快照规则_v1.md"]
+      },
       "after_any": [
         "runninghub-local-adapter",
         "xiaoyunque-local-adapter",
         "libtv-local-adapter"
       ],
       "applicability": {
-        "kind": "generated_video_present"
+        "kind": "video_submission_requested"
       },
-      "mode": "post_generation"
+      "gate": [
+        "G6"
+      ]
+    },
+    {
+      "id": "S12",
+      "display_id": "G6-S12",
+      "skill": "short-drama-task-monitor",
+      "name_zh": "任务终态查询与输出链接报告",
+      "aliases": [
+        "task-monitor",
+        "查询生成状态",
+        "任务进度"
+      ],
+      "protocol_refs": [
+        "20_G6生成提交与平台调用规则_v3.0.md"
+      ],
+      "after": [
+        "short-drama-authorized-submit"
+      ],
+      "applicability": {
+        "kind": "video_submission_requested"
+      },
+      "when": "Query the recorded Task ID only; report terminal state and output links; no automatic download.",
+      "gate": [
+        "G6"
+      ]
     }
   ],
   "gate_checks": [
-    {"id":"C31","gate":"G3","name_zh":"身份与参考资产返工复核","kind":"rework","activity_names":["g3-reference-rework"],"purpose_zh":"发现角色、场景或道具参考不一致后重新核对资产职责；不是资产通过结论。","decision_zh":"G3 需要重新核验","counts_as_step_progress":false,"protocol_refs":["03_资产与连续性规则_v3.0.md"]},
-    {"id":"C51","gate":"G5","name_zh":"G5.1 Skill 与 Prompt 版本审计","kind":"required","activity_names":["seedance-skill-audit"],"purpose_zh":"确认当前 Prompt 版本确实经过对应 Skill、输入资产和禁止项审计。","decision_zh":"未通过不得进入 G6","counts_as_step_progress":false,"protocol_refs":["21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"]},
-    {"id":"C52","gate":"G5","name_zh":"当前 Prompt 返工与重新 QA","kind":"rework","activity_names":["g2-g5-main-prompt-rebuild"],"purpose_zh":"脚本、镜头、对白或资产版本变化后重编译 Prompt，并重新提交当前版本 QA。","decision_zh":"旧 Prompt QA 不再适用","counts_as_step_progress":false,"protocol_refs":["12_真人短剧Prompt与故事本弹性标准_v3.0.md"]},
-    {"id":"C53","gate":"G5","name_zh":"独立 QA 调度异常","kind":"exception","activity_names":["independent-qa-dispatch-retry","independent-qa-dispatch-retry-2","independent-qa-dispatch-retry-3","independent-qa-route-fix"],"purpose_zh":"记录 QA 调度失败、重试或路由修复；调用成功不等于产生了 QA 结论。","decision_zh":"保持待 QA 或阻断","counts_as_step_progress":false,"protocol_refs":["04_QA与文件治理_v3.0.md"]},
-    {"id":"C61","gate":"G6","name_zh":"本地参考资产完整性与哈希","kind":"required","activity_names":["g6-reference-integrity"],"purpose_zh":"核对合同声明的资产路径、角色、文件哈希和当前生产单元是否一致。","decision_zh":"缺失或哈希不一致不得建节点","counts_as_step_progress":false,"protocol_refs":["19_视频提交前确认报告与授权范围规则_v3.0.md"]},
-    {"id":"C62","gate":"G6","name_zh":"目标项目与会话锁定","kind":"required","activity_names":["g6-target-project-lock"],"purpose_zh":"确认实际操作的是授权项目、目标集和目标 RUN，防止串项目或串会话。","decision_zh":"项目未锁定不得提交","counts_as_step_progress":false,"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C63","gate":"G6","name_zh":"旧节点隔离与版本回读","kind":"required","activity_names":["g6-stale-node-readback"],"purpose_zh":"检查旧节点、旧 Prompt 和旧资产是否被误当作当前主片；版本变更后重新回读。","decision_zh":"旧节点只能隔离，不能冒充当前节点","counts_as_step_progress":false,"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"]},
-    {"id":"C64","gate":"G6","name_zh":"模型参数与参考资产预检","kind":"required","activity_names":["g6-seedance25-preflight"],"purpose_zh":"提交前核对模型、时长、画幅、分辨率、声音、参考资产和合同参数。","decision_zh":"参数或资产预检失败不得提交","counts_as_step_progress":false,"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C65","gate":"G6","name_zh":"平台参考节点绑定与回读","kind":"required","activity_names":["g6-reference-nodes","g6-node-media-binding-repair"],"purpose_zh":"确认每个声明资产都绑定到正确节点，并获得平台回读证据；上传成功不等于绑定成功。","decision_zh":"缺绑定、resourceId 或回读不得建节点","counts_as_step_progress":false,"superseded_by":["g6-main-unit-only-correction"],"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C66","gate":"G6","name_zh":"平台素材合规回写","kind":"required","activity_names":["g6-preflight-11refs","g6-compliance-resourceid-diagnosis"],"purpose_zh":"核对平台返回的资源 ID、素材数量和合规回写是否覆盖当前合同声明集合。","decision_zh":"resourceId 缺失或数量不符保持阻断","counts_as_step_progress":false,"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C67","gate":"G6","name_zh":"当前视频节点配置回读","kind":"required","activity_names":["g6-video-node-build-readback"],"purpose_zh":"回读已创建节点的模型、Prompt、时长、资产绑定和目标项目，确认没有串入旧配置。","decision_zh":"节点配置未核实不得视为可运行","counts_as_step_progress":false,"protocol_refs":["20_G6生成提交与平台调用规则_v3.0.md"]},
-    {"id":"C68","gate":"G6","name_zh":"主片生产范围修订","kind":"change","activity_names":["g6-main-unit-only-correction"],"purpose_zh":"记录生产单元、时长或范围发生变化后的合同修订；它触发上游证据和资产门禁重新核验。","decision_zh":"范围变化使旧令牌和旧 QA 需复核","counts_as_step_progress":false,"protocol_refs":["19_视频提交前确认报告与授权范围规则_v3.0.md"]}
+    {
+      "id": "C31",
+      "gate": "G3",
+      "name_zh": "身份与参考资产返工复核",
+      "kind": "rework",
+      "activity_names": [
+        "g3-reference-rework"
+      ],
+      "purpose_zh": "发现角色、场景或道具参考不一致后重新核对资产职责；不是资产通过结论。",
+      "decision_zh": "G3 需要重新核验",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "03_资产与连续性规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C51",
+      "gate": "G5",
+      "name_zh": "G5.1 Skill 与 Prompt 版本审计",
+      "kind": "required",
+      "activity_names": [
+        "seedance-skill-audit"
+      ],
+      "purpose_zh": "确认当前 Prompt 版本确实经过对应 Skill、输入资产和禁止项审计。",
+      "decision_zh": "未通过不得进入 G6",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C52",
+      "gate": "G5",
+      "name_zh": "当前 Prompt 返工与重新 QA",
+      "kind": "rework",
+      "activity_names": [
+        "g2-g5-main-prompt-rebuild"
+      ],
+      "purpose_zh": "脚本、镜头、对白或资产版本变化后重编译 Prompt，并重新提交当前版本 QA。",
+      "decision_zh": "旧 Prompt QA 不再适用",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "12_真人短剧Prompt与故事本弹性标准_v3.0.md"
+      ]
+    },
+    {
+      "id": "C53",
+      "gate": "G5",
+      "name_zh": "独立 QA 调度异常",
+      "kind": "exception",
+      "activity_names": [
+        "independent-qa-dispatch-retry",
+        "independent-qa-dispatch-retry-2",
+        "independent-qa-dispatch-retry-3",
+        "independent-qa-route-fix"
+      ],
+      "purpose_zh": "记录 QA 调度失败、重试或路由修复；调用成功不等于产生了 QA 结论。",
+      "decision_zh": "保持待 QA 或阻断",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "04_QA与文件治理_v3.0.md"
+      ]
+    },
+    {
+      "id": "C61",
+      "gate": "G6",
+      "name_zh": "本地参考资产完整性与哈希",
+      "kind": "required",
+      "activity_names": [
+        "g6-reference-integrity"
+      ],
+      "purpose_zh": "核对合同声明的资产路径、角色、文件哈希和当前生产单元是否一致。",
+      "decision_zh": "缺失或哈希不一致不得建节点",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C62",
+      "gate": "G6",
+      "name_zh": "目标项目与会话锁定",
+      "kind": "required",
+      "activity_names": [
+        "g6-target-project-lock"
+      ],
+      "purpose_zh": "确认实际操作的是授权项目、目标集和目标 RUN，防止串项目或串会话。",
+      "decision_zh": "项目未锁定不得提交",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "20_G6生成提交与平台调用规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C63",
+      "gate": "G6",
+      "name_zh": "旧节点隔离与版本回读",
+      "kind": "required",
+      "activity_names": [
+        "g6-stale-node-readback"
+      ],
+      "purpose_zh": "检查旧节点、旧 Prompt 和旧资产是否被误当作当前主片；版本变更后重新回读。",
+      "decision_zh": "旧节点只能隔离，不能冒充当前节点",
+      "counts_as_step_progress": false,
+      "superseded_by": [
+        "g6-main-unit-only-correction"
+      ],
+      "protocol_refs": [
+        "21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C64",
+      "gate": "G6",
+      "name_zh": "模型参数与参考资产预检",
+      "kind": "required",
+      "activity_names": [
+        "g6-seedance25-preflight"
+      ],
+      "purpose_zh": "提交前核对模型、时长、画幅、分辨率、声音、参考资产和合同参数。",
+      "decision_zh": "参数或资产预检失败不得提交",
+      "counts_as_step_progress": false,
+      "superseded_by": [
+        "g6-main-unit-only-correction"
+      ],
+      "protocol_refs": [
+        "20_G6生成提交与平台调用规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C65",
+      "gate": "G6",
+      "name_zh": "平台参考节点绑定与回读",
+      "kind": "required",
+      "activity_names": [
+        "g6-reference-nodes",
+        "g6-node-media-binding-repair"
+      ],
+      "purpose_zh": "确认每个声明资产都绑定到正确节点，并获得平台回读证据；上传成功不等于绑定成功。",
+      "decision_zh": "缺绑定、resourceId 或回读不得建节点",
+      "counts_as_step_progress": false,
+      "superseded_by": [
+        "g6-main-unit-only-correction"
+      ],
+      "protocol_refs": [
+        "20_G6生成提交与平台调用规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C66",
+      "gate": "G6",
+      "name_zh": "平台素材合规回写",
+      "kind": "required",
+      "activity_names": [
+        "g6-preflight-11refs",
+        "g6-compliance-resourceid-diagnosis"
+      ],
+      "purpose_zh": "核对平台返回的资源 ID、素材数量和合规回写是否覆盖当前合同声明集合。",
+      "decision_zh": "resourceId 缺失或数量不符保持阻断",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "20_G6生成提交与平台调用规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C67",
+      "gate": "G6",
+      "name_zh": "当前视频节点配置回读",
+      "kind": "required",
+      "activity_names": [
+        "g6-video-node-build-readback"
+      ],
+      "purpose_zh": "回读已创建节点的模型、Prompt、时长、资产绑定和目标项目，确认没有串入旧配置。",
+      "decision_zh": "节点配置未核实不得视为可运行",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "20_G6生成提交与平台调用规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "C68",
+      "gate": "G6",
+      "name_zh": "主片生产范围修订",
+      "kind": "change",
+      "activity_names": [
+        "g6-main-unit-only-correction"
+      ],
+      "purpose_zh": "记录生产单元、时长或范围发生变化后的合同修订；它触发上游证据和资产门禁重新核验。",
+      "decision_zh": "范围变化使旧令牌和旧 QA 需复核",
+      "counts_as_step_progress": false,
+      "protocol_refs": [
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
+      ]
+    }
   ],
   "markers": [
     {
@@ -325,5 +560,14 @@
         "协议证明"
       ]
     }
-  ]
+  ],
+  "legacy_registry_mappings": {
+    "1.x-2.0.0": {
+      "S10": "G6-S10 / runninghub-local-adapter",
+      "S11": "G6-S10 / xiaoyunque-local-adapter",
+      "S12": "G6-S10 / libtv-local-adapter",
+      "S13": "旧 G7 任务查询与下载（下载步骤已从新 RUN 移除）",
+      "S14": "旧 G7 成片独立 QA（仅在明确请求时独立执行）"
+    }
+  }
 }

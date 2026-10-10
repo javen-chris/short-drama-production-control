@@ -21,6 +21,7 @@ POLICY_RELPATH = "capabilities/qa_policy.json"
 
 PRODUCER = "producer"
 QA = "qa"
+EXECUTOR = "executor"
 
 WRITE_AUTHORITY_VIOLATION = "WRITE_AUTHORITY_VIOLATION"
 SELF_QA_VIOLATION = "SELF_QA_VIOLATION"
@@ -31,6 +32,7 @@ PRODUCER_MODEL_NOT_ALLOWED = "PRODUCER_MODEL_NOT_ALLOWED"
 WRITER_MODEL_NOT_ALLOWED = "WRITER_MODEL_NOT_ALLOWED"
 
 DEFAULT_PRODUCER_ALLOWED = frozenset({
+    "STEP_COMPLETED",
     "SUBMITTED_FOR_QA", "BLOCKED", "FAILED", "WAITING_APPROVAL",
     "PAUSED_EXCEPTION", "SUBMITTED_IN_PROGRESS",
 })
@@ -38,6 +40,7 @@ DEFAULT_QA_ALLOWED = frozenset({
     "COMPLETED", "COMPLETED_WITH_CONTINUITY_CAVEAT", "USABLE_WITH_SCENE_CONTINUITY_FAIL",
     "BLOCKED", "FAILED", "WAITING_APPROVAL", "PAUSED_EXCEPTION",
 })
+DEFAULT_EXECUTOR_ALLOWED = frozenset({"TASK_SUBMITTED", "SUBMITTED_IN_PROGRESS", "TASK_SUCCEEDED", "TASK_FAILED", "TASK_UNVERIFIED"})
 
 
 def console_root(path: str | Path | None = None) -> Path:
@@ -67,9 +70,15 @@ def _role_set(policy: dict, role: str) -> frozenset[str]:
     roles = (policy or {}).get("roles") or {}
     entry = roles.get(role) or {}
     values = entry.get("may_write")
-    if not values:
-        return DEFAULT_PRODUCER_ALLOWED if role == PRODUCER else DEFAULT_QA_ALLOWED
-    return frozenset(values)
+    if values:
+        return frozenset(values)
+    if role == PRODUCER:
+        return DEFAULT_PRODUCER_ALLOWED
+    if role == QA:
+        return DEFAULT_QA_ALLOWED
+    if role == EXECUTOR:
+        return DEFAULT_EXECUTOR_ALLOWED
+    return frozenset()
 
 
 def may_write(role: str, outcome: str, policy: dict | None = None) -> tuple[bool, str]:
@@ -99,16 +108,18 @@ def gate_info(gate: str, policy: dict | None = None) -> dict:
     return {"gate": gate, "name": "", "qa_models": []}
 
 
-def qa_model_for_execution(model: str, policy: dict | None = None) -> str | None:
+def qa_model_for_execution(model: str, policy: dict | None = None, *, final_packet: bool = False) -> str | None:
     """Return the configured QA model; unsupported execution models fail closed."""
     policy = policy if policy is not None else load_policy()
     routes = (policy or {}).get("qa_routes") or {}
     key = (model or "").strip().lower()
+    if final_packet and key in routes:
+        return 'gpt-5.6-terra' if key != 'gpt-5.6-terra' else None
     return routes.get(key)
 
 
 def qa_model_allowed(gate: str, model: str, policy: dict | None = None,
-                     execution_model: str = "") -> tuple[bool, str]:
+                     execution_model: str = "", final_packet: bool = False) -> tuple[bool, str]:
     """Is this model permitted to QA this Gate?
 
     The gate allowlist and execution-model route must both agree. An unnamed or
@@ -117,18 +128,18 @@ def qa_model_allowed(gate: str, model: str, policy: dict | None = None,
     model = (model or "").strip()
     if not model:
         return False, f"{QA_MODEL_UNKNOWN}：QA 未提供执行模型，无法证明独立。"
+    if execution_model:
+        expected = qa_model_for_execution(execution_model, policy, final_packet=final_packet)
+        if expected is None:
+            return False, (f"{QA_MODEL_NOT_ALLOWED}：执行模型 {execution_model} 没有配置 QA 路由，"
+                           "按 fail-closed 规则拒绝写入。")
+        if model.lower() != expected.lower():
+            return False, (f"{QA_MODEL_NOT_ALLOWED}：执行模型 {execution_model} 应由 {expected} QA，"
+                           f"实际收到 {model}。")
     allowed = gate_info(gate, policy).get("qa_models") or []
     if allowed and model not in allowed:
         return False, (f"{QA_MODEL_NOT_ALLOWED}：Gate {gate} 的 QA 只允许 "
                        f"{'、'.join(allowed)}，收到的是 {model}。")
-    if execution_model:
-        expected = qa_model_for_execution(execution_model, policy)
-        if expected is None:
-            return False, (f"{QA_MODEL_NOT_ALLOWED}：执行模型 {execution_model} 没有配置 QA 路由，"
-                           "按 fail-closed 规则拒绝写入。")
-        if model.strip().lower() != expected:
-            return False, (f"{QA_MODEL_NOT_ALLOWED}：执行模型 {execution_model} 应由 {expected} QA，"
-                           f"实际收到 {model}。")
     return True, ""
 
 

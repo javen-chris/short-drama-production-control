@@ -169,7 +169,7 @@ def test_challenge_bank_covers_the_current_rulings():
     answers = {item["id"]: item["expected"] for item in CHALLENGE_BANK}
     assert answers["image-model"] == "gpt-image-2"
     assert answers["image-unauthorized"] == "否"
-    assert answers["protocol-version"] == "3.0"
+    assert answers["protocol-version"] == "3.6"
     assert answers["script-visible-change"] == "可见变化"
     assert answers["script-revision-limit"] == "1"
 

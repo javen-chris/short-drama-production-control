@@ -10,12 +10,18 @@ Python-side helper; the CLI wrapper is tools/append_event.py.
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import run_index, run_state, step_registry
+from . import run_index, run_state, step_registry, protocol_versions, final_submission
 from . import qa_policy
 from .outcomes import COMPLETING_OUTCOMES, validate_outcome
+
+
+def _skill_for_step(step_id: str) -> str:
+    entry = step_registry.by_id(step_id)
+    return entry.skill if entry else ""
 
 
 class MissingEvidenceError(ValueError):
@@ -37,6 +43,29 @@ class UnknownStepError(ValueError):
     nothing. Refusing here, with the valid list attached, moves the correction
     to the one place where the correct names are known.
     """
+
+
+def _artifact_fingerprint(root: Path, *, task_id: str, gate: str,
+                          affected_files: list[str] | None,
+                          protocol_refs: list | None, execution_model: str) -> str:
+    files = []
+    for relative in sorted(set(affected_files or [])):
+        target = root / relative
+        digest = hashlib.sha256(target.read_bytes()).hexdigest() if target.is_file() else "MISSING"
+        files.append({"path": relative.replace("\\", "/"), "sha256": digest})
+    protocols = []
+    for reference in protocol_refs or []:
+        if isinstance(reference, dict):
+            protocols.append({"path": reference.get("path", ""),
+                              "sha256": reference.get("sha256", "")})
+        else:
+            protocols.append({"path": str(reference), "sha256": ""})
+    canonical = json.dumps({"task_id": task_id, "gate": gate,
+                            "execution_model": execution_model,
+                            "files": files,
+                            "protocol_refs": sorted(protocols, key=lambda item: item["path"])},
+                           ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _refuse_self_review(state: dict, event: dict, *, allow_self_qa: bool = False) -> None:
@@ -131,7 +160,10 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
                  qa_conclusion: str = "", elapsed_seconds: int | None = None,
                  execution_model: str = "", issue_id: str = "", qa_attempt: int = 1,
                  blocking_issues: list[str] | None = None, next_step: str = "",
-                 affected_files: list[str] | None = None) -> dict:
+                 affected_files: list[str] | None = None,
+                 source_adapter: str = "", provider_task_id: str = "",
+                 provider_status: str = "", output_urls: list[str] | None = None,
+                 elapsed_phase: str = "", qa_invocation_evidence: str = "") -> dict:
     """Append one event and return the updated state.
 
     Every step must name evidence that exists on disk. Two refusals, both at
@@ -193,6 +225,11 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
 
     contract = state.get("execution_contract") or {}
     if contract and not off_protocol:
+        drift = protocol_versions.check_current(contract)
+        if drift:
+            raise PermissionError('PROTOCOL_SCOPE_CHANGED: ' + '; '.join(drift))
+        if contract.get("current_owner") == "user":
+            raise PermissionError("USER_DECISION_REQUIRED：合同当前等待用户决定；不得继续 QA、生产或执行依赖步骤。")
         contract_steps = contract.get("steps", [])
         declared = next((item for item in contract_steps if item.get("id") == step_id), None)
         if declared is None:
@@ -209,9 +246,14 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         if task_id != contract.get("task_id") or version != contract.get("version"):
             raise ValueError("EXECUTION_CONTRACT_MISMATCH：任务 ID 或版本与 RUN 执行合同不一致。")
         attestation = state.get("protocol_attestation") or {}
+        compatible_fingerprint = attestation.get('manifest_fingerprint') == contract.get('protocol_manifest_fingerprint')
+        if not compatible_fingerprint:
+            from .protocol_attestation import _valid_prior_attestations
+            manifest = json.loads((Path(contract['protocol_root']) / 'protocol_manifest.json').read_text(encoding='utf-8'))
+            compatible_fingerprint = bool(_valid_prior_attestations(contract, manifest, [attestation]))
         if (attestation.get("status") != "PASS"
                 or attestation.get("contract_id") != contract.get("contract_id")
-                or attestation.get("manifest_fingerprint") != contract.get("protocol_manifest_fingerprint")):
+                or not compatible_fingerprint):
             raise PermissionError("PROTOCOL_ATTESTATION_REQUIRED：请先完成当前 RUN/Gate 的协议读取证明。")
         if gate not in declared.get("gate", []) or attestation.get("scope_gate") != gate:
             raise PermissionError("PROTOCOL_SCOPE_MISMATCH：当前事件不属于已验证的协议 Gate，请重新读取并证明。")
@@ -221,13 +263,57 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         if role == qa_policy.PRODUCER:
             if actor.strip().lower() != str(contract.get("execution_model", "")).strip().lower():
                 raise PermissionError("EXECUTION_MODEL_MISMATCH：提交者与 RUN 合同中的执行模型声明不一致。")
-            if writer_model.strip().lower() != str(contract.get("qa_model", "")).strip().lower():
+            if outcome == "SUBMITTED_FOR_QA" and writer_model.strip().lower() != str(contract.get("qa_model", "")).strip().lower():
                 raise PermissionError("QA_WRITER_ROUTE_MISMATCH：提交事件必须由合同路由的 QA GPT 写入。")
+            if outcome == "STEP_COMPLETED" and writer_model:
+                raise ValueError("FACT_EVENT_WRITER_INVALID：步骤事实不得填写 QA 模型身份；仅 QA 结论事件记录 QA actor。")
         elif role == qa_policy.QA:
             if actor.strip().lower() != str(contract.get("qa_model", "")).strip().lower():
                 raise PermissionError("QA_ACTOR_ROUTE_MISMATCH：QA actor 不是本 RUN 路由的 GPT 模型。")
             if execution_model.strip().lower() != str(contract.get("execution_model", "")).strip().lower():
                 raise ValueError("EXECUTION_MODEL_MISMATCH：QA 声明的执行模型与 RUN 合同不一致。")
+        elif role == qa_policy.EXECUTOR:
+            if canonical_step not in {_skill_for_step("S11"), _skill_for_step("S12")}:
+                raise PermissionError("EXECUTION_FACT_STEP_INVALID：执行器只能记录 G6 提交和供应商状态事实。")
+            if source_adapter != contract.get("selected_provider"):
+                raise PermissionError("EXECUTION_FACT_PROVIDER_MISMATCH：来源平台与 RUN 合同不一致。")
+            if not provider_task_id:
+                raise ValueError("PROVIDER_TASK_ID_REQUIRED：执行事实必须包含真实 Task ID。")
+            if canonical_step == _skill_for_step("S11"):
+                authorization = contract.get("submission_authorization") or {}
+                authorization_path = root / str(authorization.get("evidence") or "")
+                authorization_valid = (
+                    contract.get("provider_authorized")
+                    and contract.get("current_owner") == "executor"
+                    and authorization.get("scope") == "single_video_submission"
+                    and authorization.get("provider") == source_adapter
+                    and authorization.get("run_id") == state.get("run_id")
+                    and authorization.get("contract_id") == contract.get("contract_id")
+                    and authorization.get("max_submissions") == 1
+                    and authorization.get("evidence_sha256")
+                    and authorization in (state.get("submission_authorizations") or [])
+                    and authorization_path.is_file()
+                    and hashlib.sha256(authorization_path.read_bytes()).hexdigest() == authorization.get("evidence_sha256")
+                )
+                if not authorization_valid:
+                    raise PermissionError("VIDEO_SUBMISSION_NOT_AUTHORIZED：G6-S11 必须先记录本次用户提交授权证据。")
+                if contract.get('selected_provider') == 'runninghub':
+                    packet = final_submission.verify_bound_packet(root, contract)
+                    if contract.get('submitted_packet_sha256') != final_submission.digest_packet(packet):
+                        raise ValueError('SUBMITTED_PACKET_HASH_REQUIRED: submit only the reviewed payload')
+                if outcome != "TASK_SUBMITTED" or not provider_status:
+                    raise ValueError("SUBMISSION_FACT_INVALID：提交事实须记录 TASK_SUBMITTED 与供应商回执状态。")
+                if contract.get("provider_task_id") or int(contract.get("submission_count") or 0) >= int(contract.get("max_submissions") or 1):
+                    raise ValueError("SUBMISSION_ALREADY_RECORDED：本合同提交次数已用尽；只允许查询原任务。")
+            else:
+                if outcome not in {"SUBMITTED_IN_PROGRESS", "TASK_SUCCEEDED", "TASK_FAILED", "TASK_UNVERIFIED"}:
+                    raise ValueError("TASK_STATUS_OUTCOME_INVALID：G6-S12 只接受处理中、成功、失败或无法核实状态。")
+                if provider_task_id != contract.get("provider_task_id"):
+                    raise ValueError("PROVIDER_TASK_ID_MISMATCH：查询的 Task ID 与原提交不一致。")
+                if not provider_status:
+                    raise ValueError("PROVIDER_STATUS_REQUIRED：缺少供应商返回的真实状态。")
+                if outcome == "TASK_SUCCEEDED" and not output_urls:
+                    raise ValueError("OUTPUT_URL_REQUIRED：成功终态必须记录供应商输出链接。")
         expected_refs = {ref["path"] for ref in declared.get("protocol_refs", [])}
         supplied_refs = {str(ref).replace("\\", "/") for ref in (protocol_refs or [])}
         if not expected_refs.issubset(supplied_refs):
@@ -236,7 +322,50 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         protocol_refs = [dict(ref) for ref in declared.get("protocol_refs", [])]
         protocol_refs.extend({"path": ref} for ref in sorted(supplied_refs - expected_refs))
 
+    if contract.get('selected_provider') == 'runninghub' and step_id == 'S09':
+        packet = final_submission.verify_bound_packet(root, contract, require_qa=False)
+        packet_path = (root / contract['final_submission']['packet_path']).resolve()
+        allowed_files = {packet_path} | {Path(a['path']).resolve() for a in packet['assets']}
+        if affected_files and any((root / f).resolve() not in allowed_files for f in affected_files):
+            raise ValueError('FINAL_PACKET_QA_SCOPE_MISMATCH: only final packet and bound snapshots')
+        if role == qa_policy.PRODUCER and outcome == 'SUBMITTED_FOR_QA':
+            if (root / evidence).resolve() != packet_path:
+                raise ValueError('FINAL_PACKET_QA_SOURCE_MISMATCH: do not review provider templates')
+        if role == qa_policy.QA:
+            report = json.loads((root / evidence).read_text(encoding='utf-8'))
+            if report.get('reviewed_packet_sha256') != final_submission.digest_packet(packet):
+                raise ValueError('QA_PACKET_HASH_MISMATCH: QA only the bound final packet')
+            if report.get('qa_model') != final_submission.QA_MODEL or actor != final_submission.QA_MODEL:
+                raise ValueError('FINAL_PACKET_QA_ROUTE_MISMATCH')
+            expected_content = {'CONDITIONAL': 'UNCERTAIN'}.get(qa_conclusion, qa_conclusion)
+            if report.get('overall') != expected_content:
+                raise ValueError('FINAL_PACKET_QA_VERDICT_MISMATCH')
+            if not qa_invocation_evidence:
+                raise ValueError('QA_INVOCATION_EXCEPTION: client start/session/completion evidence missing')
+            invocation = json.loads((root / qa_invocation_evidence).read_text(encoding='utf-8'))
+            final_submission.validate_invocation(invocation, packet, report)
+            if qa_conclusion == 'PASS':
+                final_submission.load_approved_packet(root / contract['final_submission']['packet_path'], root / evidence)
+                contract['final_submission']['qa_path'] = evidence
+                contract['final_submission']['invocation_path'] = qa_invocation_evidence
+                contract['final_submission']['reviewed_protocol_hashes'] = {
+                    rel: final_submission.digest_file(Path(contract['protocol_root']) / rel)
+                    for rel in protocol_versions.scoped_paths(contract)}
+
     validate_outcome(outcome)
+    if elapsed_seconds is not None and elapsed_seconds < 0:
+        raise ValueError("ELAPSED_SECONDS_INVALID：耗时不能为负数。")
+    allowed_phases = {"context_reading", "production", "qa", "user_wait", "upload", "provider_queue", "download"}
+    if elapsed_phase and elapsed_phase not in allowed_phases:
+        raise ValueError(f"ELAPSED_PHASE_INVALID：{elapsed_phase}")
+
+    artifact_fingerprint = ""
+    if role in {qa_policy.PRODUCER, qa_policy.QA} and affected_files:
+        artifact_fingerprint = _artifact_fingerprint(
+            root, task_id=task_id, gate=gate, affected_files=affected_files,
+            protocol_refs=protocol_refs, execution_model=(execution_model or
+                (contract.get("execution_model", "") if contract else actor)),
+        )
 
     if role == qa_policy.QA:
         required_qa = {
@@ -275,22 +404,24 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
     if not allowed:
         raise PermissionError(refusal)
 
-    ok_writer, writer_refusal = qa_policy.writer_model_allowed(writer_model)
-    if not ok_writer:
-        raise PermissionError(writer_refusal)
+    if role != qa_policy.EXECUTOR and not (role == qa_policy.PRODUCER and outcome == "STEP_COMPLETED"):
+        ok_writer, writer_refusal = qa_policy.writer_model_allowed(writer_model)
+        if not ok_writer:
+            raise PermissionError(writer_refusal)
 
     if role == qa_policy.PRODUCER:
-        expected_writer = qa_policy.qa_model_for_execution(actor)
-        if expected_writer is None:
-            raise PermissionError(
-                f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：执行模型 {actor or '未提供'} 没有配置 QA 写入路由；"
-                "拒绝由生产模型或未知模型直接写看板。"
-            )
-        if writer_model.strip().lower() != expected_writer:
-            raise PermissionError(
-                f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：执行模型 {actor} 的提交必须由其路由 QA 模型 "
-                f"{expected_writer} 写入，收到 {writer_model}。"
-            )
+        if outcome == "SUBMITTED_FOR_QA":
+            expected_writer = qa_policy.qa_model_for_execution(actor, final_packet=bool(contract.get('final_packet_qa_required')))
+            if expected_writer is None:
+                raise PermissionError(
+                    f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：执行模型 {actor or '未提供'} 没有配置 QA 写入路由；"
+                    "拒绝由生产模型或未知模型直接写看板。"
+                )
+            if writer_model.strip().lower() != expected_writer:
+                raise PermissionError(
+                    f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：执行模型 {actor} 的 QA 待审事件必须由路由 QA 模型 "
+                    f"{expected_writer} 写入，收到 {writer_model}。"
+                )
 
     if role == qa_policy.QA:
         producer_model = ""
@@ -321,14 +452,14 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         if producer_event and producer_event.get("affected_files") and sorted(producer_event["affected_files"]) != sorted(affected_files or []):
             raise ValueError("QA_SCOPE_MISMATCH：QA 的 affected_files 必须与该版本提交的文件清单一致。")
         if producer_event:
-            expected_writer = qa_policy.qa_model_for_execution(producer_model)
+            expected_writer = qa_policy.qa_model_for_execution(producer_model, final_packet=bool(contract.get('final_packet_qa_required')))
             if (producer_event.get("writer_model") or "").strip().lower() != (expected_writer or ""):
                 raise PermissionError(
                     f"{qa_policy.WRITER_MODEL_NOT_ALLOWED}：当前版本提交记录不是由路由 QA 模型 "
                     f"{expected_writer or '写入'} 记录；请由 QA 模型重新登记提交后再审核。"
                 )
         qa_allowed, qa_refusal = qa_policy.qa_model_allowed(
-            gate, actor, execution_model=producer_model
+            gate, actor, execution_model=producer_model, final_packet=bool(contract.get('final_packet_qa_required'))
         )
         if not qa_allowed:
             raise PermissionError(qa_refusal)
@@ -338,17 +469,18 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
                 f"收到写入者 {writer_model}。"
             )
         prior_reviews = [e for e in state.get("events") or []
-                         if e.get("step") == canonical_step
-                         and (e.get("role") or qa_policy.PRODUCER) == qa_policy.QA
-                         and e.get("version") == version
-                         and e.get("qa_level") == qa_level]
-        if any(int(e.get("qa_attempt") or 1) == qa_attempt for e in prior_reviews):
+                         if (e.get("role") or qa_policy.PRODUCER) == qa_policy.QA
+                         and e.get("artifact_fingerprint") == artifact_fingerprint]
+        if qa_attempt == 1 and prior_reviews:
             raise ValueError(
-                "QA_ATTEMPT_DUPLICATE：此版本此等级的该轮 QA 已记录；稳定版本不得重复调用。"
+                "QA_FINGERPRINT_DUPLICATE：相同生产输入的完整 QA 已记录；不得靠改版本标签或 QA 等级重审。"
             )
         if qa_attempt == 2:
+            if any(int(e.get("qa_attempt") or 1) == 2 for e in prior_reviews):
+                raise ValueError("QA_REREVIEW_LIMIT：同一产物只允许一次定向复核。")
             prior_issue_ids = {e.get("issue_id") for e in prior_reviews
-                               if e.get("qa_conclusion") in {"FAIL", "TIMEOUT"} and e.get("issue_id")}
+                               if int(e.get("qa_attempt") or 1) == 1
+                               and e.get("qa_conclusion") in {"FAIL", "TIMEOUT"} and e.get("issue_id")}
             if issue_id not in prior_issue_ids:
                 raise ValueError(
                     "QA_REREVIEW_NOT_ALLOWED：同版本复核仅限对已有 FAIL 的同一 issue_id 复核。"
@@ -372,8 +504,26 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
                           for p in (protocol_refs or [])],
         "evidence": evidence,
         "validator": validator,
-        "writer_model": writer_model,
     }
+    # Pin the exact source material at write time. Resume can then distinguish
+    # a still-valid checkpoint from a file that was edited under the same name.
+    if evidence and (root / evidence).is_file():
+        event["evidence_sha256"] = hashlib.sha256((root / evidence).read_bytes()).hexdigest()
+    if affected_files:
+        event["affected_file_hashes"] = {
+            str(relative).replace("\\", "/"): hashlib.sha256((root / relative).read_bytes()).hexdigest()
+            for relative in sorted(set(affected_files)) if (root / relative).is_file()
+        }
+    phase = elapsed_phase or ("qa" if role == qa_policy.QA else
+                              "production" if role == qa_policy.PRODUCER and outcome in {"STEP_COMPLETED", "SUBMITTED_FOR_QA"}
+                              else "")
+    if artifact_fingerprint:
+        event["artifact_fingerprint"] = artifact_fingerprint
+    if qa_invocation_evidence:
+        event['qa_invocation_evidence'] = qa_invocation_evidence
+        event['reviewed_packet_sha256'] = contract.get('final_submission', {}).get('packet_sha256')
+    if writer_model:
+        event["writer_model"] = writer_model
     if contract:
         event["contract_id"] = contract.get("contract_id", contract.get("task_id", ""))
     optional_fields = {
@@ -383,6 +533,12 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         "qa_attempt": qa_attempt if role == qa_policy.QA else None,
         "blocking_issues": blocking_issues, "next_step": next_step,
         "affected_files": affected_files,
+        "source_adapter": source_adapter or None,
+        "provider_task_id": provider_task_id or None,
+        "provider_status": provider_status or None,
+        "output_urls": output_urls or None,
+        "elapsed_seconds": elapsed_seconds,
+        "elapsed_phase": phase or None,
     }
     event.update({key: value for key, value in optional_fields.items() if value is not None and value != ""})
     event.update(extra_fields)
@@ -414,6 +570,24 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
                 contract_item["disposition"] = outcome.lower()
                 contract["current_owner"] = "user"
                 contract["next_action"] = reason or f"处理 {step_id} 的阻断后再继续"
+            elif role == qa_policy.PRODUCER and outcome == "STEP_COMPLETED":
+                if contract_item.get("mode") in {"pre_generation", "post_generation"}:
+                    raise PermissionError("QA_STEP_REQUIRES_QA_ROLE：内容 QA 步骤不能由 producer 写完成。")
+                contract_item["disposition"] = "fact_recorded"
+                index = next((i for i, item in enumerate(contract.get("steps", []))
+                              if item.get("id") == step_id), -1)
+                next_item = next((item for item in contract.get("steps", [])[index + 1:]
+                                  if item.get("applicable") and item.get("disposition") == "pending"), None)
+                if next_item:
+                    contract["current_step_id"] = next_item["id"]
+                    contract["current_owner"] = ("qa" if next_item.get("mode") in {"pre_generation", "post_generation"}
+                                                  else "producer")
+                    contract["next_action"] = (f"执行 {next_item['id']} {next_item['skill']}；"
+                        "本步骤产物记录不表示内容 QA 通过")
+                else:
+                    contract["current_step_id"] = ""
+                    contract["current_owner"] = "complete"
+                    contract["next_action"] = "适用步骤已完成；内容 QA 结论仅以独立 QA 事件为准"
             elif role == qa_policy.QA:
                 contract_item["disposition"] = {
                     "COMPLETED": "qa_passed",
@@ -455,6 +629,33 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
                 else:
                     contract["current_owner"] = "user"
                     contract["next_action"] = next_step or reason or "停止并等待用户决定"
+            elif role == qa_policy.EXECUTOR:
+                if canonical_step == _skill_for_step("S11") and outcome == "TASK_SUBMITTED":
+                    contract["provider_task_id"] = provider_task_id
+                    contract["submission_count"] = int(contract.get("submission_count") or 0) + 1
+                    contract_item["disposition"] = "task_submitted"
+                    next_item = next((item for item in contract.get("steps", [])
+                                      if item.get("id") == "S12"
+                                      and item.get("applicable")), None)
+                    if next_item:
+                        contract["current_step_id"] = next_item["id"]
+                        contract["current_owner"] = "executor"
+                        contract["next_action"] = f"按原 Task ID {provider_task_id} 查询供应商终态与输出链接"
+                elif canonical_step == _skill_for_step("S12"):
+                    contract_item["disposition"] = outcome.lower()
+                    if outcome == "TASK_SUCCEEDED":
+                        contract_item["output_urls"] = list(output_urls or [])
+                        contract["current_step_id"] = ""
+                        contract["current_owner"] = "complete"
+                        contract["next_action"] = "供应商成功终态与输出链接已核实并报告；本 RUN 结束，不代表成片 QA 通过"
+                    elif outcome == "TASK_FAILED":
+                        contract["current_step_id"] = ""
+                        contract["current_owner"] = "complete"
+                        contract["next_action"] = "供应商失败终态已核实并报告；不自动重试"
+                    elif outcome == "TASK_UNVERIFIED":
+                        contract_item["disposition"] = "paused_exception"
+                        contract["current_owner"] = "user"
+                        contract["next_action"] = reason or "供应商状态或输出无法核实；保留原 RUN 并请求裁定，不重提"
 
     pipeline = state.get("pipeline") or []
     if outcome in COMPLETING_OUTCOMES:
@@ -465,17 +666,20 @@ def append_event(project_root: str | Path, run_id: str, *, step: str, skill_id: 
         state["current_step"] = remaining[0] if remaining else ""
         # Once everything has run, keep whatever the outcome says: COMPLETED is a
         # clean finish, COMPLETED_WITH_CONTINUITY_CAVEAT finishes with a caveat.
-        state["status"] = outcome if not remaining else "RUNNING"
+        state["status"] = ("COMPLETED" if outcome in {"TASK_SUCCEEDED", "STEP_COMPLETED"}
+                            else "FAILED" if outcome == "TASK_FAILED"
+                            else outcome) if not remaining else "RUNNING"
         state.pop("pending_decision", None)
     else:
         # Waiting, blocked, submitted, failed: the segment state IS the outcome.
-        state["status"] = outcome
+        state["status"] = ("FAILED" if outcome == "TASK_FAILED" else
+                            "PAUSED_EXCEPTION" if outcome == "TASK_UNVERIFIED" else outcome)
         state["current_step"] = canonical_step
         if reason:
             state["pending_decision"] = reason
 
     run_state.write_task(path, state)
     index = run_index.load_index(root)
-    run_index.register_run(index, state, make_active=state.get("status") != "COMPLETED")
+    run_index.register_run(index, state, make_active=state.get("status") in {"RUNNING", "WAITING_APPROVAL", "PAUSED_EXCEPTION", "BLOCKED", "SUBMITTED_IN_PROGRESS"})
     run_index.save_index(root, index)
     return state
