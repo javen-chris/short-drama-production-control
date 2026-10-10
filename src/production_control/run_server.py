@@ -18,6 +18,8 @@ Binds to 127.0.0.1 only. Standard library only.
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 import sys
 import threading
 import webbrowser
@@ -29,12 +31,24 @@ from urllib.parse import unquote
 from . import run_index
 from .run_report import (
     build_report,
+    refresh_fingerprint,
     render_html,
     render_project_html,
     render_project_text,
     render_text,
     summarize_project,
 )
+
+
+def code_fingerprint() -> str:
+    """Fingerprint the running renderer so a stale page is diagnosable."""
+    digest = hashlib.sha256()
+    for path in (Path(__file__), Path(render_html.__code__.co_filename)):
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            digest.update(str(path).encode("utf-8"))
+    return digest.hexdigest()[:12]
 
 
 def current_view(project_root: str | Path, *, with_details: bool = True) -> dict:
@@ -76,8 +90,9 @@ def placeholder_summary(run_id: str, row: dict, view: dict) -> dict:
     }
 
 
-def make_handler(project_root: str | Path):
+def make_handler(project_root: str | Path, service_meta: dict | None = None):
     root = Path(project_root)
+    service_meta = service_meta or {}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ShortDramaRunReport/1.0"
@@ -117,8 +132,11 @@ def make_handler(project_root: str | Path):
                         project_meta={"project": view["project"], "series": view["series"],
                                       "episode": view["episode"],
                                       "reporting": view.get("reporting"),
+                                      "silence_alarm": view.get("silence_alarm"),
+                                      "recent_work_files": view.get("recent_work_files", []),
                                       "newest_event_at": view.get("newest_event_at", ""),
-                                      "project_state": view.get("project_state")})
+                                      "project_state": view.get("project_state"),
+                                      "service": service_meta})
                     self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
                 elif path in ("/overview", "/all"):
                     html = render_project_html(current_view(root), live=True)
@@ -146,21 +164,40 @@ def make_handler(project_root: str | Path):
                             return
                         summary = placeholder_summary(run_id, rows[run_id], view_for_placeholder(root))
                         if tail == "data":
+                            summary["project_path"] = str(root.resolve())
+                            summary["service"] = {**service_meta, "pid": os.getpid()}
+                            summary["project_state"] = current_view(root, with_details=False).get("project_state")
+                            summary["refresh_fingerprint"] = refresh_fingerprint(
+                                summary, summary["project_state"])
                             self._send(200, "application/json; charset=utf-8",
                                        json.dumps(summary, ensure_ascii=False).encode("utf-8"))
                         else:
+                            view = current_view(root, with_details=False)
                             self._send(200, "text/html; charset=utf-8",
-                                       render_html(summary, live=True).encode("utf-8"))
+                                       render_html(summary, live=True, project_meta={
+                                           "project": view.get("project", ""),
+                                           "episode": view.get("episode", ""),
+                                           "project_state": view.get("project_state"),
+                                           "service": {**service_meta, "pid": os.getpid()},
+                                       }).encode("utf-8"))
                         return
                     if tail == "data":
                         summary = build_report(run_file)
+                        summary["project_path"] = str(root.resolve())
+                        summary["service"] = {**service_meta, "pid": os.getpid()}
+                        summary["project_state"] = current_view(root, with_details=False).get("project_state")
+                        summary["refresh_fingerprint"] = refresh_fingerprint(
+                            summary, summary["project_state"])
                         self._send(200, "application/json; charset=utf-8",
                                    json.dumps(summary, ensure_ascii=False).encode("utf-8"))
                     else:
                         summary = build_report(run_file)
                         self._send(200, "text/html; charset=utf-8", render_html(summary).encode("utf-8"))
                 elif path == "/health":
-                    self._send(200, "application/json; charset=utf-8", b'{"status":"ok"}')
+                    payload = {"status": "ok", **service_meta,
+                               "project": str(root), "pid": os.getpid()}
+                    self._send(200, "application/json; charset=utf-8",
+                               json.dumps(payload, ensure_ascii=False).encode("utf-8"))
                 else:
                     self._send(404, "text/plain; charset=utf-8", b"not found")
             except Exception as exc:  # keep the server alive; report the failure
@@ -224,6 +261,9 @@ def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = Tr
     instead of failing with "address already in use".
     """
     root = Path(project_root)
+    service_meta = {"started_at": datetime.now(timezone.utc).isoformat(),
+                    "code": code_fingerprint(), "pid": os.getpid(),
+                    "project": str(root.resolve())}
     if not run_index.has_trace(root):
         raise SystemExit(
             f"没有找到 {root / 'workflow' / 'run_index.json'}（也没有 segments.json）：该项目还没有运行轨迹。"
@@ -234,8 +274,9 @@ def serve(project_root: str | Path, port: int = 8765, *, open_browser: bool = Tr
     httpd: ThreadingHTTPServer | None = None
     for candidate in candidates:
         try:
-            httpd = ThreadingHTTPServer(("127.0.0.1", candidate), make_handler(root))
-            port = candidate
+            httpd = ThreadingHTTPServer(("127.0.0.1", candidate),
+                                        make_handler(root, service_meta))
+            port = httpd.server_address[1]
             break
         except OSError as exc:
             last_error = exc

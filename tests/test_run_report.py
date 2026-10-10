@@ -104,10 +104,15 @@ def test_the_table_is_led_by_the_gate_not_the_skill_slug():
     from production_control.step_audit import load_chain
 
     html = render_html(summarize(STATE))
-    # The Gate letters and the Chinese Gate name are separate elements, so the
-    # assertion is on both rather than on one concatenated string.
-    assert 'class="gate">G1<' in html
-    assert "秒表脚本" in html
+    # The Gate is anchored as a data attribute, so the assertion survives a
+    # restyle: it checks that the Gate is on the row, not how it is painted.
+    assert 'data-gate="G1"' in html
+
+    # The Gate's Chinese name travels with the letter as a tooltip rather than as
+    # a second visible label: `G1 秒表脚本` beside `脚本拆解为镜头与生产单元` says the
+    # same thing twice and makes every row wider than it needs to be.
+    assert "权威脚本与节拍整理" in html, "the Gate's own name must still be reachable on the row"
+    assert "权威脚本与节拍整理" in html
     assert "脚本拆解为镜头与生产单元" in html  # and not the raw slug as the label
 
     # Every Skill the protocol declares must map to a Gate, and every Gate it
@@ -118,6 +123,84 @@ def test_the_table_is_led_by_the_gate_not_the_skill_slug():
         assert gates, f"{skill} has no Gate"
         for gate in gates:
             assert gate in gate_map.GATE_NAMES, f"{skill} maps to unknown {gate}"
+
+
+def test_live_board_puts_status_card_styles_on_the_segment_view_and_keeps_s13_visible():
+    html = render_html(summarize(STATE), live=True, project_meta={
+        "project": "D:/isolated/project", "episode": "EP01",
+        "project_state": {"authorization": {"generation_allowed": False}},
+        "service": {"project": "D:/isolated/project", "pid": 1234, "code": "abc123"},
+    })
+    styles = html.split("</style>", 1)[0]
+    assert ".agentbox {" in styles
+    assert "成片独立 QA" not in html
+    assert "生成后执行" not in html
+    assert "生成未授权" in html
+    assert "服务代码较旧，请通过桌面按钮重开一次" in html
+    assert "data-persist-key=\"audit\"" in html
+
+
+def test_live_refresh_distinguishes_new_events_from_run_and_service_errors():
+    html = render_html(summarize(STATE), live=True, project_meta={
+        "project": "D:/isolated/project", "service": {"project": "D:/isolated/project"},
+    })
+    assert "发现 RUN 状态变化，正在更新页面" in html
+    assert "RUN 校验失败" in html
+    assert "看板服务错误" in html
+    assert "连接错误" in html
+
+
+def test_recent_events_are_kept_for_the_live_refresh_signature():
+    state = json.loads(json.dumps(STATE))
+    summary = summarize(state)
+    assert summary["event_count"] == 3
+    assert summary["recent_events"][0]["step"] == "short-drama-production-qa"
+    assert summary["last_event"]["outcome"] == "PAUSED_EXCEPTION"
+
+
+def test_project_overview_survives_legacy_run_with_list_evidence(tmp_path):
+    from production_control.run_report import summarize_project
+
+    root = tmp_path / "project"
+    run_dir = root / "workflow" / "runs"
+    run_dir.mkdir(parents=True)
+    state = {
+        "run_id": "RUN-LEGACY", "contract_id": "C1", "current_step": "",
+        "status": "RUNNING", "pipeline": [], "completed_steps": [],
+        "events": [{"step": "protocol_bootstrap", "outcome": "COMPLETED",
+                    "evidence": ["workflow/project_state.json", "workflow/missing.json"]}],
+    }
+    (run_dir / "RUN-LEGACY.json").write_text(json.dumps(state), encoding="utf-8")
+    index = {"active_run_id": "RUN-LEGACY", "runs": [{
+        "run_id": "RUN-LEGACY", "status": "RUNNING", "progress": {"total": 0, "completed": 0},
+    }]}
+
+    view = summarize_project(index, root)
+
+    detail = view["runs"][0]["detail"]
+    assert detail is not None
+    assert detail["audit"]["steps"]["counts"]["EXTRA"] == 1
+    page = render_html(detail)
+    assert "workflow/project_state.json" in page
+    assert "workflow/missing.json" in page
+
+
+def test_historical_post_generation_qa_is_not_mistaken_for_current_version_pass():
+    state = json.loads(json.dumps(STATE))
+    state["events"].append({
+        "step": "short-drama-production-qa", "step_id": "S14", "gate": "G7",
+        "outcome": "FAILED", "at": "2026-09-20T13:10:00Z", "actor": "gpt-reviewer",
+    })
+    state["events"].append({
+        "step": "short-drama-script-breakdown", "step_id": "S02", "gate": "G1",
+        "outcome": "SUBMITTED_FOR_QA", "at": "2026-09-20T13:11:00Z", "actor": "producer",
+    })
+    summary = summarize(state)
+    from production_control.run_report import _unified_step_rows
+    row = next(row for row in _unified_step_rows(summary) if row["step_id"] == "旧 S14")
+    assert row["label"] == "旧版需复核"
+    assert row["cls"] == "warn"
+    assert row["cls"] != "ok"
 
 
 def test_every_declared_skill_has_a_chinese_name():
@@ -143,3 +226,31 @@ def test_an_unknown_step_still_renders_as_itself():
     assert gate_map.skill_label("someone-elses-custom-step") == "someone-elses-custom-step"
     assert gate_map.gates_of("someone-elses-custom-step") == ()
     assert gate_map.gate_badge("someone-elses-custom-step") == ""
+
+
+# --- Timezone-aware comparison -------------------------------------------------
+# The index is stamped in UTC while the agent writes events in local time. A raw
+# string comparison therefore sorts `12:17+00:00` before `20:17+08:00` and raises
+# "the index is stale" for two stamps that are the same instant. The board telling
+# the user to re-sync correct data is worse than saying nothing.
+
+def test_two_stamps_of_the_same_instant_are_not_a_stale_index():
+    from production_control.run_report import _is_index_behind
+
+    assert _is_index_behind("2026-09-25T20:17:39+08:00",
+                            "2026-09-25T12:17:39.818485+00:00") is False
+
+
+def test_a_genuinely_newer_event_is_reported_as_stale():
+    from production_control.run_report import _is_index_behind
+
+    assert _is_index_behind("2026-09-25T20:20:00+08:00",
+                            "2026-09-25T12:17:39+00:00") is True
+
+
+def test_an_unparseable_stamp_is_not_evidence_of_staleness():
+    """Refuse to raise an alarm on a timestamp that cannot be read."""
+    from production_control.run_report import _is_index_behind
+
+    assert _is_index_behind("", "") is False
+    assert _is_index_behind("not a time", "2026-09-25T12:00:00+00:00") is False

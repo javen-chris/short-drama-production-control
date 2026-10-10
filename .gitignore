@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.protocol_versions/
+tools/board-project.txt
+**/.protocol_versions/
 .pytest_cache/
 .env
 .env.*
@@ -18,6 +21,3 @@ assets/
 *.jpg
 *.jpeg
 *.webp
-
-# Per-machine roots for the run board launcher (copy the example next to it)
-tools/start-run-board.roots.txt

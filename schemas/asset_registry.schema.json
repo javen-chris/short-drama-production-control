@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://javen-chris.github.io/short-drama-production-control/schemas/asset_registry.schema.json",
-  "title": "Series asset registry",
-  "description": "The authoritative index of every MASTER asset for one series: identity, role, path, hash, allowed use, and forbidden substitutes.",
+  "title": "Series asset index",
+  "description": "Series asset metadata: identity, scope, source path, hash, responsibilities, confirmation evidence and version history. Media bytes remain in their authoritative project/series folders.",
   "type": "object",
   "additionalProperties": false,
   "required": ["registry_version", "series_id", "assets"],
@@ -11,6 +11,22 @@
     "series_id": {"type": "string", "minLength": 1},
     "updated_at": {"type": "string", "minLength": 1},
     "note": {"type": "string"},
+    "change_log": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "asset_id", "change", "evidence"],
+        "properties": {
+          "at": {"type": "string", "minLength": 1},
+          "asset_id": {"type": "string", "minLength": 1},
+          "change": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1},
+          "previous_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "new_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
     "assets": {
       "type": "array", "minItems": 1,
       "items": {
@@ -18,8 +34,17 @@
         "required": ["asset_id", "role", "path", "status", "allowed_use"],
         "properties": {
           "asset_id": {"type": "string", "minLength": 1},
+          "object_name": {"type": "string", "minLength": 1},
           "role": {"enum": ["character_master", "face_identity_master", "wardrobe_body_master", "scene_master", "prop_master", "real_tail_frame", "storyboard_composite", "keyframe"]},
           "path": {"type": "string", "minLength": 1},
+          "form": {"type": "string", "description": "Character form or asset shape/version description."},
+          "wardrobe": {"type": "string"},
+          "asset_version": {"type": "string", "minLength": 1},
+          "reference_responsibility": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "confirmation_status": {"enum": ["CONFIRMED", "PENDING", "REJECTED"]},
+          "confirmed_by": {"type": "string"},
+          "confirmation_evidence": {"type": "string"},
+          "updated_at": {"type": "string"},
           "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
           "status": {"enum": ["APPROVED", "DRAFT", "DEPRECATED"]},
           "allowed_use": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},

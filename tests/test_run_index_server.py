@@ -44,29 +44,29 @@ def _make_project(tmp_path: Path) -> Path:
 
 def test_one_file_per_segment_plus_one_index(tmp_path):
     root = _make_project(tmp_path)
-    state = orchestrator.start(None, CHAIN, "RUN-EP02-U01", "C1", project_root=root,
+    state = orchestrator.start(None, CHAIN, "RUN-EP-EXAMPLE-U01", "C1", project_root=root,
                                segment="U01", segment_title="B-2A（物理格斗）",
-                               series="龙骨列车", episode="EP02")
+                               series="示例系列", episode="EP-EXAMPLE")
     for _ in range(len(CHAIN["steps"])):
         state = orchestrator.advance(state, _handlers(), _approvals())
 
-    assert (root / "workflow" / "runs" / "RUN-EP02-U01.json").is_file()
+    assert (root / "workflow" / "runs" / "RUN-EP-EXAMPLE-U01.json").is_file()
     index = json.loads((root / "workflow" / "run_index.json").read_text(encoding="utf-8"))
     assert len(index["runs"]) == 1
     row = index["runs"][0]
     assert row["segment_title"] == "B-2A（物理格斗）"
     assert row["status"] == "COMPLETED"
-    assert index["episode"] == "EP02" and index["series"] == "龙骨列车"
+    assert index["episode"] == "EP-EXAMPLE" and index["series"] == "示例系列"
 
 
 def test_precreated_segments_do_not_steal_the_active_marker(tmp_path):
     root = _make_project(tmp_path)
-    active = orchestrator.start(None, CHAIN, "RUN-EP02-U01", "C1", project_root=root, segment="U01")
+    active = orchestrator.start(None, CHAIN, "RUN-EP-EXAMPLE-U01", "C1", project_root=root, segment="U01")
     orchestrator.advance(active, _handlers(), _approvals())  # U01 gains progress
     for n in (2, 3):
-        orchestrator.start(None, CHAIN, f"RUN-EP02-U0{n}", "C1", project_root=root, segment=f"U0{n}")
+        orchestrator.start(None, CHAIN, f"RUN-EP-EXAMPLE-U0{n}", "C1", project_root=root, segment=f"U0{n}")
     index = json.loads((root / "workflow" / "run_index.json").read_text(encoding="utf-8"))
-    assert index["active_run_id"] == "RUN-EP02-U01"
+    assert index["active_run_id"] == "RUN-EP-EXAMPLE-U01"
     assert len(index["runs"]) == 3
 
 
@@ -74,18 +74,18 @@ def test_index_sync_picks_up_files_written_by_another_window(tmp_path):
     root = _make_project(tmp_path)
     (root / "workflow" / "runs").mkdir(parents=True)
     other = {
-        "run_id": "RUN-EP02-U09", "segment": "U09", "segment_title": "B-9X",
+        "run_id": "RUN-EP-EXAMPLE-U09", "segment": "U09", "segment_title": "B-9X",
         "status": "PAUSED_EXCEPTION", "pipeline": ["a", "b"], "completed_steps": ["a"],
         "events": [{"step": "a", "outcome": "COMPLETED", "at": "2026-09-20T10:00:00Z"}],
         "pending_decision": "外部窗口写入的一段",
     }
-    (root / "workflow" / "runs" / "RUN-EP02-U09.json").write_text(json.dumps(other, ensure_ascii=False), encoding="utf-8")
+    (root / "workflow" / "runs" / "RUN-EP-EXAMPLE-U09.json").write_text(json.dumps(other, ensure_ascii=False), encoding="utf-8")
 
     index = run_index.load_index(root)
     assert index["runs"] == []
     index = run_index.sync_index(root, index)
-    assert [r["run_id"] for r in index["runs"]] == ["RUN-EP02-U09"]
-    assert index["active_run_id"] == "RUN-EP02-U09"
+    assert [r["run_id"] for r in index["runs"]] == ["RUN-EP-EXAMPLE-U09"]
+    assert index["active_run_id"] == "RUN-EP-EXAMPLE-U09"
 
 
 def test_overview_separates_not_started_from_running(tmp_path):
@@ -115,11 +115,24 @@ def test_server_routes_serve_live_data(tmp_path):
     try:
         page = urllib.request.urlopen(f"{base}/", timeout=10).read().decode("utf-8")
         assert "B-2A（物理格斗）" in page
-        assert "立即刷新" in page
+        assert "刷新" in page
         assert "自动刷新" in page
+
+        health = json.loads(urllib.request.urlopen(f"{base}/health", timeout=10).read().decode("utf-8"))
+        assert health["status"] == "ok"
+        assert health["project"] == str(root)
+        assert health["pid"] > 0
+        assert len(health["code"]) == 12
 
         data = json.loads(urllib.request.urlopen(f"{base}/data", timeout=10).read().decode("utf-8"))
         assert data["runs"][0]["run_id"] == "RUN-U01"
+
+        segment_data = json.loads(urllib.request.urlopen(
+            f"{base}/run/RUN-U01/data", timeout=10).read().decode("utf-8"))
+        assert segment_data["run_id"] == "RUN-U01"
+        assert segment_data["project_path"] == str(root.resolve())
+        assert segment_data["service"]["pid"] > 0
+        assert segment_data["event_count"] == 1
 
         segment = urllib.request.urlopen(f"{base}/run/RUN-U01", timeout=10).read().decode("utf-8")
         assert "short-drama-image-generator" in segment

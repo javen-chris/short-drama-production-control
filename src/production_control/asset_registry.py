@@ -26,6 +26,16 @@ def validate_registry(registry: dict) -> list[str]:
     schema = load_json(SCHEMAS / "asset_registry.schema.json")
     errors = [e.message for e in Draft202012Validator(schema).iter_errors(registry)]
     for asset in registry.get("assets", []):
+        if str(registry.get("registry_version", "")).startswith("2"):
+            required_metadata = ("object_name", "asset_version", "reference_responsibility",
+                                 "confirmation_status", "confirmation_evidence")
+            missing = [key for key in required_metadata if not asset.get(key)]
+            if missing:
+                errors.append(f"{asset.get('asset_id')}: asset-index v2 metadata missing: {', '.join(missing)}")
+            if asset.get("status") == "APPROVED" and asset.get("confirmation_status") != "CONFIRMED":
+                errors.append(f"{asset.get('asset_id')}: APPROVED assets need confirmation_status=CONFIRMED")
+            if asset.get("status") == "APPROVED" and not asset.get("sha256"):
+                errors.append(f"{asset.get('asset_id')}: APPROVED assets need source SHA-256")
         if asset.get("status") == "APPROVED" and not asset.get("qa_evidence"):
             errors.append(f"{asset.get('asset_id')}: APPROVED assets need qa_evidence")
         if asset.get("role", "").endswith("master") and not asset.get("image_channel"):
