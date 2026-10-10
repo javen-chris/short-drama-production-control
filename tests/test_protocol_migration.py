@@ -29,7 +29,7 @@ def test_protocol_migration_updates_same_run_and_preserves_history(tmp_path):
     evidence = project / "confirmed_changes.md"
     evidence.write_text("Isolated test explicit protocol migration confirmation", encoding="utf-8")
     confirmed = ["--confirmation-evidence", "confirmed_changes.md"]
-    for rel in protocol_fingerprint.REQUIRED_CORE_FILES + protocol_fingerprint.RUNTIME_CONTROL_FILES:
+    for rel in protocol_fingerprint.registered_protocol_files(protocol_fingerprint.DEFAULT_ROOT):
         confirmed.extend(["--confirmed-path", rel])
     result = subprocess.run(
         [sys.executable, str(console / "tools" / "migrate_run_protocol.py"), str(project), "--run", "RUN-MIGRATE-1", *confirmed],
