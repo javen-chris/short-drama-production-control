@@ -1,7 +1,7 @@
 {
   "protocol_version": "3.6",
-  "source_manifest_fingerprint": "bb355dac5988c6f70c19cc9fedb366077021c98278823d3b72d4505f3f2ffbfe",
-  "source_generated_at": "2026-10-10T21:35:15.851542+08:00",
+  "source_manifest_fingerprint": "5adcfdb055645b26b034ccc6692c8806d8d9e98c8145648f1bc2464c26fd2834",
+  "source_generated_at": "2026-10-10T21:43:28.477364+08:00",
   "path_normalization": "Personal roots, local tool paths, provider application IDs, and historical production examples/results redacted; policy retained",
   "contains_production_files": false
 }
