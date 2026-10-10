@@ -131,40 +131,37 @@ def _chain():
     }
 
 
+def _authorization_chain():
+    return {"steps": [
+        {"skill": "short-drama-production-router", "after": []},
+        {"skill": "short-drama-authorized-submit", "after": ["short-drama-production-router"]},
+    ]}
+
+
 def test_orchestrator_stops_at_approval_breakpoint(tmp_path):
-    chain = _chain()
+    chain = _authorization_chain()
     state_path = tmp_path / "run_state.json"
     state = orchestrator.start(state_path, chain, "RUN-1", "C1")
-    assert state["status"] == "RUNNING"
+    router = lambda: {"skill_id": "short-drama-production-router", "protocol_refs": [{"path": "00_自动化生产唯一入口_v3.0.md"}], "evidence": "evidence/router.json"}
+    state = orchestrator.advance(state, {"short-drama-production-router": router})
     state = orchestrator.advance(state, {})
     assert state["status"] == "WAITING_APPROVAL"
-    assert state["checkpoint"] == "short-drama-script-breakdown"
+    assert state["checkpoint"] == "short-drama-authorized-submit"
     run_state.write_task(state_path, state)
 
 
 def test_orchestrator_resumes_after_approval(tmp_path):
-    chain = _chain()
+    chain = _authorization_chain()
     state_path = tmp_path / "run_state.json"
     state = orchestrator.start(state_path, chain, "RUN-2", "C1")
+    router = lambda: {"skill_id": "short-drama-production-router", "protocol_refs": [{"path": "00_自动化生产唯一入口_v3.0.md"}], "evidence": "evidence/router.json"}
+    state = orchestrator.advance(state, {"short-drama-production-router": router})
     state = orchestrator.advance(state, {})
     assert state["status"] == "WAITING_APPROVAL"
     seen = []
-
-    def ok(step, ref="09_脚本优化与分镜拆解规范.md"):
-        return {"skill_id": step, "protocol_refs": [{"path": ref}], "evidence": f"evidence/{step}.json"}
-
-    handlers = {
-        "short-drama-script-breakdown": lambda: seen.append("breakdown") or ok("short-drama-script-breakdown"),
-        "short-drama-script-reviewer": lambda: ok("short-drama-script-reviewer"),
-        "short-drama-production-qa": lambda: ok("short-drama-production-qa", "04_QA与文件治理.md"),
-        "runninghub-local-adapter": lambda: ok("runninghub-local-adapter", "13_模型执行前硬门禁.md"),
-    }
-    approvals = {"short-drama-script-breakdown", "short-drama-script-reviewer", "short-drama-production-qa", "runninghub-local-adapter"}
-    for _ in range(len(orchestrator.plan_steps(chain))):
-        state = orchestrator.advance(state, handlers, approvals)
-        if state["status"] in {"WAITING_APPROVAL", "PAUSED_EXCEPTION", "COMPLETED", "BLOCKED"}:
-            break
-    assert seen == ["breakdown"]
+    submit = lambda: seen.append("submit") or {"skill_id": "short-drama-authorized-submit", "protocol_refs": [{"path": "19_视频提交前确认报告与授权范围规则_v3.0.md"}], "evidence": "evidence/submit.json"}
+    state = orchestrator.advance(state, {"short-drama-authorized-submit": submit}, {"short-drama-authorized-submit"})
+    assert seen == ["submit"]
     assert state["status"] == "COMPLETED"
     assert state["completed_steps"] == orchestrator.plan_steps(chain)
 

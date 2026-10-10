@@ -24,7 +24,7 @@ import pytest
 from production_control import gate_map
 from production_control.step_audit import load_chain
 
-PROTOCOL_ROOT = Path(r"D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议")
+PROTOCOL_ROOT = Path(__import__("production_control.protocol_fingerprint", fromlist=["DEFAULT_ROOT"]).DEFAULT_ROOT)
 FLOW_DOC = PROTOCOL_ROOT / "02_每段视频制作流程_v3.0.md"
 ROUTING_DOC = PROTOCOL_ROOT / "核心自动化生产包" / "02_任务路由与Gate_v3.0.md"
 
@@ -113,9 +113,9 @@ def test_the_two_qa_rounds_are_distinguishable():
     Showing both as `G5/G7 独立 QA` with no qualifier would hide which round ran.
     """
     assert gate_map.qa_mode_label(["pre_generation"]) == "生成前 QA"
-    assert gate_map.qa_mode_label(["post_generation"]) == "成片 QA"
+    assert gate_map.qa_mode_label(["post_generation"]) == "post_generation"
     assert "生成前 QA" in gate_map.annotated_gate("short-drama-production-qa", ["pre_generation"])
-    assert "成片 QA" in gate_map.annotated_gate("short-drama-production-qa", ["post_generation"])
+    assert gate_map.gates_for("short-drama-production-qa", ["post_generation"]) == ()
 
 
 def test_provider_adapters_are_marked_as_alternatives():
@@ -162,8 +162,8 @@ def test_skill_chain_gates_are_all_in_protocol_order():
 def test_a_qa_step_takes_its_gate_from_its_round():
     """Without the mode, QA resolves to the pair and the order breaks again."""
     assert gate_map.gates_for("short-drama-production-qa", ["pre_generation"]) == ("G5",)
-    assert gate_map.gates_for("short-drama-production-qa", ["post_generation"]) == ("G7",)
-    # With no mode recorded, both Gates are shown rather than a guess.
-    assert gate_map.gates_for("short-drama-production-qa") == ("G5", "G7")
+    assert gate_map.gates_for("short-drama-production-qa", ["post_generation"]) == ()
+    # With no mode recorded, registry declares the single active G5 round.
+    assert gate_map.gates_for("short-drama-production-qa") == ("G5",)
     # A non-QA step ignores modes entirely.
     assert gate_map.gates_for("short-drama-image-generator", ["pre_generation"]) == ("G3",)

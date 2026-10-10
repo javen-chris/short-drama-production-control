@@ -20,6 +20,10 @@ COMPLETING_OUTCOMES = frozenset({
     "COMPLETED",
     "COMPLETED_WITH_CONTINUITY_CAVEAT",
     "USABLE_WITH_SCENE_CONTINUITY_FAIL",
+    "TASK_SUBMITTED",
+    "TASK_SUCCEEDED",
+    "TASK_FAILED",
+    "STEP_COMPLETED",
 })
 
 OUTCOME_LABELS = {
@@ -28,6 +32,11 @@ OUTCOME_LABELS = {
     "COMPLETED_WITH_CONTINUITY_CAVEAT": "已完成（连续性存疑，QA 通过）",
     "USABLE_WITH_SCENE_CONTINUITY_FAIL": "可用（场景连续性未过）",
     "SUBMITTED_IN_PROGRESS": "已提交，等待回执",
+    "TASK_SUBMITTED": "供应商已接单",
+    "TASK_SUCCEEDED": "供应商生成成功（未做成片 QA）",
+    "TASK_FAILED": "供应商生成失败",
+    "TASK_UNVERIFIED": "供应商结果无法核实（异常暂停）",
+    "STEP_COMPLETED": "步骤产物已记录",
     "WAITING_APPROVAL": "等待你批准",
     "PAUSED_EXCEPTION": "已挂起（异常）",
     "BLOCKED": "已阻断",

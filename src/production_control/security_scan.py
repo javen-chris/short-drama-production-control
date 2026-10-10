@@ -7,10 +7,10 @@ def scan(root: str|Path)->list[str]:
     errors=[]
     for p in Path(root).rglob("*"):
         if not p.is_file() or ".git" in p.parts: continue
-        if p.suffix.lower() in MEDIA: errors.append(f"media file tracked: {p.relative_to(root)}")
+        relative = p.relative_to(root).as_posix()
+        if p.suffix.lower() in MEDIA: errors.append(f"media file tracked: {relative}")
         if p.suffix.lower() in {".py",".json",".yml",".yaml",".md",".toml"}:
             try:
                 if SECRET.search(p.read_text(encoding="utf-8")): errors.append(f"possible secret: {p.relative_to(root)}")
             except UnicodeDecodeError: pass
     return errors
-

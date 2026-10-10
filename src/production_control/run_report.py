@@ -12,6 +12,7 @@ digging through raw logs.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -19,7 +20,17 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from . import gate_map, gate_token, run_index, skill_audit, step_audit
+from . import (
+    gate_checks,
+    gate_map,
+    gate_token,
+    run_compliance,
+    run_index,
+    silence_alarm,
+    skill_audit,
+    step_audit,
+    step_registry,
+)
 from .outcomes import OUTCOME_LABELS
 from .run_compliance import STEP_PROTOCOL_REQUIREMENTS, verify_run_compliance
 
@@ -54,6 +65,7 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
     steps = state.get("pipeline") or []
     completed = set(state.get("completed_steps", []) or [])
     events = _events_by_step(state)
+    dispositions = state.get("step_dispositions") or {}
 
     rendered = []
     for step in steps:
@@ -61,10 +73,15 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         outcome = event.get("outcome", "")
         refs = _ref_map(event)
         required = STEP_PROTOCOL_REQUIREMENTS.get(step, [])
+        # A required document counts as read when the event names it in any
+        # path shape - bare name, relative, or absolute. See normalise_ref.
+        recorded = {run_compliance.normalise_ref(p) for p in refs}
         started = bool(event)
         reads = []
         for path in sorted(set(list(refs.keys()) + required)):
-            if path in refs:
+            if run_compliance.normalise_ref(path) in recorded and (
+                path in refs or path in required
+            ):
                 status = "read"
             elif step in completed and path in required:
                 # Only a finished step can be in violation of a required read.
@@ -87,8 +104,9 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
                 "step": step,
                 "outcome": outcome,
                 "state_label": (
-                    OUTCOME_LABELS.get(outcome)
-                    or outcome
+                    "本次不适用：" + dispositions[step].get("reason", "未说明原因")
+                    if step in dispositions and not dispositions[step].get("applicable", True)
+                    else OUTCOME_LABELS.get(outcome) or outcome
                     or ("未开始" if step not in completed else "已完成")
                 ),
                 "at": event.get("at", ""),
@@ -107,9 +125,44 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
     compliance = verify_run_compliance(state, chain, manifest)
     reconciliation = step_audit.audit_run(state, project_root, chain)
     qa_passes = step_audit.audit_qa_passes(state, project_root)
+    contract = state.get("execution_contract") or {}
+    registry_version = str(contract.get("registry_version", ""))
+    legacy_registry = registry_version.startswith(("1.", "2.")) or registry_version in {"1.x-2.0.0", "2.0.0"}
+    legacy_ids = {"S10", "S11", "S12", "S13", "S14"} if legacy_registry else set()
+    last_event = max((event for event in state.get("events", []) or []),
+                     key=lambda event: event.get("at", ""), default={})
+    post_qa_event = max((event for event in state.get("events", []) or []
+                         if ((event.get("step_id") == "S14" and legacy_registry) or
+                             (event.get("gate") == "G7" and
+                              (event.get("mode") in {"post_generation", "", None})))),
+                        key=lambda event: event.get("at", ""), default={})
+    events_fingerprint = hashlib.sha256(json.dumps(
+        state.get("events", []) or [], ensure_ascii=False, sort_keys=True,
+        separators=(",", ":")).encode("utf-8")).hexdigest()
+    timing: dict[str, int] = {}
+    for event in state.get("events", []) or []:
+        phase, seconds = event.get("elapsed_phase"), event.get("elapsed_seconds")
+        if phase and isinstance(seconds, int) and seconds >= 0:
+            timing[phase] = timing.get(phase, 0) + seconds
+    qa_fingerprints = [event.get("artifact_fingerprint") for event in state.get("events", []) or []
+                       if event.get("role") == "qa" and event.get("artifact_fingerprint")]
     return {
         "run_id": state.get("run_id", ""),
         "contract_id": state.get("contract_id", ""),
+        "execution_contract": {
+            "registry_version": contract.get("registry_version", ""),
+            "task_id": contract.get("task_id", ""),
+            "version": contract.get("version", ""),
+            "execution_model": contract.get("execution_model", ""),
+            "qa_model": contract.get("qa_model", ""),
+            "model_identity": contract.get("model_identity", "declared_unverified"),
+            "current_step_id": contract.get("current_step_id", ""),
+            "current_owner": contract.get("current_owner", ""),
+            "next_action": contract.get("next_action", ""),
+            "selected_provider": contract.get("selected_provider"),
+            "provider_authorized": contract.get("provider_authorized", False),
+            "steps": contract.get("steps", []),
+        } if contract else {},
         "segment": state.get("segment", ""),
         "segment_title": state.get("segment_title", ""),
         "status": state.get("status", ""),
@@ -123,8 +176,63 @@ def summarize(state: dict, chain: dict | None = None, manifest: dict | None = No
         "compliance": compliance,
         "audit": reconciliation,
         "qa_passes": qa_passes,
+        "last_event": {
+            "step": last_event.get("step", ""),
+            "step_id": last_event.get("step_id", ""),
+            "outcome": last_event.get("outcome", ""),
+            "at": last_event.get("at", ""),
+            "actor": last_event.get("actor", ""),
+            "gate": last_event.get("gate", ""),
+            "mode": last_event.get("mode", ""),
+            "writer_model": last_event.get("writer_model", ""),
+            "role": last_event.get("role", ""),
+            "reason": last_event.get("reason", ""),
+        },
+        "recent_events": [
+            {
+                "step": event.get("step", ""),
+                "label": gate_map.skill_label(event.get("step", "")),
+                "gate": event.get("gate", ""),
+                "step_id": event.get("step_id", ""),
+                "mode": event.get("mode", ""),
+                "outcome": event.get("outcome", ""),
+                "at": event.get("at", ""),
+                "actor": event.get("actor", ""),
+                "role": event.get("role", ""),
+                "reason": event.get("reason", ""),
+                "evidence": event.get("evidence", ""),
+            }
+            for event in sorted(state.get("events", []) or [],
+                                key=lambda item: item.get("at", ""), reverse=True)[:10]
+        ],
+        "event_count": len(state.get("events", []) or []),
+        "timing_seconds_by_phase": timing,
+        "duplicate_qa_fingerprint_count": len(qa_fingerprints) - len(set(qa_fingerprints)),
+        "events_fingerprint": events_fingerprint,
+        "post_generation_qa_event": post_qa_event,
+        "legacy_step_events": [event for event in state.get("events", []) or []
+                                if (event.get("step_id") or event.get("step")) in legacy_ids or
+                                (event is post_qa_event and bool(post_qa_event))],
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def refresh_fingerprint(summary: dict, project_state: dict | None = None) -> str:
+    """Stable signature of visible run/QA/project state, excluding render time."""
+    visible = {
+        "events": summary.get("events_fingerprint", ""),
+        "status": summary.get("status", ""),
+        "current_step": summary.get("current_step", ""),
+        "pending_decision": summary.get("pending_decision", ""),
+        "progress": summary.get("progress", {}),
+        "qa_passes": summary.get("qa_passes", {}),
+        "audit": summary.get("audit", {}),
+        "compliance": summary.get("compliance", {}),
+        "project_state": project_state or {},
+    }
+    return hashlib.sha256(json.dumps(
+        visible, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        default=str).encode("utf-8")).hexdigest()
 
 
 def step_accounting(state: dict) -> dict:
@@ -132,7 +240,7 @@ def step_accounting(state: dict) -> dict:
 
     Progress used to be `completed_steps ∩ pipeline`, which silently reported
     zero whenever a window recorded its work under Gate names (G2-shot-confirm,
-    G3-local-assets, G5-prompt) instead of the twelve skill names. EP03/A1 had
+    G3-local-assets, G5-prompt) instead of the twelve skill names. EP-EXAMPLE/A1 had
     finished seven steps and the board showed 0/12 - a run that was visibly
     moving looked untouched, which is worse than showing nothing.
 
@@ -155,6 +263,15 @@ def render_text(summary: dict) -> str:
     lines.append(f"状态：{summary['status']}    进度：{summary['progress']['completed']}/{summary['progress']['total']} 步")
     if summary.get("pending_decision"):
         lines.append(f"等待决定：{summary['pending_decision']}")
+    timing = summary.get("timing_seconds_by_phase") or {}
+    if timing:
+        labels = {"context_reading": "资料读取", "production": "生产", "qa": "QA",
+                  "user_wait": "用户等待", "upload": "上传", "provider_queue": "供应商排队/生成",
+                  "download": "下载（独立任务）"}
+        lines.append("耗时：" + "；".join(f"{labels.get(key, key)} {seconds}s"
+                                             for key, seconds in sorted(timing.items())))
+    if summary.get("duplicate_qa_fingerprint_count"):
+        lines.append(f"重复 QA 指纹：{summary['duplicate_qa_fingerprint_count']} 次（需调查是否违反复用规则）")
     lines.append("")
     lines.append("步骤明细：")
     for item in summary["steps"]:
@@ -208,6 +325,13 @@ def _badge(outcome: str, label: str) -> str:
     return f'<span class="badge" style="--c:{color}">{escape(label)}</span>'
 
 
+def _evidence_text(value: object) -> str:
+    """Render both current scalar evidence and legacy evidence lists safely."""
+    if isinstance(value, (list, tuple)):
+        return "；".join(str(item) for item in value if item)
+    return str(value or "")
+
+
 def _steps_html(summary: dict) -> list[str]:
     rows: list[str] = []
     for item in summary["steps"]:
@@ -229,7 +353,7 @@ def _steps_html(summary: dict) -> list[str]:
         if item["attestation_id"]:
             meta.append(f"<span>读取证明：<code>{escape(item['attestation_id'])}</code></span>")
         if item["evidence"]:
-            meta.append(f"<span>证据：<code>{escape(item['evidence'])}</code></span>")
+            meta.append(f"<span>证据：<code>{escape(_evidence_text(item['evidence']))}</code></span>")
         if item["at"]:
             meta.append(f"<span class=\"dim\">{escape(item['at'])}</span>")
         reason = f'<p class="reason">{escape(item["reason"])}</p>' if item["reason"] else ""
@@ -262,18 +386,70 @@ RUN_STATUS_LABELS = {
 }
 
 
-def minutes_since(iso: str) -> int | None:
-    """Whole minutes since an ISO timestamp, or None when there is no timestamp."""
-    if not iso:
+def parse_iso(value: str) -> datetime | None:
+    """An ISO timestamp as an aware datetime, or None when it is unusable.
+
+    Timestamps in this system come from two different writers and therefore carry
+    two different offsets: the index is stamped in UTC by `run_index._now()`, while
+    the agent writes events in local time. Comparing those as *strings* is wrong -
+    `12:17:39+00:00` sorts before `20:17:39+08:00` even though they are the same
+    instant - and the board then raises a "the index is stale" alarm that is not
+    true. Always parse before comparing.
+    """
+    if not value:
         return None
-    text = iso.strip().replace("Z", "+00:00")
     try:
-        moment = datetime.fromisoformat(text)
+        moment = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
     except ValueError:
         return None
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def minutes_since(iso: str) -> int | None:
+    """Whole minutes since an ISO timestamp, or None when there is no timestamp."""
+    moment = parse_iso(iso)
+    if moment is None:
+        return None
     return int((datetime.now(timezone.utc) - moment).total_seconds() // 60)
+
+
+def _recent_work_files(project_root: str | Path | None, *, limit: int = 3) -> list[dict]:
+    """Show recently touched drafting files without changing trail semantics."""
+    if not project_root:
+        return []
+    root = Path(project_root)
+    if not root.is_dir():
+        return []
+    excluded = {".git", "__pycache__", "runs", "_backups"}
+    candidates = []
+    for path in root.rglob("*"):
+        if (not path.is_file() or any(part in excluded for part in path.parts)
+                or path.suffix.lower() not in {".md", ".txt", ".json", ".py"}):
+            continue
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            continue
+        candidates.append((stamp, path))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return [{"name": path.name, "path": str(path),
+             "at": datetime.fromtimestamp(stamp, timezone.utc).isoformat()}
+            for stamp, path in candidates[:limit]]
+
+
+def _is_index_behind(newest_event: str, index_time: str) -> bool:
+    """Is the index genuinely older than the newest event?
+
+    Both sides must be parsed first: they are written by different code paths with
+    different UTC offsets, so a string comparison reports "stale" for two stamps
+    that are the same instant. A false alarm here is expensive - it tells the user
+    to re-sync data that is already correct.
+    """
+    event_at = parse_iso(newest_event)
+    index_at = parse_iso(index_time)
+    if event_at is None or index_at is None:
+        return False
+    return event_at > index_at
 
 
 def reporting_state(idle_minutes: int | None, *, threshold: int = STALE_MINUTES,
@@ -355,6 +531,16 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         if stamp:
             newest_event = datetime.fromtimestamp(stamp, timezone.utc).isoformat()
     idle_minutes = minutes_since(newest_event)
+    reporting = reporting_state(idle_minutes, started=counts["running"] + counts["waiting"] + counts["blocked"])
+    # `reporting_state` only sees the trajectory. If the window never wrote one,
+    # it reports "stale" while the agent is in fact busy writing files. Add the
+    # filesystem as a second witness so "no work" and "work not reported" -- two
+    # verdicts that demand opposite responses -- stop looking identical.
+    alarm = silence_alarm.detect(
+        root,
+        newest_event_at=newest_event,
+        index_updated_at=index_time,
+    )
     return {
         "project": index.get("project", ""),
         "series": index.get("series", ""),
@@ -365,13 +551,15 @@ def summarize_project(index: dict, project_root: str | Path | None = None, *, wi
         "data_source": source,
         "index_updated_at": index_time,
         "newest_event_at": newest_event,
-        "stale": bool(newest_event and index_time and newest_event > index_time),
+        "stale": _is_index_behind(newest_event, index_time),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project_state": project_state,
+        "recent_work_files": _recent_work_files(root),
         "gate_tokens": gate_token.load_tokens(root) if root else [],
         "skill_audits": skill_audit.load_audits(root) if root else [],
         "idle_minutes": idle_minutes,
-        "reporting": reporting_state(idle_minutes, started=counts["running"] + counts["waiting"] + counts["blocked"]),
+        "reporting": reporting,
+        "silence_alarm": alarm,
     }
 
 
@@ -498,7 +686,7 @@ def gate_token_block(tokens: list[dict]) -> str:
 def skill_audit_block(audits: list[dict]) -> str:
     """Did the prompt actually go through a Skill, or was it just written?
 
-    EP03 shipped a batch of prompts nobody had audited. This block is here so
+    EP-EXAMPLE shipped a batch of prompts nobody had audited. This block is here so
     that is visible before generate is clicked, not discovered afterwards.
     """
     if not audits:
@@ -543,11 +731,12 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     (live=False) is a snapshot and says so.
     """
     counts = view["counts"]
-    live_hint = "实时模式：每次刷新都重新读取磁盘上的最新状态" if live else "静态快照：数据为生成时状态，需重新运行命令才会更新"
+    live_hint = "刷新只重读磁盘，不重启服务" if live else "静态快照：需重新运行命令才会更新"
     auto_checked = "checked" if live else ""
 
     reporting = view.get("reporting") or reporting_state(view.get("idle_minutes"))
     heartbeat = heartbeat_block(reporting, view.get("newest_event_at", ""))
+    silence_banner = silence_alarm.banner_html(view.get("silence_alarm") or {})
     heading = " · ".join(x for x in (view["series"], view["episode"]) if x) or view["project"]
 
     # One line instead of six cards: the numbers that change a decision, and
@@ -573,6 +762,12 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     # panels said the same thing three times over a mostly-empty page; their
     # conclusions now ride along per segment in the table.
     alerts = []
+    silence = view.get("silence_alarm") or {}
+    if silence.get("alarm"):
+        alerts.append(
+            f'<li><strong>{escape(silence.get("label") or "")}</strong>——'
+            f'{silence.get("detail") or ""} {silence.get("hint") or ""}</li>'
+        )
     if reporting.get("level") in ("stale", "none"):
         alerts.append(f'<li>{escape(reporting.get("label") or "")}——{escape(reporting.get("hint") or "")}</li>')
     state = view.get("project_state") or {}
@@ -591,8 +786,8 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
     # fail (and look like a broken app). Only the live server gets real controls.
     toolbar_controls = (
         f"""
-    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
-    <label><input type="checkbox" id="auto" {auto_checked}> 自动刷新（每 5 秒）</label>
+    <button type="button" onclick="location.reload()">刷新</button>
+    <label><input type="checkbox" id="auto" {auto_checked}> 自动刷新 5s</label>
     <span class="dim">{live_hint}</span>"""
         if live
         else """
@@ -723,7 +918,11 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
         serious = counts_a.get(step_audit.CLAIMED_NO_EVIDENCE) or counts_a.get(step_audit.EXTRA)
         where = f'<code>{escape(row.get("current_step", "") or "-")}</code>'
         if row.get("pending_decision"):
-            where += f'<div class="note">{escape(row["pending_decision"])}</div>'
+            # A blocked reason is free text written by the agent and can run to
+            # several lines. Two lines plus a tooltip keeps the row scannable
+            # while the whole sentence stays available.
+            reason = escape(row["pending_decision"])
+            where += f'<div class="note clamp" title="{reason}">{reason}</div>'
         if blockers:
             where += (f'<div class="note{" bad" if serious else ""}">'
                       + " ｜ ".join(blockers) + "</div>")
@@ -754,10 +953,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>项目运行总表 · {escape(view['project'])}</title>
 <style>
-  :root {{ color-scheme: light dark; --bg:#fff; --fg:#1f2328; --line:#d1d9e0; --muted:#59636e; --card:#f6f8fa; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
-  }}
+  :root {{ color-scheme: dark; --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
   * {{ box-sizing: border-box; }}
   body {{ margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
          font:15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }}
@@ -778,7 +974,8 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .rid {{ white-space:nowrap; }}
   .bar {{ height:6px; background:var(--line); border-radius:3px; overflow:hidden; min-width:80px; margin-bottom:2px; }}
   .bar > i {{ display:block; height:100%; background:#1a7f37; }}
-  .badge {{ display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; color:#fff; background:var(--c,#6e7781); }}
+  .badge {{ display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; color:#fff;
+            background:var(--c,#6e7781); white-space:nowrap; }}
   .dim {{ color:var(--muted); }}
   .step {{ border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; }}
   .step.done {{ border-left:3px solid #1a7f37; }}
@@ -831,18 +1028,52 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   .psrow {{ display:flex; gap:10px; font-size:12.5px; margin-top:4px; }}
   .psrow span {{ color:var(--muted); flex:none; }}
   .problems ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
+  .silence {{ border:1px solid rgba(207,34,46,.6); border-radius:10px; padding:9px 12px; margin:0 0 14px;
+              background:rgba(207,34,46,.12); }}
+  .silence .shead {{ cursor:pointer; list-style:none; font-size:14px; font-weight:700; color:#cf222e; }}
+  .silence .shead::-webkit-details-marker {{ display:none; }}
+  .silence .shead span {{ float:right; font-size:12px; font-weight:400; color:var(--muted); }}
+  .silence .sbody {{ font-size:13.5px; margin-bottom:6px; }}
+  .silence .ev {{ font-size:12.5px; color:var(--muted); margin-bottom:6px; }}
+  .silence .sfix {{ font-size:13px; padding-top:8px; border-top:1px solid rgba(207,34,46,.35); }}
+  .offchain {{ border:1px solid rgba(191,135,0,.45); border-radius:8px; margin-bottom:14px;
+               background:rgba(191,135,0,.06); }}
+  .offchain > summary {{ cursor:pointer; padding:9px 14px; font-size:13px;
+                         font-weight:600; color:#bf8700; }}
+  .offchain .osbody {{ padding:0 14px; font-size:12.5px; margin-bottom:6px; }}
+  .offchain ol {{ margin:4px 0 0; padding-left:46px; font-size:12px; }}
+  .offchain li {{ margin-bottom:2px; }}
+  .offchain code {{ font-size:11.5px; }}
+  .offchain .osfix {{ font-size:12.5px; padding:9px 14px 12px; margin-top:8px;
+                      border-top:1px solid rgba(191,135,0,.35); }}
   .strip {{ border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:16px;
             background:var(--card); font-size:13.5px; }}
   .strip .sep {{ color:var(--muted); }}
   .strip b {{ font-weight:500; }}
   .strip b.ok {{ color:#1a7f37; }} .strip b.stale {{ color:#cf222e; }} .strip b.none {{ color:#bf8700; }}
   .strip .bad {{ color:#cf222e; }} .strip .warn {{ color:#bf8700; }}
+  .agentbox {{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px;
+               border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+               margin-bottom:16px; background:var(--card); }}
+  .agentbox .fact {{ min-width:0; }}
+  .agentbox .label {{ color:var(--muted); font-size:11.5px; }}
+  .agentbox .value {{ margin-top:2px; font-size:13.5px; font-weight:600;
+                      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .agentbox .value.bad {{ color:#cf222e; }} .agentbox .value.wait {{ color:#0969da; }}
+  .agentbox .value.warn {{ color:#bf8700; }} .agentbox .value.ok {{ color:#1a7f37; }}
+  .agentbox .wide {{ grid-column:span 2; }}
+  @media (max-width:760px) {{ .agentbox {{ grid-template-columns:repeat(2,minmax(0,1fr)); }}
+                              .agentbox .wide {{ grid-column:span 2; }} }}
   table td {{ vertical-align:top; }}
   .vp {{ font-weight:500; white-space:nowrap; }}
   .vp.ok {{ color:#1a7f37; }} .vp.bad {{ color:#cf222e; }}
   .vp.warn, .vp.wait {{ color:#bf8700; }} .vp.todo {{ color:var(--muted); }}
   .note {{ font-size:12px; color:var(--muted); margin-top:2px; }}
   .note.bad {{ color:#cf222e; }}
+  /* Free text the agent wrote can run to several lines; two lines plus a tooltip
+     keeps a row scannable without throwing the sentence away. */
+  .note.clamp {{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+                 overflow:hidden; max-width:520px; }}
   details.more {{ margin-top:10px; }}
   details.more summary {{ cursor:pointer; color:var(--muted); font-size:13px; }}
   footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
@@ -859,6 +1090,7 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
   </div>
 
   <div class="strip">{strip}</div>
+  {silence_banner}
   {stale}
 
   <table>
@@ -891,6 +1123,108 @@ def render_project_html(view: dict, *, live: bool = False) -> str:
 """
 
 
+def gate_flow_block(summary: dict) -> str:
+    """Render the user-facing G1-G6 path without duplicating audit tables."""
+    gate_purposes = {
+        "G1": "把确认剧本拆成可执行镜头与节拍",
+        "G2": "锁定空间、动作和镜头连续性",
+        "G3": "准备角色、场景与关键图像资产",
+        "G4": "确认故事本、首尾状态与关键画面",
+        "G5": "编译视频 Prompt，并完成生成前 QA",
+        "G6": "选择一个平台，提交并启动视频生成",
+    }
+    audit_rows = ((summary.get("audit") or {}).get("steps") or {}).get("rows") or []
+    check_rows, _ = gate_checks.classify(audit_rows)
+    audit_by_step = {row.get("step"): row for row in audit_rows if row.get("step")}
+    qa_rows = {row.get("step"): row for row in (summary.get("qa_passes") or {}).get("rows", [])
+               if row.get("step")}
+    step_rows = {row.get("step"): row for row in summary.get("steps", []) if row.get("step")}
+    gate_order = ("G1", "G2", "G3", "G4", "G5", "G6")
+    cards: list[str] = []
+
+    for gate in gate_order:
+        skills: list[str] = []
+        for step in step_registry.declared():
+            modes = next((row.get("modes") for row in audit_rows if row.get("step") == step.skill), None)
+            if gate in gate_map.gates_for(step.skill, modes):
+                skills.append(step.skill)
+
+        statuses: list[str] = []
+        labels: list[str] = []
+        for skill in skills:
+            item = step_rows.get(skill, {})
+            qa = qa_rows.get(skill, {})
+            audit = audit_by_step.get(skill, {})
+            state = qa.get("state", "")
+            outcome = item.get("outcome") or audit.get("outcome") or ""
+            if state == "QA_PASSED":
+                status, label = "ok", "已通过"
+            elif state in {"QA_FAILED", "QA_INVALID"} or outcome in {"FAILED", "BLOCKED", "PAUSED_EXCEPTION"}:
+                status, label = "bad", "有风险"
+            elif state == "QA_CONDITIONAL":
+                status, label = "wait", "待确认"
+            elif state == "AWAITING_QA" or outcome in {
+                    "SUBMITTED_FOR_QA", "SUBMITTED_IN_PROGRESS", "WAITING_APPROVAL"}:
+                status, label = "wait", "等待 QA"
+            elif audit.get("claimed") or item.get("started"):
+                status, label = "warn", "处理中"
+            else:
+                status, label = "todo", "未开始"
+            statuses.append(status)
+            labels.append(gate_map.skill_label(skill))
+
+        if "bad" in statuses:
+            card_status, card_label = "bad", "有风险"
+        elif statuses and all(s == "ok" for s in statuses):
+            card_status, card_label = "ok", "已通过"
+        elif "wait" in statuses:
+            card_status, card_label = "wait", "等待 QA"
+        elif "warn" in statuses:
+            card_status, card_label = "warn", "处理中"
+        else:
+            card_status, card_label = "todo", "未开始"
+
+        gate_checks_here = [row for row in check_rows if row["gate"] == gate]
+        active_checks = [row for row in gate_checks_here if row["latest"]]
+        blockers = [row for row in active_checks if row["status"] == "bad"]
+        if blockers:
+            card_status, card_label = "bad", "有阻断"
+        elif card_status == "ok" and any(row["kind"] == "required" and
+                                           row["status"] != "ok" for row in gate_checks_here):
+            card_status, card_label = "warn", "门禁待核验"
+
+        if gate == "G6" and labels:
+            labels = [f"{label}（三选一）" if gate_map.is_alternative(skill) else label
+                      for label, skill in zip(labels, skills)]
+        items = "、".join(labels) if labels else "协议未声明步骤"
+        check_items = "".join(
+            f'<li class="check-{row["status"]}"><span>{escape(row["name"])}'
+            f'{"<small>" + escape(row.get("purpose", "")) + (" · " + escape(row.get("decision", "")) if row.get("decision") else "") + "</small>" if row.get("purpose") else ""}'
+            f'{"<small>" + escape(row["latest"].get("reason", "")) + "</small>" if row["latest"] and row["latest"].get("reason") and row["status"] in {"bad", "warn"} else ""}'
+            f'</span>'
+            f'<b>{escape(row["label"])}</b></li>'
+            for row in gate_checks_here
+        )
+        check_summary = (
+            f'<details class="gatechecks" data-persist-key="checks-{gate}">'
+            f'<summary>查看关键检查 · {len(active_checks)} 项有记录'
+            f'{" · " + str(len(blockers)) + " 项阻断" if blockers else ""}</summary>'
+            f'<ul>{check_items}</ul></details>'
+        ) if gate_checks_here else ""
+        cards.append(
+            f'<section class="gatecard {card_status}" data-gate="{gate}">'
+            f'<div class="gatehead"><span class="gateid">{gate}</span>'
+            f'<span class="gatestatus">{card_label}</span></div>'
+            f'<div class="gatename">{escape(gate_map.GATE_NAMES.get(gate, gate))}</div>'
+            f'<div class="gatepurpose">{escape(gate_purposes[gate])}</div>'
+            f'{check_summary}'
+            f'<details class="gateitems" data-persist-key="gate-{gate}">'
+            f'<summary>查看本 Gate 步骤</summary>{escape(items)}</details>'
+            f'</section>'
+        )
+    return f'<section class="gateflow" aria-label="G1 到 G6 主流程">{"".join(cards)}</section>'
+
+
 def step_audit_block(summary: dict) -> str:
     """The reconciliation table: what was claimed against what can be proven.
 
@@ -911,7 +1245,8 @@ def step_audit_block(summary: dict) -> str:
              "NOT_CLAIMED": "未做", "EXTRA": "额外"}
 
     def badge(verdict: str) -> str:
-        cls = "ok" if verdict == step_audit.OK else "bad"
+        cls = ("ok" if verdict == step_audit.OK else
+               "dim" if verdict == step_audit.NOT_APPLICABLE else "bad")
         return (f'<span class="verdict {cls}">{escape(marks.get(verdict, verdict))}'
                 f'<span class="dim"> {escape(step_audit.VERDICT_LABELS.get(verdict, ""))}</span></span>')
 
@@ -931,7 +1266,7 @@ def step_audit_block(summary: dict) -> str:
             f'<div class="sid">{escape(step)}</div></td>'
             f"<td>{badge(row['verdict'])}</td>"
             f"<td>{'是' if row.get('claimed') else '否'}</td>"
-            f"<td class='dim'>{escape(row.get('evidence') or '-')}</td>"
+            f"<td class='dim'>{escape(_evidence_text(row.get('evidence')) or '-')}</td>"
             f"<td class='dim'>{escape((row.get('at') or '')[:19] or '-')}</td>"
             f"<td class='dim'>{escape(note)}</td></tr>"
         )
@@ -985,9 +1320,10 @@ def qa_gate_block(summary: dict) -> str:
     rows_data = qa.get("rows") or []
     if not rows_data:
         return ""
-    mark = {"QA_PASSED": "通过", "QA_FAILED": "不通过",
-            "AWAITING_QA": "等待 QA", "NOT_SUBMITTED": "未提交"}
-    cls = {"QA_PASSED": "ok", "QA_FAILED": "bad", "AWAITING_QA": "warn", "NOT_SUBMITTED": ""}
+    mark = {"QA_PASSED": "通过", "QA_FAILED": "不通过", "QA_INVALID": "路由/记录无效",
+            "QA_CONDITIONAL": "待确认", "AWAITING_QA": "等待 QA", "NOT_SUBMITTED": "未提交"}
+    cls = {"QA_PASSED": "ok", "QA_FAILED": "bad", "QA_INVALID": "bad",
+           "QA_CONDITIONAL": "warn", "AWAITING_QA": "warn", "NOT_SUBMITTED": ""}
     rows = []
     for row in rows_data:
         state = row.get("state", "")
@@ -999,21 +1335,23 @@ def qa_gate_block(summary: dict) -> str:
             f'<td><span class="verdict {cls.get(state, "")}">{escape(mark.get(state, state))}</span></td>'
             f"<td><code>{escape(row.get('producer_actor') or '-')}</code></td>"
             f"<td><code>{escape(row.get('qa_actor') or '-')}</code></td>"
+            f"<td><code>{escape(row.get('version') or '-')}</code> / {escape(row.get('qa_level') or '-')}</td>"
+            f"<td>{(escape(str(row.get('elapsed_seconds'))) + ' 秒') if row.get('elapsed_seconds') is not None else '-'}</td>"
             f"<td class='dim'>{escape((row.get('qa_at') or row.get('at') or '')[:19] or '-')}</td></tr>"
         )
     return f"""
   <section class="pstate">
     <h2>QA 写入权与独立性</h2>
-    <div class="sub">生产模型<strong>只能提交</strong>（<code>SUBMITTED_FOR_QA</code>），
-      <strong>无权写「通过」</strong>——写出 COMPLETED 会被拒绝（<code>WRITE_AUTHORITY_VIOLATION</code>）。
-      通过只能由<strong>另一个模型</strong>经 <code>tools/qa_verdict.py</code> 写入。
-      <strong>看板的「通过」只认后面这一种。</strong></div>
+    <div class="sub">生产模型<strong>不能写轨迹或自签通过</strong>；每条提交与 QA 结论都由按执行模型路由的<strong>独立 GPT QA 模型本人</strong>写入。
+      看板只把模型路由、写入者、版本/等级和耗时记录齐全的 PASS 显示为通过；参数字段不等同于会话身份认证。</div>
     <div class="pprogress">已提交 <b>{qa.get('submitted', 0)}</b> ·
       QA 通过 <b>{qa.get('passed', 0)}</b> ·
       等待 QA <b>{qa.get('awaiting', 0)}</b> ·
-      QA 不通过 <b>{qa.get('failed', 0)}</b></div>
+      QA 不通过 <b>{qa.get('failed', 0)}</b> ·
+      待确认 <b>{qa.get('conditional', 0)}</b> ·
+      记录无效 <b>{qa.get('invalid', 0)}</b></div>
     <table>
-      <thead><tr><th>Gate</th><th>步骤</th><th>QA 状态</th><th>生产模型</th><th>QA 模型</th><th>时间</th></tr></thead>
+      <thead><tr><th>Gate</th><th>步骤</th><th>QA 状态</th><th>生产模型</th><th>QA/写入模型</th><th>版本/等级</th><th>耗时</th><th>时间</th></tr></thead>
       <tbody>{''.join(rows)}</tbody>
     </table>
   </section>"""
@@ -1030,7 +1368,7 @@ _FILTER_SCRIPT = """
       ok: function (v) { return v === 'ok'; },
       bad: function (v) { return v === 'bad'; }
     };
-    var rows = [].slice.call(document.querySelectorAll('#steps tbody tr.srow'));
+    var rows = [].slice.call(document.querySelectorAll('#steps .srow'));
     var empty = document.getElementById('empty');
     function applyFilter(name) {
       var test = FILTERS[name] || FILTERS.all;
@@ -1068,58 +1406,77 @@ def _verdict_pill(step_row: dict, qa_row: dict) -> tuple[str, str]:
         return "未读协议", "warn"
     if verdict == step_audit.EXTRA:
         return "链外", "warn"
-    if step_row.get("qa_failed") or qa_row.get("state") == "QA_FAILED":
+    if step_row.get("qa_failed") or qa_row.get("state") in {"QA_FAILED", "QA_INVALID"}:
+        if qa_row.get("state") == "QA_INVALID":
+            return "QA记录无效", "bad"
         return "QA 不通过", "bad"
+    if qa_row.get("state") == "QA_CONDITIONAL":
+        return "待确认", "warn"
     if step_row.get("qa_passed"):
         return "通过", "ok"
     return "等待 QA", "wait"
 
 
 def _step_row_html(row: dict) -> str:
-    """One step, Gate first.
+    """One step, one line, with the rest folded away.
 
-    The Gate is what the protocol calls this step, so it leads. The Skill id is
-    still there but demoted to a tooltip and a footnote line - a person reading
-    the board wants "G3 资产锁定 / 资产映射与最小必要路线", not
-    `short-drama-asset-router`.
+    The previous version printed everything it knew into every row: the Gate, the
+    Gate's name, the Chinese Skill name, the Skill slug, the id, the producer and
+    QA models, the missing reads, the evidence path and a full timestamp. Twelve
+    such rows is roughly eighty lines of grey text, and the one thing a reader
+    came for - is this step done or not - was the hardest thing to find.
+
+    So the row is a `<summary>` of four facts and a `<details>` body holding the
+    evidence. Nothing is lost, it is only ordered: the answer first, the proof on
+    request. `<details>` costs no JavaScript and works with the page's filtering.
     """
-    gate_cell = (
-        f'<span class="gate">{escape(row["gate_letters"])}</span>'
-        f'<div class="gname">{escape(row["gate_name"])}</div>'
-        if row["gate_letters"] else '<span class="dim">链外</span>'
+    # The letter leads because it is what the protocol's own documents use. The
+    # Gate's Chinese name rides on the tooltip: putting `G1 秒表脚本` next to
+    # `脚本拆解为镜头与生产单元` on one line repeats the same idea twice and pushes
+    # the row wider than it needs to be.
+    gate_title = f'{row["gate_letters"]} {row["gate_name"]}'.strip() or "不在协议链内"
+    gate = (
+        f'<span class="g" title="{escape(gate_title)}">{escape(row["gate_letters"])}</span>'
+        if row["gate_letters"]
+        else f'<span class="g off" title="{escape(gate_title)}">链外</span>'
     )
-    skill_cell = (
-        f'<div class="sname">{escape(row["skill_name"])}'
-        + ('<span class="alt" title="三个提交适配是三选一，本次只会用一个">三选一</span>'
-           if row["alternative"] else "")
-        + "</div>"
-        f'<div class="sid" title="{escape(row["step"])}">{escape(row["step"])}</div>'
+    # The Chinese name is the label a person recognises. The slug and the id are
+    # for copying into a command, so they ride along at lower contrast.
+    name = f'<span class="nm">{escape(row["skill_name"])}</span>'
+    if row["alternative"]:
+        name += '<span class="tag" title="三个提交适配是三选一，本次只会用一个">三选一</span>'
+    if row.get("step_id"):
+        name += (f'<code class="sid" title="向 Agent 交代这一步时用这个稳定 ID">'
+                 f'{escape(row["step_id"])}</code>')
+
+    detail_rows: list[tuple[str, str]] = [("Skill", f'<code>{escape(row["step"])}</code>')]
+    # Always present, even when both sides are blank: "nobody recorded who ran
+    # this" is itself the finding, and hiding the row hides that.
+    detail_rows.append((
+        "生产 → QA",
+        f'{escape(row["producer"] or "未记录")} <span class="ar">→</span> '
+        f'{escape(row["qa_actor"] or "未记录")}',
+    ))
+    if row["note"]:
+        detail_rows.append(("备注", escape(row["note"])))
+    if row["evidence"]:
+        detail_rows.append(("证据", f'<code>{escape(_evidence_text(row["evidence"]))}</code>'))
+    if row["at"]:
+        detail_rows.append(("时间", f'<code>{escape(row["at"][:19])}</code>'))
+
+    body = "".join(
+        f'<div class="dr"><span class="dk">{escape(k)}</span>'
+        f'<span class="dv">{v}</span></div>'
+        for k, v in detail_rows
     )
-    who = ""
-    if row["producer"] or row["qa_actor"]:
-        who = (f'<span class="who">{escape(row["producer"] or "—")}</span>'
-               f'<span class="arrow">→</span>'
-               f'<span class="who">{escape(row["qa_actor"] or "—")}</span>')
-    else:
-        who = '<span class="dim">—</span>'
-    detail = ""
-    if row["note"] or row["evidence"]:
-        detail = (
-            '<div class="detail">'
-            + (f'<div class="note">{escape(row["note"])}</div>' if row["note"] else "")
-            + (f'<div class="ev"><span class="evk">证据</span>'
-               f'<code>{escape(row["evidence"])}</code></div>' if row["evidence"] else "")
-            + (f'<div class="ev"><span class="evk">时间</span>'
-               f'<code>{escape(row["at"][:19])}</code></div>' if row["at"] else "")
-            + "</div>"
-        )
     return (
-        f'<tr class="srow {row["cls"]}" data-verdict="{escape(row["cls"])}">'
-        f'<td class="cgate">{gate_cell}</td>'
-        f'<td class="cskill">{skill_cell}{detail}</td>'
-        f'<td class="cwho">{who}</td>'
-        f'<td class="cvp"><span class="vp {row["cls"]}">{escape(row["label"])}</span></td>'
-        "</tr>"
+        f'<details class="srow {row["cls"]}" data-verdict="{escape(row["cls"])}"'
+        f' data-gate="{escape(row["gate_letters"])}">'
+        f'<summary>{gate}{name}'
+        f'<span class="vp {row["cls"]}">{escape(row["label"])}</span>'
+        f"</summary>"
+        f'<div class="sbody">{body}</div>'
+        "</details>"
     )
 
 
@@ -1137,9 +1494,23 @@ def _unified_step_rows(summary: dict) -> list[dict]:
     """
     audit_rows = summary.get("audit", {}).get("steps", {}).get("rows") or []
     qa_rows = {row["step"]: row for row in (summary.get("qa_passes") or {}).get("rows") or []}
+    contract = summary.get("execution_contract") or {}
+    selected_provider = contract.get("selected_provider") or ""
+    adapter_steps = [step for step in step_registry.declared()
+                     if step_registry.repo_root() and step_registry.by_skill(step.skill)
+                     and gate_map.alternative_group(step.skill) == "submit-adapter"]
+    selected_adapter = next((step.skill for step in adapter_steps
+                             if selected_provider and any(
+                                 item.get("skill") == step.skill and item.get("provider") == selected_provider
+                                 and item.get("applicable")
+                                 for item in contract.get("steps", []))), "")
+    if not selected_adapter and adapter_steps:
+        selected_adapter = adapter_steps[0].skill
     out = []
     for row in audit_rows:
         step = row["step"]
+        if gate_map.alternative_group(step) == "submit-adapter" and step != selected_adapter:
+            continue
         qa_row = qa_rows.get(step, {})
         label, cls = _verdict_pill(row, qa_row)
         note = ""
@@ -1148,20 +1519,60 @@ def _unified_step_rows(summary: dict) -> list[dict]:
         elif row["verdict"] == step_audit.CLAIMED_NO_EVIDENCE:
             note = "证据文件不存在"
         elif row["verdict"] == step_audit.EXTRA:
-            note = "协议声明的链里没有这一步"
+            state = OUTCOME_LABELS.get(row.get("outcome") or "", row.get("outcome") or "")
+            note = f"协议链外 · 最新结果 {state}" if state else "协议声明的链里没有这一步"
         elif row["verdict"] == step_audit.NOT_CLAIMED:
-            note = "协议要求这一步，轨迹里没有它"
+            # Say what to run, not just what is missing. The reader of this board
+            # is the person who then has to tell the agent what to do next, so
+            # hand them the exact flag rather than making them look it up.
+            entry = step_registry.by_skill(step)
+            if entry:
+                gate = entry.gate[0] if entry.gate else ""
+                note = (f"协议要求这一步，轨迹里没有它 —— 让 Agent 跑 "
+                        f"--step {entry.id} --gate {gate}")
+            else:
+                note = "协议要求这一步，轨迹里没有它"
+        if row.get("step_matched_fuzzy") and not note:
+            # A corrected name is informational, so it only shows when there is no
+            # real problem to report. Saying it at all keeps the trace honest: the
+            # step is right, but it was not typed correctly.
+            note = (f"步骤名已自动纠正：写的「{row['step_as_written']}」→ "
+                    f"{row.get('step_id') or step}（相似度 {row['step_matched_fuzzy']}）")
         gate_letters = gate_map.gates_for(step, row.get("modes"))
+        entry = step_registry.by_skill(step)
         out.append({
             "step": step,
+            "step_id": (entry.display_id or entry.id) if entry else "",
+            "step_key": entry.id if entry else "",
             "gate_letters": gate_map.gate_badge(step, row.get("modes")),
             "gate": gate_map.annotated_gate(step, row.get("modes")) or row.get("gate", ""),
             "gate_name": gate_map.GATE_NAMES.get(gate_letters[0], "") if gate_letters else "",
-            "skill_name": gate_map.skill_label(step),
+            "skill_name": "平台适配（按本 RUN 选择一个）"
+            if gate_map.alternative_group(step) == "submit-adapter" else gate_map.skill_label(step),
             "alternative": gate_map.is_alternative(step),
             "producer": row.get("actor", ""), "qa_actor": qa_row.get("qa_actor", ""),
             "label": label, "cls": cls, "note": note,
+            "offchain": row["verdict"] == step_audit.EXTRA,
             "evidence": row.get("evidence", ""), "at": row.get("at", ""),
+        })
+    # Old S10-S14 meanings are shown with explicit labels and never joined to
+    # current G6 steps. The RUN registry version controls this compatibility view.
+    for event in summary.get("legacy_step_events", []):
+        old_id = event.get("step_id") or event.get("step")
+        old_name = {"S10": "旧 RunningHub 适配", "S11": "旧小云雀适配",
+                    "S12": "旧 LibTV 适配", "S13": "旧任务查询/下载",
+                    "S14": "旧成片 QA"}.get(old_id, "旧步骤")
+        outcome = event.get("outcome", "")
+        out.append({
+            "step": event.get("step", old_name), "step_id": f"旧 {old_id}",
+            "step_key": f"legacy-{old_id}", "gate_letters": "旧 G7",
+            "gate": old_name, "gate_name": old_name, "skill_name": old_name,
+            "alternative": False, "producer": event.get("actor", ""), "qa_actor": "",
+            "label": "旧版需复核" if old_id == "S14"
+                     else OUTCOME_LABELS.get(outcome, outcome or "已记录"),
+            "cls": "warn" if old_id in {"S13", "S14"} else "bad",
+            "note": "旧 RUN 历史记录；仅按旧编号含义展示，不属于当前生产步骤",
+            "offchain": False, "evidence": event.get("evidence", ""), "at": event.get("at", ""),
         })
     return out
 
@@ -1176,6 +1587,9 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     """
     siblings = siblings or []
     meta = project_meta or {}
+    service = meta.get("service") or {}
+    last = summary.get("last_event") or {}
+    project_state = meta.get("project_state") or {}
     segment_title = summary.get("segment_title") or summary.get("segment") or summary["run_id"]
 
     options = "".join(
@@ -1188,20 +1602,80 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     toolbar = (
         f"""
   <div class="toolbar">
-    <label>查看段：
+    <label>查看段
       <select onchange="location.href='/?run='+encodeURIComponent(this.value)">{options}</select>
     </label>
-    <button type="button" onclick="location.reload()">🔄 立即刷新</button>
-    <label><input type="checkbox" id="auto" checked> 自动刷新（每 5 秒）</label>
-    <span class="dim">刷新只重新读取磁盘上的轨迹，<strong>不会重启服务、不会清空进度</strong></span>
-    <span class="dim">本次渲染：{escape(summary['generated_at'])}</span>
+    <button type="button" id="refreshButton" title="重新读取轨迹数据，不会重启服务">刷新</button>
+    <label class="autof"><input type="checkbox" id="auto" checked> 自动刷新 5s</label>
+    <span class="refresh-state" id="connectionHint" aria-live="polite">● 实时连接</span>
+    <span class="dim right">渲染于 {escape(summary['generated_at'][:19])}</span>
   </div>
   <script>
     var box = document.getElementById('auto');
+    var refreshButton = document.getElementById('refreshButton');
     var timer = null;
+    var running = false;
+    var runId = {json.dumps(summary.get('run_id', ''))};
+    var projectPath = {json.dumps(str(service.get('project', '')))};
+    var endpoint = '/run/' + encodeURIComponent(runId) + '/data';
+    var initialSignature = {json.dumps(refresh_fingerprint(summary, project_state))};
+    var hintNode = document.getElementById('connectionHint');
+    function stamp() {{ return new Date().toLocaleString('zh-CN', {{hour12:false}}); }}
+    function showState(text, cls) {{
+      var stateNode = document.getElementById('refreshState');
+      if (stateNode) {{ stateNode.textContent = text; stateNode.className = 'value ' + (cls || ''); }}
+      if (hintNode) {{ hintNode.textContent = cls === 'error' ? '● 连接异常' : '● 实时连接'; hintNode.className = 'refresh-state ' + (cls || ''); }}
+    }}
+    async function refreshBoard(isAuto) {{
+      if (running) return;
+      running = true;
+      var serviceNode = document.getElementById('serviceState');
+      var readNode = document.getElementById('lastRead');
+      if (refreshButton) refreshButton.disabled = true;
+      try {{
+        const response = await fetch(endpoint + '?_=' + Date.now(), {{cache:'no-store'}});
+        if (!response.ok) {{
+          const httpError = new Error('看板服务返回 HTTP ' + response.status);
+          httpError.kind = 'service';
+          throw httpError;
+        }}
+        const data = await response.json();
+        if (data.run_id !== runId) {{ const runError = new Error('RUN 不匹配'); runError.kind = 'run'; throw runError; }}
+        if (projectPath && !data.project_path) {{ const versionError = new Error('服务代码较旧，请通过桌面按钮重开一次'); versionError.kind = 'service'; throw versionError; }}
+        if (projectPath && data.project_path.toLowerCase() !== projectPath.toLowerCase()) {{ const projectError = new Error('项目路径不匹配'); projectError.kind = 'run'; throw projectError; }}
+        if (serviceNode) serviceNode.textContent = '● 已连接 · PID ' + (data.service ? data.service.pid : '-');
+        if (readNode) readNode.textContent = stamp();
+        const latest = data.last_event || {{}};
+        const signature = data.refresh_fingerprint || data.events_fingerprint || (String(data.event_count || 0) + '|' + (latest.at || '') + '|' + (latest.outcome || ''));
+        if (signature !== initialSignature) {{
+          const eventChanged = Number(data.event_count || 0) !== Number({summary.get("event_count", 0)});
+          sessionStorage.setItem('board-refresh-result', eventChanged ? '发现新事件，正在更新页面' : '发现 RUN 状态变化，正在更新页面');
+          sessionStorage.setItem('board-scroll-y', String(window.scrollY));
+          location.reload();
+          return;
+        }}
+        showState('读取成功 · 数据未变化' + (latest.at ? ' · 最近上报 ' + latest.at.slice(0,19).replace('T',' ') : ''), 'same');
+      }} catch (error) {{
+        const kind = error.kind || 'connection';
+        if (serviceNode) serviceNode.textContent = kind === 'run' ? '● RUN 校验失败' : kind === 'service' ? '● 服务错误' : '● 连接失败';
+        const prefix = kind === 'run' ? 'RUN 错误' : kind === 'service' ? '看板服务错误' : '连接错误';
+        showState(prefix + '：' + error.message + ' · 当前页面保留', 'error');
+      }} finally {{
+        running = false;
+        if (refreshButton) refreshButton.disabled = false;
+        if (!isAuto) applyAuto();
+      }}
+    }}
+    if (refreshButton) refreshButton.addEventListener('click', function () {{ refreshBoard(false); }});
+    document.addEventListener('DOMContentLoaded', function () {{
+      const refreshNotice = sessionStorage.getItem('board-refresh-result');
+      if (refreshNotice) {{ showState(refreshNotice + ' · ' + stamp(), 'new'); sessionStorage.removeItem('board-refresh-result'); }}
+      const savedScroll = sessionStorage.getItem('board-scroll-y');
+      if (savedScroll) {{ sessionStorage.removeItem('board-scroll-y'); window.scrollTo(0, Number(savedScroll)); }}
+    }});
     function applyAuto() {{
       if (timer) {{ clearTimeout(timer); timer = null; }}
-      if (box && box.checked) {{ timer = setTimeout(function () {{ location.reload(); }}, 5000); }}
+      if (box && box.checked) {{ timer = setTimeout(function () {{ refreshBoard(true); applyAuto(); }}, 5000); }}
     }}
     if (box) {{ box.addEventListener('change', applyAuto); applyAuto(); }}
 {_FILTER_SCRIPT}
@@ -1210,12 +1684,8 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         if live
         else f"""
   <div class="toolbar">
-    <span>这是<b>静态快照</b>：切换段落与刷新按钮不会生效（静态文件没有后端，点了会报 AccessDenied）。
-      表格下方的筛选按钮仍然可用。</span>
-  </div>
-  <div class="toolbar">
-    <span class="dim">要看实时进度并在段之间来回切换，双击 <code>启动-运行总表.cmd</code>，
-      或运行：<code>python tools\\render_run_report.py &lt;项目目录&gt; --serve</code></span>
+    <span>这是<b>静态快照</b>，不能刷新或切段。要看实时进度：
+      <code>tools\\一键打开看板.cmd</code></span>
   </div>
   <script>
 {_FILTER_SCRIPT}
@@ -1223,6 +1693,112 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 """
     )
 
+    status_text = OUTCOME_LABELS.get(summary.get("status", "")) or summary.get("status", "") or "未开始"
+    status_class = {"已阻断": "bad", "等待 QA": "wait", "已完成": "ok"}.get(status_text, "")
+    last_step = last.get("step") or "暂无事件"
+    last_outcome = OUTCOME_LABELS.get(last.get("outcome", "")) or last.get("outcome", "") or "暂无结果"
+    current_step = summary.get("current_step", "")
+    contract_view = summary.get("execution_contract") or {}
+    contract_step_id = contract_view.get("current_step_id", "")
+    contract_entry = step_registry.by_id(contract_step_id) if contract_step_id else None
+    if contract_entry:
+        current_step = contract_entry.skill
+    last_is_current = last.get("step") == current_step
+    current_modes = [last.get("mode", "")] if last_is_current else []
+    current_modes = [mode for mode in current_modes if mode]
+    current_entry = (contract_entry if contract_entry else
+                     step_registry.by_id(last.get("step_id", "")) if last_is_current else
+                     step_registry.by_skill(current_step))
+    current_gate = ((last.get("gate") if last_is_current else "") or
+                    gate_map.gate_badge(current_step, current_modes) or "G1–G6")
+    if current_gate in {"G5", "G7"} and not current_modes:
+        if current_entry and current_entry.id == "S09":
+            current_gate = current_entry.gate[0] if current_entry.id == "S09" else current_entry.gate[-1]
+    a1_state = project_state.get("a1") or {}
+    active_work_files = meta.get("recent_work_files") or []
+    active_prompt = (project_state.get("active_prompt") or
+                     (project_state.get("a2_1_current_assets") or {}).get("prompt") or
+                     project_state.get("current_prompt"))
+    version_hint = (Path(active_prompt).name if active_prompt else "")
+    if not version_hint:
+        version_hint = (active_work_files[0].get("name") if active_work_files else "")
+    if not version_hint:
+        version_hint = (Path(a1_state.get("authority_script", "")).name
+                        or a1_state.get("main_unit") or project_state.get("stage") or "未登记")
+    next_action = (contract_view.get("next_action") or project_state.get("next_step")
+                   or summary.get("pending_decision") or "等待 Agent 下一条上报")
+    next_action = " ".join(str(next_action).split())
+    if len(next_action) > 82:
+        next_action = next_action[:79] + "…"
+    generation_allowed = (project_state.get("authorization") or {}).get("generation_allowed")
+    auth_badge = ("<span class='auth-lock'>🔒 生成未授权</span>"
+                  if generation_allowed is False else "")
+    current_label = (current_entry.name_zh if current_entry else
+                     gate_map.skill_label(summary.get("current_step", "")) or "等待 Agent 上报")
+    if current_entry and len([entry for entry in step_registry.declared()
+                              if entry.skill == current_entry.skill]) > 1:
+        current_label = ("生成前" if current_gate == "G5" else "成片") + current_entry.name_zh
+    activity_rows = []
+    for event in (summary.get("recent_events") or [])[:3]:
+        outcome = event.get("outcome", "")
+        label = OUTCOME_LABELS.get(outcome, outcome or "已记录")
+        tone = ("bad" if outcome in {"BLOCKED", "FAILED", "PAUSED_EXCEPTION"} else
+                "ok" if outcome in {"QA_PASSED", "INDEPENDENT_QA_PASSED"} and
+                event.get("role") in {"qa", "independent_qa", "independent-qa"} else
+                "wait" if outcome in {"SUBMITTED_FOR_QA", "SUBMITTED_IN_PROGRESS"} else "warn")
+        modes = [event.get("mode", "")] if event.get("mode") else None
+        event_gate = event.get("gate") or gate_map.gate_badge(event.get("step", ""), modes)
+        event_title = f'{event_gate} · {event.get("label") or event.get("step")}' if event_gate else (event.get("label") or event.get("step"))
+        activity_rows.append(
+            f'<div class="activity"><span class="activity-time">{escape((event.get("at") or "")[:19])}</span>'
+            f'<span><span class="activity-name">{escape(event_title)}</span>'
+            f'<span class="activity-meta"> · {escape(event.get("actor") or "模型未记录")}</span></span>'
+            f'<span class="activity-state {tone}">{escape(label)}</span></div>'
+        )
+    recent_html = (
+        '<section class="recent"><h2>最近活动 <span class="activity-meta">最新 3 条</span></h2>'
+        + "".join(activity_rows) +
+        '<details class="tech-details"><summary>技术详情</summary>'
+        f'<div>项目：<code>{escape(str(service.get("project") or ""))}</code> · '
+        f'RUN：<code>{escape(summary.get("run_id", ""))}</code> · '
+        f'服务 PID：{escape(str(service.get("pid", "-")))} · '
+        f'代码：<code>{escape(str(service.get("code", "-")))}</code> · '
+        f'启动于：<code>{escape(str(service.get("started_at", "-")))}</code></div>'
+        f'<div>生产版本：<code>{escape(version_hint)}</code> · '
+        f'轨迹记录执行者：<code>{escape(last.get("actor") or "未记录")}</code> · '
+        f'轨迹声明写入者：<code>{escape(last.get("writer_model") or "未记录")}</code></div>'
+        f'<div>执行合同：<code>{escape(contract_view.get("task_id") or "未登记")}</code> · '
+        f'合同版本：<code>{escape(contract_view.get("version") or "未登记")}</code> · '
+        f'当前责任方：<code>{escape(contract_view.get("current_owner") or "未登记")}</code> · '
+        f'QA 路由声明：<code>{escape(contract_view.get("qa_model") or "未登记")}</code> '
+        f'（身份{escape(contract_view.get("model_identity") or "未认证")}）</div>'
+        '</details></section>'
+    ) if activity_rows else '<section class="recent"><h2>最近活动</h2><div class="activity-meta">暂无 Agent 事件</div></section>'
+    icon = {"bad": "⛔", "wait": "◷", "warn": "⚠", "ok": "✓"}.get(status_class, "●")
+    hero_html = (
+        f'<section class="hero-state {status_class or "warn"}"><span class="hero-icon">{icon}</span>'
+        f'<div><div class="activity-meta">当前卡点 · {escape(current_gate)}</div>'
+        f'<div class="hero-title">{escape(status_text)}{auth_badge}</div></div>'
+        f'<div class="hero-next"><b>下一步</b> {escape(next_action)}</div></section>'
+    )
+    work_file_html = ""
+    if active_work_files:
+        work_file_html = (
+            '<div class="fact wide"><div class="label">最近触碰的工作文件（只读）</div><div class="value">'
+            + " · ".join(escape(item.get("name", "")) for item in active_work_files[:3])
+            + '</div><div class="subvalue">文件变化只说明生产窗口在工作，不代表提交、QA 通过或生成成功。</div></div>'
+        )
+    agent_box = f'''
+  <section class="agentbox {status_class}" aria-label="当前 Agent 运行状态">
+    <div class="fact"><div class="label">当前流程</div><div class="value">{escape(current_gate)} · {escape(current_label)}</div></div>
+    <div class="fact"><div class="label">生产版本</div><div class="value" title="{escape(version_hint)}">{escape(version_hint)}</div></div>
+    <div class="fact"><div class="label">最后 Agent 上报</div><div class="value">{escape((last.get("at") or "未记录")[:19])}</div><div class="subvalue">轨迹执行者：{escape(last.get("actor") or "未记录")}</div></div>
+    <div class="fact"><div class="label">服务</div><div class="value" id="serviceState">● 本机看板已连接</div></div>
+    <div class="fact"><div class="label">最后读取</div><div class="value" id="lastRead">{escape(summary.get("generated_at", "")[:19])}</div></div>
+    <div class="fact wide"><div class="label">刷新反馈</div><div class="value" id="refreshState" aria-live="polite">读取完成 · 共 {summary.get("event_count", 0)} 条事件</div></div>
+    {work_file_html}
+  </section>'''
+    gate_flow = gate_flow_block(summary)
     rows = _steps_html(summary)
     compliance = summary["compliance"]
     problems = "".join(f"<li>{escape(e)}</li>" for e in compliance.get("errors", []))
@@ -1237,8 +1813,10 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         for s in summary["pending"]
     )
     pending_block = f'<div class="pending"><h2>尚未执行（{len(summary["pending"])}）</h2><ul>{pending}</ul></div>' if summary["pending"] else ""
+    decision_short = "当前版本等待用户裁定 / 独立 QA" if "QA" in summary.get("pending_decision", "") else "存在待确认事项"
     halt = (
-        f'<div class="halt"><strong>等待决定：</strong>{escape(summary["pending_decision"])}</div>'
+        f'<details class="halt"><summary>待用户决定 · {escape(decision_short)}</summary>'
+        f'<div>{escape(summary["pending_decision"])}</div></details>'
         if summary.get("pending_decision")
         else ""
     )
@@ -1255,13 +1833,19 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
         100 * summary["progress"]["completed"] / summary["progress"]["total"]
     )
     unified = _unified_step_rows(summary)
-    declared_total = (summary.get("audit", {}).get("steps", {}) or {}).get("declared_total", 0)
+    declared_total = len(step_registry.declared())
     offchain = [r["step"] for r in unified if r["label"] == "链外"]
     offchain_total = len(offchain)
+    _, handled_activity = gate_checks.classify(
+        ((summary.get("audit") or {}).get("steps") or {}).get("rows") or []
+    )
+    marker_names = {row.skill for row in step_registry.load() if row.marker}
+    unknown_activity = set(offchain) - handled_activity - marker_names
     total_rows = len(unified)
     passes = summary.get("qa_passes") or {}
     hb = meta.get("reporting") or {}
     hb_level = escape(hb.get("level") or "")
+    silence_banner = silence_alarm.banner_html(meta.get("silence_alarm") or {})
     strip_bits = [
         f'已提交 <b>{passes.get("submitted", 0)}</b>',
         f'QA 通过 <b class="{"ok" if passes.get("passed") else ""}">{passes.get("passed", 0)}</b>',
@@ -1269,19 +1853,74 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
     ]
     if passes.get("failed"):
         strip_bits.append(f'<span class="bad">QA 不通过 <b>{passes["failed"]}</b></span>')
+    timing = summary.get("timing_seconds_by_phase") or {}
+    if timing:
+        strip_bits.append("阶段耗时 " + " / ".join(f"{key}:{seconds}s" for key, seconds in sorted(timing.items())))
+    if summary.get("duplicate_qa_fingerprint_count"):
+        strip_bits.append(f'<span class="warn">同哈希重复 QA <b>{summary["duplicate_qa_fingerprint_count"]}</b></span>')
     if offchain_total:
-        strip_bits.append(f'<span class="warn">链外步骤 <b>{offchain_total}</b></span>')
+        strip_bits.append(f'<span class="warn">辅助审计 <b>{offchain_total}</b>'
+                          f'{" · 待归类 " + str(len(unknown_activity)) if unknown_activity else ""}</span>')
     strip_bits.append(f'最后回传 <b class="{hb_level}">{escape(hb.get("label") or "从未回传")}</b>')
     strip = ' <span class="sep">·</span> '.join(strip_bits)
 
-    rows_html = "".join(_step_row_html(r) for r in unified)
-    offchain_note = (
-        '<div class="quiet">链外步骤（协议未声明，已计入进度，需要确认是否替换了协议步骤）：'
-        + "、".join(f"<code>{escape(s)}</code>" for s in offchain) + "</div>"
-        if offchain else ""
-    )
+    # The main table is the protocol's own steps. Off-chain activity is real and
+    # must stay reachable, but letting it sit in the same table buried the twelve
+    # rows the reader actually came for - eighteen extra rows pushed G1-G6 off the
+    # first screen. It moves into a fold that is closed by default and says how
+    # many rows are inside.
+    chain_rows = [r for r in unified if not r.get("offchain")]
+    extra_rows = [r for r in unified if r.get("offchain")]
+    rows_html = "".join(_step_row_html(r) for r in chain_rows)
+
+    # Off-chain activity gets one compact audit fold. It must not look like a
+    # seventh protocol lane: group it by the registry's G3/G5/G6 check rule and
+    # hide raw legacy names one level deeper.
+    extra_html = ""
+    if extra_rows:
+        activity_to_check = {}
+        for definition in gate_checks.definitions():
+            for activity in definition.get("activity_names", []) or []:
+                activity_to_check[activity] = definition
+        groups = {}
+        for row in extra_rows:
+            definition = activity_to_check.get(row["step"])
+            if definition:
+                key = definition.get("id", "")
+                title = (f'{definition.get("gate", "")} · '
+                         f'{definition.get("name_zh", "")}')
+                purpose = definition.get("purpose_zh", "")
+            else:
+                key, title, purpose = "unknown", "待归类活动", "尚未建立唯一的 Gate 检查定义。"
+            groups.setdefault(key, {"title": title, "purpose": purpose, "rows": []})["rows"].append(row)
+        group_html = []
+        for group in groups.values():
+            raw = "".join(_step_row_html(row) for row in group["rows"])
+            group_html.append(
+                f'<details class="offgroup"><summary>{escape(group["title"])} · '
+                f'{len(group["rows"])} 条</summary>'
+                f'<div class="osbody">{escape(group["purpose"])}；这些记录不增加 G1–G6 正式进度。</div>'
+                f'<div class="rows">{raw}</div></details>'
+            )
+        extra_html = (
+            f'<details class="offchain">'
+            f'<summary>辅助审计记录 {len(extra_rows)} 条 · '
+            f'已归类 {len(set(offchain) & handled_activity)} · '
+            f'标记 {len(set(offchain) & marker_names)} · '
+            f'待归类 {len(unknown_activity)}</summary>'
+            f'<div class="osbody">这些是 G3/G5/G6 的辅助检查、返工或异常记录，'
+            f'不是新的协议步骤。正式流程只看上方 G1–G6；原始名称仅在下方展开供审计。</div>'
+            + "".join(group_html) +
+            f'<div class="osfix">正式生产步骤使用注册表中的稳定 ID；'
+            f'诊断、返工和平台子动作使用 <code>--off-protocol</code> 留痕。'
+            f'子动作的完成不能替代正式步骤和独立 QA。完整清单见 '
+            f'<code>看板上报提示词.md</code>。</div></details>'
+        )
+
     status_cls = {"SUBMITTED_FOR_QA": "wait", "BLOCKED": "bad", "FAILED": "bad",
                   "COMPLETED": "ok", "WAITING_APPROVAL": "warn"}.get(summary["status"], "")
+    # A status pill reading `SUBMITTED_FOR_QA` is machine output on a human page.
+    status_label = OUTCOME_LABELS.get(summary["status"]) or summary["status"] or "未开始"
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -1290,14 +1929,11 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生产线运行报告 · {escape(summary['run_id'])}</title>
 <style>
-  :root {{ color-scheme: light dark; --bg:#fff; --fg:#1f2328; --line:#d1d9e0; --muted:#59636e; --card:#f6f8fa; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
-  }}
+  :root {{ color-scheme: dark; --bg:#0d1117; --fg:#e6edf3; --line:#30363d; --muted:#9198a1; --card:#161b22; }}
   * {{ box-sizing: border-box; }}
-  body {{ margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
+  body {{ margin:0; padding:20px 22px 48px; background:var(--bg); color:var(--fg);
          font:15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }}
-  .wrap {{ max-width:900px; margin:0 auto; }}
+  .wrap {{ width:min(1480px, calc(100vw - 36px)); margin:0 auto; }}
   h1 {{ font-size:20px; margin:0 0 4px; }}
   h2 {{ font-size:15px; margin:0 0 10px; }}
   h3 {{ font-size:15px; margin:0; }}
@@ -1331,6 +1967,14 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .problems, .pending {{ background:var(--card); border:1px solid var(--line); border-radius:10px;
                          padding:12px 14px; margin-top:16px; }}
   .problems {{ border-color:rgba(207,34,46,.5); }}
+  .silence {{ border:1px solid rgba(207,34,46,.6); border-radius:10px; padding:9px 12px; margin:0 0 14px;
+              background:rgba(207,34,46,.12); }}
+  .silence .shead {{ cursor:pointer; list-style:none; font-size:14px; font-weight:700; color:#cf222e; }}
+  .silence .shead::-webkit-details-marker {{ display:none; }}
+  .silence .shead span {{ float:right; font-size:12px; font-weight:400; color:var(--muted); }}
+  .silence .sbody {{ font-size:13.5px; margin-bottom:6px; }}
+  .silence .ev {{ font-size:12.5px; color:var(--muted); margin-bottom:6px; }}
+  .silence .sfix {{ font-size:13px; padding-top:8px; border-top:1px solid rgba(207,34,46,.35); }}
   .verdict {{ font-weight:600; }}
   .verdict.ok {{ color:#1a7f37; }}
   .verdict.bad {{ color:#cf222e; }}
@@ -1341,51 +1985,145 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .strip .sep {{ color:var(--muted); }}
   .strip b.ok {{ color:#1a7f37; }} .strip b.stale {{ color:#cf222e; }} .strip b.none {{ color:#bf8700; }}
   .strip .bad {{ color:#cf222e; }} .strip .warn {{ color:#bf8700; }}
+  .agentbox {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;
+               border:1px solid var(--line); border-left:4px solid var(--gate,#0969da);
+               border-radius:12px; padding:14px 16px; margin:0 0 14px; background:var(--card); }}
+  .agentbox.bad {{ --gate:#cf222e; }} .agentbox.wait {{ --gate:#0969da; }}
+  .agentbox.warn {{ --gate:#bf8700; }} .agentbox.ok {{ --gate:#1a7f37; }}
+  .agentbox .fact {{ min-width:0; }}
+  .agentbox .label {{ color:var(--muted); font-size:12.5px; }}
+  .agentbox .value {{ margin-top:3px; font-size:15px; font-weight:650;
+                      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .agentbox .value.bad {{ color:#cf222e; }} .agentbox .value.wait {{ color:#0969da; }}
+  .agentbox .value.warn {{ color:#bf8700; }} .agentbox .value.ok {{ color:#1a7f37; }}
+  .agentbox .value.error {{ color:#cf222e; }}
+  .agentbox .wide {{ grid-column:span 1; }}
+  .agentbox .subvalue {{ color:var(--muted); font-size:12px; font-weight:400; margin-top:2px; }}
+  .refresh-state {{ font-size:13px; color:var(--muted); min-width:180px; }}
+  .refresh-state.new {{ color:#1a7f37; }} .refresh-state.error {{ color:#cf222e; }}
+  .refresh-state.same {{ color:#8c959f; }}
+  .hero-state {{ display:flex; align-items:center; gap:12px; padding:13px 16px;
+                 border:1px solid var(--line); border-radius:12px; margin:0 0 14px;
+                 background:var(--card); }}
+  .hero-state.bad {{ border-left:5px solid #cf222e; }} .hero-state.wait {{ border-left:5px solid #0969da; }}
+  .hero-state.warn {{ border-left:5px solid #bf8700; }} .hero-state.ok {{ border-left:5px solid #1a7f37; }}
+  .hero-icon {{ font-size:25px; line-height:1; }}
+  .hero-title {{ font-size:19px; font-weight:750; }}
+  .hero-next {{ margin-left:auto; text-align:right; font-size:13px; color:var(--muted); max-width:48%; }}
+  .recent {{ background:var(--card); border:1px solid var(--line); border-radius:12px;
+             padding:12px 16px; margin:8px 0 14px; }}
+  .recent h2 {{ display:flex; justify-content:space-between; align-items:center; }}
+  .activity {{ display:grid; grid-template-columns:145px minmax(0,1fr) auto; gap:12px; align-items:center;
+               border-top:1px solid var(--line); padding:9px 2px; }}
+  .activity-time {{ color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }}
+  .activity-name {{ font-size:14px; font-weight:600; }}
+  .activity-meta {{ color:var(--muted); font-size:12.5px; }}
+  .activity-state {{ white-space:nowrap; font-size:13px; font-weight:650; }}
+  .activity-state.bad {{ color:#cf222e; }} .activity-state.wait {{ color:#0969da; }}
+  .activity-state.ok {{ color:#1a7f37; }} .activity-state.warn {{ color:#bf8700; }}
+  .tech-details {{ margin-top:8px; color:var(--muted); font-size:12.5px; }}
+  .tech-details summary {{ cursor:pointer; }}
   .pill {{ font-size:12px; font-weight:400; padding:2px 8px; border-radius:999px;
            border:1px solid var(--line); color:var(--muted); vertical-align:middle; }}
   .pill.wait, .pill.warn {{ color:#bf8700; border-color:#bf8700; }}
   .pill.bad {{ color:#cf222e; border-color:#cf222e; }}
   .pill.ok {{ color:#1a7f37; border-color:#1a7f37; }}
-  table.steps td {{ vertical-align:top; }}
-  .tablehead {{ display:flex; gap:16px; align-items:flex-start; justify-content:space-between;
-                flex-wrap:wrap; margin-bottom:10px; }}
-  .tablehead .sub {{ margin-bottom:0; max-width:620px; }}
+  .tablehead {{ display:flex; gap:16px; align-items:center; justify-content:space-between;
+                flex-wrap:wrap; margin:0 0 8px; }}
   .filters {{ display:flex; gap:6px; flex:none; }}
   .fbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:999px; cursor:pointer;
            border:1px solid var(--line); background:var(--bg); color:var(--muted); }}
   .fbtn:hover {{ border-color:var(--fg); color:var(--fg); }}
   .fbtn.on {{ background:var(--fg); border-color:var(--fg); color:var(--bg); font-weight:600; }}
-  table.steps {{ width:100%; border-collapse:collapse; font-size:13.5px; }}
-  table.steps th {{ text-align:left; font-weight:600; font-size:12px; color:var(--muted);
-                    padding:0 12px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }}
-  table.steps td {{ padding:10px 12px; border-bottom:1px solid var(--line); }}
-  table.steps tr.srow:hover {{ background:var(--card); }}
-  table.steps tr.hidden {{ display:none; }}
-  .cgate {{ width:132px; }} .cskill {{ }} .cwho {{ width:190px; }}
-  .cvp {{ width:92px; text-align:right; }}
-  .gate {{ font-weight:700; font-size:14px; letter-spacing:.3px; }}
-  .gname {{ font-size:11.5px; color:var(--muted); margin-top:1px; }}
-  .sname {{ font-weight:500; }}
-  .alt {{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px; font-size:10.5px;
-          font-weight:400; color:var(--muted); border:1px dashed var(--line); vertical-align:1px; }}
-  .sid {{ font-size:11px; color:var(--muted); font-family:ui-monospace, Consolas, monospace;
-          margin-top:1px; word-break:break-all; }}
-  .who {{ font-family:ui-monospace, Consolas, monospace; font-size:12px; }}
-  .arrow {{ color:var(--muted); margin:0 5px; font-size:11px; }}
-  .detail {{ margin-top:5px; }}
-  .ev {{ font-size:11.5px; color:var(--muted); margin-top:2px; }}
-  .evk {{ display:inline-block; min-width:30px; }}
-  .ev code {{ font-size:11.5px; word-break:break-all; }}
+
+  .gateflow {{ display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:10px;
+               margin:0 0 18px; }}
+  .gatecard {{ min-width:0; border:1px solid var(--line); border-top:3px solid var(--gate,#6e7781);
+               border-radius:10px; padding:10px 11px 9px; background:var(--card); min-height:140px; }}
+  .gatecard.ok {{ --gate:#1a7f37; }} .gatecard.wait {{ --gate:#0969da; }}
+  .gatecard.warn {{ --gate:#bf8700; }} .gatecard.bad {{ --gate:#cf222e; }}
+  .gatecard.todo {{ --gate:#6e7781; }}
+  .gatecard:has(.gatechecks[open]) {{ grid-column:span 3; }}
+  .gatecard[data-gate="G6"]:has(.gatechecks[open]) {{ grid-column:1 / -1; }}
+  .gatecard[data-gate="G6"] .gatechecks[open] ul {{ display:grid;
+                                  grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 20px; }}
+  .gatehead {{ display:flex; justify-content:space-between; gap:6px; align-items:baseline; }}
+  .gateid {{ font-size:14px; font-weight:700; color:var(--gate); }}
+  .gatestatus {{ font-size:13px; color:var(--gate); white-space:nowrap; }}
+  .gatename {{ font-size:16px; font-weight:700; margin-top:6px; }}
+  .gatepurpose {{ color:var(--fg); font-size:13px; line-height:1.4; margin-top:6px; min-height:36px; }}
+  .gatechecks {{ margin-top:6px; font-size:12.5px; line-height:1.4; }}
+  .gatechecks summary {{ cursor:pointer; color:var(--gate); }}
+  .gatechecks ul {{ list-style:none; margin:8px 0 0; padding:0; }}
+  .gatechecks li {{ display:flex; justify-content:space-between; gap:8px; padding:5px 0;
+                    border-top:1px solid var(--line); }}
+  .gatechecks li b {{ flex:none; font-weight:600; }}
+  .gatechecks li small {{ display:block; color:var(--muted); font-size:12px;
+                          line-height:1.45; margin-top:3px; }}
+  .gatechecks .check-bad b {{ color:#cf222e; }}
+  .gatechecks .check-wait b, .gatechecks .check-warn b {{ color:#bf8700; }}
+  .gatechecks .check-todo b {{ color:var(--muted); }}
+  .gateitems {{ color:var(--muted); font-size:12.5px; line-height:1.4; margin-top:6px; }}
+  .gateitems summary {{ cursor:pointer; color:var(--muted); }}
+  @media (max-width:1050px) {{ .gateflow {{ grid-template-columns:repeat(3, minmax(0, 1fr)); }} }}
+  @media (max-width:760px) {{ .wrap {{ width:calc(100vw - 24px); }} .gateflow {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }}
+                           .gatecard:has(.gatechecks[open]) {{ grid-column:span 2; }}
+                           .gatecard[data-gate="G6"] .gatechecks[open] ul {{ display:block; }} }}
+  @media (max-width:560px) {{ .agentbox {{ grid-template-columns:repeat(2,minmax(0,1fr)); }}
+                              .agentbox .wide {{ grid-column:span 2; }}
+                              .activity {{ grid-template-columns:1fr auto; gap:4px 10px; }}
+                              .activity-time {{ grid-column:1 / -1; }}
+                              .hero-state {{ align-items:flex-start; flex-wrap:wrap; }}
+                              .hero-next {{ margin:4px 0 0 36px; max-width:none; text-align:left; }} }}
+  details.auditfold {{ margin-top:4px; border-top:1px solid var(--line); }}
+  details.auditfold > summary {{ cursor:pointer; padding:14px 2px; color:var(--muted); font-size:14px; }}
+
+  /* One row per step, one line tall. The verdict is the summary; the evidence is
+     inside the row, on request. Everything used to be printed at once, which made
+     twelve rows about eighty lines and buried the only question that matters. */
+  .rows {{ border-top:1px solid var(--line); }}
+  details.srow {{ border-bottom:1px solid var(--line); }}
+  details.srow.hidden {{ display:none; }}
+  details.srow > summary {{ display:flex; align-items:center; gap:12px;
+                            padding:10px 6px; cursor:pointer; list-style:none; }}
+  details.srow > summary::-webkit-details-marker {{ display:none; }}
+  details.srow > summary::marker {{ content:""; }}
+  details.srow:hover > summary {{ background:var(--card); }}
+  details.srow[open] > summary {{ background:var(--card); }}
+  details.srow > summary::after {{ content:"›"; color:var(--muted); font-size:15px;
+                                   transition:transform .12s; }}
+  details.srow[open] > summary::after {{ transform:rotate(90deg); }}
+  .g {{ flex:0 0 68px; font-weight:700; font-size:12.5px; letter-spacing:.3px;
+        color:var(--muted); }}
+  .g.off {{ color:#bf8700; font-weight:600; }}
+  .nm {{ flex:1 1 auto; font-size:15px; font-weight:500; }}
+  .tag {{ margin-left:7px; font-size:10.5px; font-weight:400; color:var(--muted);
+          border:1px dashed var(--line); border-radius:999px; padding:1px 6px; }}
+  .sid {{ margin-left:7px; font-size:11.5px; color:#1a7f37; }}
+  .sbody {{ padding:0 6px 12px 80px; }}
+  .dr {{ display:grid; grid-template-columns:72px 1fr; gap:10px; padding:2px 0; font-size:12.5px; }}
+  .dk {{ color:var(--muted); }}
+  .dv {{ word-break:break-all; }}
+  .ar {{ color:var(--muted); margin:0 4px; }}
   .empty {{ padding:24px; text-align:center; color:var(--muted); font-size:13.5px; }}
-  .vp {{ font-weight:500; white-space:nowrap; }}
-  .vp.ok {{ color:#1a7f37; }} .vp.bad {{ color:#cf222e; }}
-  .vp.warn, .vp.wait {{ color:#bf8700; }}
+  .vp {{ flex:0 0 auto; font-size:13px; font-weight:600; white-space:nowrap; }}
+  /* Five states, five colours. "Waiting for QA" and "did not read the protocol"
+     both used amber, so a healthy submitted step looked the same as a broken one -
+     which made the whole column unscannable. Waiting is normal, so it is neutral. */
+  .vp.ok {{ color:#1a7f37; }}
+  .vp.bad {{ color:#cf222e; }}
+  .vp.warn {{ color:#bf8700; }}
+  .vp.wait {{ color:#0969da; }}
   .vp.todo {{ color:var(--muted); }}
+  /* Still used by the compliance tables inside the fold below the step list. */
   .note {{ font-size:12px; color:var(--muted); margin-top:2px; }}
-  .evidence {{ font-size:12px; word-break:break-all; max-width:230px; }}
-  .quiet {{ font-size:12.5px; color:var(--muted); margin:8px 0 16px; }}
+  .gate {{ font-weight:700; font-size:12.5px; letter-spacing:.3px; white-space:nowrap; }}
   details.more {{ margin-top:22px; border-top:1px solid var(--line); padding-top:12px; }}
   details.more summary {{ cursor:pointer; color:var(--muted); font-size:13px; }}
+  details.extra {{ margin-top:14px; border:1px solid var(--line); border-radius:10px;
+                   padding:10px 14px; background:var(--card); }}
+  details.extra summary {{ cursor:pointer; font-size:13px; color:var(--warn,#bf8700); }}
+  details.extra table {{ margin-top:10px; }}
   .verdict .dim {{ font-weight:400; }}
   .problems ul, .pending ul {{ margin:0; padding-left:20px; font-size:13.5px; }}
   .notstarted {{ margin-top:16px; padding:12px 14px; border-radius:10px; background:var(--card);
@@ -1409,55 +2147,60 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   .psrow span {{ color:var(--muted); flex:none; }}
   .halt {{ margin-top:16px; padding:10px 14px; border-radius:10px; background:rgba(154,103,0,.12);
            border:1px solid rgba(154,103,0,.4); }}
-  .toolbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px;
-              padding:10px 14px; background:var(--card); border:1px solid var(--line); border-radius:10px; }}
-  .toolbar button {{ font:inherit; font-size:13.5px; padding:5px 14px; border-radius:8px; cursor:pointer;
+  .halt summary {{ cursor:pointer; color:#bf8700; font-weight:650; }}
+  .halt[open] summary {{ margin-bottom:7px; }}
+  .toolbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:12px;
+              padding:8px 14px; background:var(--card); border:1px solid var(--line); border-radius:10px;
+              font-size:13px; }}
+  .toolbar button {{ font:inherit; font-size:13px; padding:4px 14px; border-radius:8px; cursor:pointer;
                      border:1px solid var(--line); background:var(--bg); color:var(--fg); }}
-  .toolbar select {{ font:inherit; font-size:13.5px; padding:4px 8px; border-radius:6px;
+  .toolbar select {{ font:inherit; font-size:13px; padding:4px 8px; border-radius:6px;
                      border:1px solid var(--line); background:var(--bg); color:var(--fg); max-width:320px; }}
   .toolbar label {{ font-size:13px; display:flex; align-items:center; gap:6px; }}
+  .toolbar .right {{ margin-left:auto; }}
   footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
   code {{ font-family: ui-monospace, Consolas, monospace; }}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>{escape(segment_title)} <span class="pill {status_cls}">{escape(summary['status'] or '未开始')}</span></h1>
+  <h1>{escape(segment_title)} <span class="pill {status_cls}">{escape(status_label)}</span></h1>
   <div class="sub">
-    项目 <code>{escape(meta.get('project') or '-')}</code>
-    · 集 {escape(meta.get('episode') or '-')} · 段 <code>{escape(summary.get('segment') or summary['run_id'])}</code>
-    · 运行 <code>{escape(summary['run_id'])}</code>
+    {escape(meta.get('series') or meta.get('project') or '-')}
+    · {escape(meta.get('episode') or '-')} · 段 {escape(summary.get('segment') or summary['run_id'])}
+    · <code>{escape(summary['run_id'])}</code>
   </div>
 
   {toolbar}
 
   <div class="strip">{strip}</div>
-
   {halt}
   {not_started_block}
 
-  <div class="tablehead">
-    <div>
-      <h2>协议步骤 <span class="dim">G0–G8 · 声明 {declared_total} 项 · 链外 {offchain_total} 项</span></h2>
-      <div class="sub">按 Gate 顺序看一行就够：<strong>Gate</strong> 是协议里的步骤名，
-        <strong>步骤</strong>是执行它的 Skill，<strong>结论</strong>是它现在到底算不算完成。
-        <strong>只有独立 QA 写过「通过」才算通过</strong>；生产模型的「已提交」不算。</div>
-    </div>
-    <div class="filters" role="group" aria-label="按结论过滤">
-      <button type="button" class="fbtn on" data-filter="all">全部</button>
-      <button type="button" class="fbtn" data-filter="open">待办</button>
-      <button type="button" class="fbtn" data-filter="ok">已通过</button>
-      <button type="button" class="fbtn" data-filter="bad">有风险</button>
-    </div>
-  </div>
-  <table class="steps" id="steps">
-    <thead><tr><th class="cgate">Gate</th><th class="cskill">步骤</th><th class="cwho">生产 → QA</th><th class="cvp">结论</th></tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-  <div class="empty" id="empty" hidden>当前筛选下没有步骤。</div>
-  {offchain_note}
+  {agent_box}
+  {hero_html}
+  {silence_banner}
 
-  <details class="more">
+  {gate_flow}
+  {recent_html}
+
+  <details class="auditfold" data-persist-key="audit">
+    <summary>展开协议明细 · {declared_total} 步（证据与合规细节）</summary>
+    <div class="tablehead">
+      <h2>协议步骤 <span class="dim">{declared_total} 步</span></h2>
+      <div class="filters" role="group" aria-label="按结论过滤">
+        <button type="button" class="fbtn on" data-filter="all">全部</button>
+        <button type="button" class="fbtn" data-filter="open">待办</button>
+        <button type="button" class="fbtn" data-filter="ok">已通过</button>
+        <button type="button" class="fbtn" data-filter="bad">有风险</button>
+      </div>
+    </div>
+    <div class="rows" id="steps">{rows_html}</div>
+    <div class="empty" id="empty" hidden>当前筛选下没有步骤。</div>
+  </details>
+  {extra_html}
+
+  <details class="more" data-persist-key="more">
     <summary>展开：合规检查 / 尚未执行 / 产出文件</summary>
     {problem_block}
     {pending_block}
@@ -1466,8 +2209,21 @@ def render_html(summary: dict, *, live: bool = False, siblings: list[dict] | Non
   <footer>
     {'全部段一览：<a href="/overview">/overview</a> · ' if live else ''}
     <code>workflow/runs/{escape(summary['run_id'])}.json</code> · 渲染于 {escape(summary['generated_at'])}
-  </footer>
+</footer>
 </div>
+<script>
+  // Auto-refresh must not erase the reader's open panels.
+  (function () {{
+    var prefix = 'short-drama-board:' + location.pathname + ':';
+    document.querySelectorAll('details[data-persist-key]').forEach(function (el) {{
+      var key = prefix + el.dataset.persistKey;
+      try {{ el.open = sessionStorage.getItem(key) === '1'; }} catch (e) {{}}
+      el.addEventListener('toggle', function () {{
+        try {{ sessionStorage.setItem(key, el.open ? '1' : '0'); }} catch (e) {{}}
+      }});
+    }});
+  }}());
+</script>
 </body>
 </html>
 """

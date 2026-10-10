@@ -5,6 +5,8 @@ from production_control import run_state
 from production_control.run_compliance import (
     STEP_PROTOCOL_REQUIREMENTS,
     compliance_gaps,
+    missing_required_reads,
+    normalise_ref,
     verify_run_compliance,
 )
 
@@ -20,7 +22,7 @@ CHAIN = {
 REFS_BREAKDOWN = [{"path": "09_脚本优化与分镜拆解规范_v3.0.md"}]
 REFS_REVIEWER = [{"path": "09_脚本优化与分镜拆解规范_v3.0.md"}]
 REFS_IMAGE = [{"path": "16_生图渠道规则_v3.0.md"}, {"path": "14_RH生图渠道与GPT通道现状_v3.0.md"}]
-REFS_QA = [{"path": "04_QA与文件治理_v3.0.md"}]
+REFS_QA = [{"path": "04_QA与文件治理_v3.0.md"}, {"path": "23_RH最终提交包与资产快照规则_v1.md"}]
 
 
 def _result(step, refs, **extra):
@@ -109,3 +111,39 @@ def test_every_chain_step_has_declared_protocol_requirements():
     }
     for step in orchestrator.plan_steps(chain):
         assert STEP_PROTOCOL_REQUIREMENTS.get(step), f"{step} has no declared protocol requirement"
+
+
+# --- Reference-matching -------------------------------------------------------
+# A step records what it read, and it may write that down as a bare file name, a
+# project-relative path, or an absolute path from wherever the protocol happens
+# to live. All three describe the same read. Comparing the raw strings made a
+# documented step look undocumented, and the board then reported every finished
+# step as "未读协议" while nothing was actually missing.
+
+def test_normalise_ref_reduces_any_path_shape_to_the_file_name():
+    assert normalise_ref("09_脚本优化与分镜拆解规范_v3.0.md") == "09_脚本优化与分镜拆解规范_v3.0.md"
+    assert normalise_ref("核心自动化生产包/02_任务路由与Gate_v3.0.md") == "02_任务路由与gate_v3.0.md"
+    assert (
+        normalise_ref(r"D:\协议\核心自动化生产包\02_任务路由与Gate_v3.0.md")
+        == "02_任务路由与gate_v3.0.md"
+    )
+    assert normalise_ref("D:/协议/核心/02_任务路由与Gate_v3.0.md") == "02_任务路由与gate_v3.0.md"
+    assert normalise_ref("D://协议//核心//02_任务路由与Gate_v3.0.md ") == "02_任务路由与gate_v3.0.md"
+    assert normalise_ref("") == ""
+    assert normalise_ref("   ") == ""
+
+
+def test_an_absolute_path_counts_as_the_required_read():
+    step = "short-drama-script-breakdown"
+    event = {
+        "protocol_refs": [
+            {"path": "D:/AIGC短剧本地工作流规则及协议/短剧制作核心协议/09_脚本优化与分镜拆解规范_v3.0.md"}
+        ]
+    }
+    assert missing_required_reads(event, step) == []
+
+
+def test_a_genuinely_absent_document_is_still_reported():
+    step = "short-drama-scene-continuity"
+    event = {"protocol_refs": [{"path": "D:/协议/核心自动化生产包/02_任务路由与Gate_v3.0.md"}]}
+    assert missing_required_reads(event, step) == ["03_资产与连续性规则_v3.0.md"]

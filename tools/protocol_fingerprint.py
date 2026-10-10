@@ -14,9 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from production_control.protocol_fingerprint import (  # noqa: E402
     CHALLENGE_BANK,
-    CHALLENGE_SAMPLE,
     DEFAULT_ROOT,
     REQUIRED_CORE_FILES,
+    TARGET_MODE_PROTOCOL_FILES,
     build_manifest,
     check,
     check_links,
@@ -25,14 +25,16 @@ from production_control.protocol_fingerprint import (  # noqa: E402
     main,
     manifest_path,
     normalize,
+    registered_protocol_files,
+    runtime_control_files,
     sha256_file,
 )
 
 __all__ = [
     "CHALLENGE_BANK",
-    "CHALLENGE_SAMPLE",
     "DEFAULT_ROOT",
     "REQUIRED_CORE_FILES",
+    "TARGET_MODE_PROTOCOL_FILES",
     "build_manifest",
     "check",
     "check_links",
@@ -41,6 +43,8 @@ __all__ = [
     "main",
     "manifest_path",
     "normalize",
+    "registered_protocol_files",
+    "runtime_control_files",
     "sha256_file",
 ]
 

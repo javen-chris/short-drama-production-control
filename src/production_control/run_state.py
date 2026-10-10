@@ -6,12 +6,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .task_state import read_task, write_task
+from .outcomes import COMPLETING_OUTCOMES
 
 WAITING = "WAITING_APPROVAL"
 PAUSED = "PAUSED_EXCEPTION"
 
 
 def start_run(path: str | Path, run_id: str, contract_id: str, first_step: str) -> dict:
+    target = Path(path)
+    if target.exists():
+        raise FileExistsError(
+            f"RUN_ALREADY_EXISTS：拒绝覆盖 {target}，以免清空预算、提交、授权和审查历史；请恢复原 RUN 或使用协议迁移工具。"
+        )
     state = {
         "run_id": run_id,
         "contract_id": contract_id,
@@ -21,8 +27,8 @@ def start_run(path: str | Path, run_id: str, contract_id: str, first_step: str) 
         "completed_steps": [],
         "events": [],
     }
-    write_task(path, state)
-    return read_task(path)
+    write_task(target, state)
+    return read_task(target)
 
 
 def record_event(state: dict, step: str, outcome: str, reason: str = "", evidence: str = "", **fields) -> dict:
@@ -38,7 +44,7 @@ def record_event(state: dict, step: str, outcome: str, reason: str = "", evidenc
         event["evidence"] = evidence
     event.update({key: value for key, value in fields.items() if value})
     state.setdefault("events", []).append(event)
-    if outcome == "COMPLETED" and step not in state.get("completed_steps", []):
+    if outcome in COMPLETING_OUTCOMES and step not in state.get("completed_steps", []):
         state.setdefault("completed_steps", []).append(step)
     return event
 
