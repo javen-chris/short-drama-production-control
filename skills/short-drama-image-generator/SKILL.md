@@ -68,7 +68,7 @@ requirement of the user, not a default that can be optimized away.
 Consumes the ChatGPT subscription quota, costs no cash. Run the local wrapper:
 
 ```powershell
-python D:\AIGC-Drama-Studio\tools\image_use_web.py "<prompt>" -o <out.png> -i <ref1.jpg> -i <ref2.jpg>
+python "$env:SHORT_DRAMA_PROJECT_ROOT\tools\image_use_web.py" "<prompt>" -o <out.png> -i <ref1.jpg> -i <ref2.jpg>
 ```
 
 Operational details that matter (each one was a historical failure point):

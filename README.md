@@ -32,7 +32,7 @@ This control plane addresses each of those with explicit contracts, gates, and g
 - keeps task state, asset decisions, provider capabilities, unified QA checks, provenance hashing, payload compilation, and PR security scanning;
 - keeps a dated AIGC production benchmark and reuse boundary in `docs/research/`;
 - treats prompts as the default path and storyboards as a risk-triggered exception;
-- keeps validation offline; provider credentials and actual submissions stay local.
+- keeps validation offline; provider credentials and actual submissions stay local. CI security scanning rejects media, common secrets, machine-specific Windows paths, production workflow-record directories, and production-shaped RUN/provider task IDs outside synthetic fixtures.
 
 ## Providers
 
