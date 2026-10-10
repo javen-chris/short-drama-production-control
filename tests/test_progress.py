@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from production_control import orchestrator, run_index
+from production_control import orchestrator, protocol_fingerprint, run_index
 from production_control.progress import MissingEvidenceError, UnknownStepError, append_event as _append_event
 
 CHAIN = {"steps": [
@@ -379,7 +379,7 @@ def test_g6_monitor_records_terminal_state_without_post_generation_qa(tmp_path, 
                    "applicable": True, "disposition": "pending",
                    "protocol_refs": [{"path": p} for p in step["protocol_refs"]]}],
     }
-    authority = Path(__file__).resolve().parents[2] / "短剧制作核心协议"
+    authority = Path(protocol_fingerprint.DEFAULT_ROOT)
     manifest = json.loads((authority / "protocol_manifest.json").read_text(encoding="utf-8"))
     contract["protocol_root"] = str(authority)
     contract["protocol_manifest_fingerprint"] = manifest["fingerprint"]

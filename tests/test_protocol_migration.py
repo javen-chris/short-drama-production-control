@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from production_control import protocol_fingerprint
+
 
 def test_protocol_migration_updates_same_run_and_preserves_history(tmp_path):
     console = Path(__file__).resolve().parents[1]
@@ -16,7 +18,7 @@ def test_protocol_migration_updates_same_run_and_preserves_history(tmp_path):
         "events": [{"step": "short-drama-script-breakdown", "outcome": "STEP_COMPLETED", "evidence": "script.md"}],
         "protocol_attestation": old_attestation, "protocol_attestations": [old_attestation],
         "execution_contract": {
-            "contract_id": "CONTRACT-1", "task_id": "TASK-1", "protocol_root": r"D:\AIGC短剧本地工作流规则及协议\短剧制作核心协议",
+            "contract_id": "CONTRACT-1", "task_id": "TASK-1", "protocol_root": protocol_fingerprint.DEFAULT_ROOT,
             "protocol_manifest_fingerprint": "b" * 64, "current_step_id": "S08",
             "steps": [{"id": "S08", "applicable": False, "protocol_refs": []}],
             "submission_count": 1, "budget_cny": 25,
@@ -24,7 +26,6 @@ def test_protocol_migration_updates_same_run_and_preserves_history(tmp_path):
     }
     run_path = runs / "RUN-MIGRATE-1.json"
     run_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    from production_control import protocol_fingerprint
     evidence = project / "confirmed_changes.md"
     evidence.write_text("Isolated test explicit protocol migration confirmation", encoding="utf-8")
     confirmed = ["--confirmation-evidence", "confirmed_changes.md"]
