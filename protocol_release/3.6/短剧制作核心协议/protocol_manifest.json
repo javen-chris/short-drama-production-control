@@ -1,253 +1,157 @@
 {
   "manifest_version": "1.0",
-  "generated_at": "2026-10-10T13:38:40.825151+00:00",
+  "generated_at": "2026-10-10T13:41:37.295634+00:00",
   "protocol_root": ".",
   "files": [
     {
       "path": "../../../capabilities/qa_policy.json",
-      "sha256": "86191f707da09c271ec95c5142fe91afba87e42bb3f41084da8daf3da2337fb6",
-      "bytes": 6397
+      "sha256": "f55cfefd8029a29dc01c1111ecf1ada9b0a7a3a564f4a7307bd6710007c298d2",
+      "bytes": 6229
     },
     {
       "path": "../../../skills/skill-chain.json",
-      "sha256": "3ed8ddd5d6bb26b57db70dc69d8c20a99227a903ae0accbdeed706b8e81ee1f0",
-      "bytes": 17007
+      "sha256": "02f869ac6e679fcedea25da2b485a1002b5986fce1c2f83e437a9876c82f45bb",
+      "bytes": 16434
     },
     {
       "path": "00_自动化生产唯一入口_v3.0.md",
-      "sha256": "74a5b0d5d90e39b81f16050c04a2342061c8422f6f75e198601a59b90e50d2b6",
-      "bytes": 19433
+      "sha256": "efdca1733507fc26cafa7d51887e0f9d6c580d6b3e1f369e17e02d78f2922a3e",
+      "bytes": 19235
     },
     {
       "path": "01_标准项目目录与文件职责_v3.0.md",
-      "sha256": "0850007b34e90d395117d4178ee10310542b3ee3c6da39e18ee32d928de6eee9",
-      "bytes": 2767
+      "sha256": "274a6b4f049999c31f5c407e1381c0a7e9f0327a829b7da6f34c4f985c40e8ca",
+      "bytes": 2711
     },
     {
       "path": "02_每段视频制作流程_v3.0.md",
-      "sha256": "16861815dc83129045ead86087ac797326c804c4d3490476a4e8f17553ef7bcb",
-      "bytes": 8856
+      "sha256": "ab7b3429357877840374e0f2e2c8f0eda2fedc17625ccf6d56ae1634a84452b3",
+      "bytes": 8739
     },
     {
       "path": "03_资产与连续性规则_v3.0.md",
-      "sha256": "26c83cd7758d194225caccee8d555c719903870380bc03b782cfafdef6908383",
-      "bytes": 5137
+      "sha256": "903600e4568d8d0eec321fac53340254e13eacc2c741d8b2a9914249f4363ac8",
+      "bytes": 5076
     },
     {
       "path": "04_QA与文件治理_v3.0.md",
-      "sha256": "03199b0600e71adf4b8029015c3f652d627447b1b770881e60e9d7db5c42eb9d",
-      "bytes": 5109
+      "sha256": "65357677b2c95979e3f5f0728167d683c158b2d7f5358ec5e4b9308d18142f71",
+      "bytes": 5045
     },
     {
       "path": "08_故事本生产与QA规范_v3.0.md",
-      "sha256": "8e792c93b7500baa25a44f467c5135309b8e021212c34f36e8a4181c07af1c07",
-      "bytes": 6568
+      "sha256": "55566ce82352bc5948615a1a9f6f85e182b51b86da64cd54f430323bc5dce2b8",
+      "bytes": 6472
     },
     {
       "path": "09_脚本优化与分镜拆解规范_v3.0.md",
-      "sha256": "d195ef20388fb26e06eeffe737d6d7259220bd4a25ddf817cb53750af949ef65",
-      "bytes": 8283
+      "sha256": "2b204c6f81464eafc8d99aca7c05952e93341b8ff93343c5fe633680c2041208",
+      "bytes": 8177
     },
     {
       "path": "11_目标模式自动建卡与连续执行规则_v3.0.md",
-      "sha256": "28bb948f9910e87e87ffaba5e919e7a8534d91dffbf3324b454a256456ec7ed3",
-      "bytes": 8191
+      "sha256": "c44faff87048d967286a170366c39d61dee1ddf51678a3210a74d72f5bfbf5a5",
+      "bytes": 8096
     },
     {
       "path": "12_真人短剧Prompt与故事本弹性标准_v3.0.md",
-      "sha256": "76518af341d0f7efc0a7d5568466370b474df1602e6a2e241edcdf6361c9323c",
-      "bytes": 3927
+      "sha256": "56d0a3be924394079944a3d79d2e098044b110c940ea023c4db6439b357b0e14",
+      "bytes": 3821
     },
     {
       "path": "13_模型执行前硬门禁_v3.0.md",
-      "sha256": "79e25acba2961f8b90f9ab01af98395cf246d5fb23e914a7747d03c7353b05de",
-      "bytes": 4733
+      "sha256": "3a04832606435f6b8e4f846a41100203f0bf59daa19fd129befcd44c88be11f6",
+      "bytes": 4660
     },
     {
       "path": "14_RH生图渠道与GPT通道现状_v3.0.md",
-      "sha256": "51f8b34489b93cb7ebc013f7a9815075bc8f4e2892456c42365ac6b1faa268f4",
-      "bytes": 1585
+      "sha256": "2265872e14619fc041267bef512841cf9eeda4debedc0576903717da743c6473",
+      "bytes": 1566
     },
     {
       "path": "15_协议读取与合规证明_v3.0.md",
-      "sha256": "a14b1d50c1431737db40dc2b8a2e5e250a12bdf57dc1b7d6226d329402a9e5be",
-      "bytes": 5842
+      "sha256": "69ef58755018a2cc1a4049ef07012863b8f29b811299d26193df19fe9f1b1e2f",
+      "bytes": 5773
     },
     {
       "path": "16_生图渠道规则_v3.0.md",
-      "sha256": "83c6f944cb4d4f0bf0441f44ee13f87aa648acfa8e99fa1f5e5037a088239f4e",
-      "bytes": 2221
+      "sha256": "a03ba3de7e6296e63ef31180ea92d6ef39c96ac4c4d41102268c7c9eed9fd624",
+      "bytes": 2196
     },
     {
       "path": "17_故事本图片与视频生成参考资产选择准则_v3.0.md",
-      "sha256": "f38a8d06f9740e2576ebad70f656ab1c46c29c9e7d1444900f6d48b19662e209",
-      "bytes": 2399
+      "sha256": "0739044b2255d88848d59d185226c50e2debb3f02f3f7c54799e0cc4e1730828",
+      "bytes": 2366
     },
     {
       "path": "18_运行轨迹与进度可视规则_v3.0.md",
-      "sha256": "ba4c0044fc4aea81708cd620cb17f0242b7a28a0deceb072f85b5d3d7b6227ad",
-      "bytes": 8448
+      "sha256": "9094e743e32f7ec95f82c82cfeacedf9b32c961463e75c6053be7865798c7342",
+      "bytes": 8353
     },
     {
       "path": "19_视频提交前确认报告与授权范围规则_v3.0.md",
-      "sha256": "3a92dc6165b1ca3f9a4ba98b5c63471e48194c38ff28c4a8e55b5af163c22356",
-      "bytes": 6408
+      "sha256": "973eb66b12ea4ce04d8180b58a1ecf3886ac521d0f68162e6e75fc5bb3a2c91b",
+      "bytes": 6320
     },
     {
       "path": "20_G6生成提交与平台调用规则_v3.0.md",
-      "sha256": "af97eb2184d597080062da5e03aa2d6e0eb81d79b50c24dd3cacc4bfb175af95",
-      "bytes": 13918
+      "sha256": "d92ef65e0bd121253684bc0bcc83987ce96ed0f9e44cb8bb232bed8bcff3426f",
+      "bytes": 13658
     },
     {
       "path": "22_用户决策交互与版本防循环规则_v3.0.md",
-      "sha256": "565721ff54e5db2aae430b9e45e95e46210e7afe9fca1c0d3dbb109235e4ef1e",
-      "bytes": 4787
+      "sha256": "b38c4aac2b99b5ae9c7a358c05ebe0c302e60d3c53d3869e88aa257bf2566d5b",
+      "bytes": 4739
     },
     {
       "path": "23_RH最终提交包与资产快照规则_v1.md",
-      "sha256": "41b53e39e5c285024abdfa5aef9b42b40e35515a6435e61448f097316a417651",
-      "bytes": 4696
+      "sha256": "7047350fb0c67e81a75356df3dabdf4898cc88ef275eb573100acb3e4703cf98",
+      "bytes": 4666
     },
     {
       "path": "24_资产索引与RUN恢复规则_v1.md",
-      "sha256": "8c51e73ce8132bc504a1b2d0b1a3ef1d4ab865cd064f9353430ffc93721a9444",
-      "bytes": 3925
+      "sha256": "4bfe59ca936c1da01a93b4309d8297cffa28d765098dfb0438d47d559e3765d3",
+      "bytes": 3863
     },
     {
       "path": "AGENTS.md",
-      "sha256": "d93218ce2b747a7392e52959bfa3a87fc24759ab22c9ae9f2ef26e3c331ba039",
-      "bytes": 5456
+      "sha256": "b841436ab1403179fd75353741aa53c3ff299d642b06b3b86bda9fe8ce2277ab",
+      "bytes": 5382
     },
     {
       "path": "G0-G8_本地短剧生产协议全流程说明_20260929.md",
-      "sha256": "f029917d77ebc5f495232bf04044d9bd9d02b5432f0bb5df15da453297ff5288",
-      "bytes": 5845
+      "sha256": "ceb0ea28dedceedeabe8184f4322f528dae5cb7fb95ef2aca81a72cdab36bb7c",
+      "bytes": 5777
     },
     {
       "path": "VERSION.md",
-      "sha256": "df3a2533d496df5ac96ff83b2d790fa2a11b052b96dd207f12820e771a82ba32",
-      "bytes": 9171
+      "sha256": "1a8687e3c236475a7c90d4debea5b9304feaa75a94feb2998ba9094d0644a0a5",
+      "bytes": 9087
     },
     {
       "path": "核心自动化生产包/01_核心总则_v3.0.md",
-      "sha256": "dc2198dd7f01d2cc2c53c7354fe485db81af8cd688c69deec262ed0fb1f4242a",
-      "bytes": 1842
+      "sha256": "f9c31f672a8d538c10f4487a0fb0032f37bba1c316f1cb055b160b4b6915ab44",
+      "bytes": 1812
     },
     {
       "path": "核心自动化生产包/02_任务路由与Gate_v3.0.md",
-      "sha256": "bf4f31e83ac23b0c5eb624128d926d0e8f888a499073a843c1d52ffe277d0c05",
-      "bytes": 3987
+      "sha256": "f2ced9ffb65f6945d18fc7d1f611c148d27721e0f2ea7175d26d3c433667d99d",
+      "bytes": 3954
     },
     {
       "path": "核心自动化生产包/03_生产与资产规则_v3.0.md",
-      "sha256": "35fc51beeac7715f4f0895ac876f9e91777b072feed8e2cc586c4ff4e569186c",
-      "bytes": 3935
+      "sha256": "f7c9bab5b30c1e99e0014217be74991df3a64c6a1d09797ca93e351822fc720f",
+      "bytes": 3889
     }
   ],
-  "fingerprint": "e8e5a07654cd9285c97fe1d99b4622378276b718ce70e08aa4e59670018fe837",
+  "fingerprint": "b968dc6f46f288827dc788674f04af9c674ffa0e70ab60a58d34c8034d47b3c8",
   "challenges": [
-    {
-      "id": "submit-requires-report",
-      "prompt": "提交视频前必须落盘哪份产物？（填名称）",
-      "answer_sha256": "59f20217d404d43b93cf4e95aea7f6188ca4ef439f08aadb05c41c7f4d8c9bd9",
-      "protocol_refs": [
-        "19_视频提交前确认报告与授权范围规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "max-submissions",
-      "prompt": "一份合同授权的付费视频提交最多几次？（数字）",
-      "answer_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "protocol_refs": [
-        "19_视频提交前确认报告与授权范围规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "image-fallback",
-      "prompt": "订阅额度耗尽且已授权时的生图兜底通道枚举值是什么？",
-      "answer_sha256": "a1dbb11bebea54382d118f200b09b382faff73707c9a3e1c403c68790808b850",
-      "protocol_refs": [
-        "16_生图渠道规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "empty-assets-submit",
-      "prompt": "已获用户授权，但参考资产清单为空时是否允许提交？（允许/不允许）",
-      "answer_sha256": "4a044484f863c5e5b36bfaf7d3b6786dab109c03f07faa7edfd323c4b2c10549",
-      "protocol_refs": [
-        "19_视频提交前确认报告与授权范围规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "tail-frame-blocking",
-      "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）",
-      "answer_sha256": "0c70665b6eb65f1aebf3b59f684ce52ed3473b2443ed4b4e0b815e2e9d66b8c2",
-      "protocol_refs": [
-        "核心自动化生产包/03_生产与资产规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "run-trace-missing",
-      "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）",
-      "answer_sha256": "aaebf58da809b6117f4a4cb4d952cbfb6994d8362d2a83026b52243b03711af6",
-      "protocol_refs": [
-        "18_运行轨迹与进度可视规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "image-model",
-      "prompt": "本协议下生图唯一允许的图像模型是什么？",
-      "answer_sha256": "9ba2827204791ed85334d9169cfdc7568e85f54747d31d3132d798d7dabc231b",
-      "protocol_refs": [
-        "16_生图渠道规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "autonomous-asset-fill",
-      "prompt": "G3-S06 缺失身份资产时，未取得当前范围授权能否生成？",
-      "answer_sha256": "c96b1db89e0979d6777dc4f8badc0dccd5a80ed32c6c1af64280df8d73133704",
-      "protocol_refs": [
-        "24_资产索引与RUN恢复规则_v1.md"
-      ]
-    },
-    {
-      "id": "script-revision-limit",
-      "prompt": "生产拆解前的创作自查最多允许几轮集中候选修订？（数字）",
-      "answer_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "protocol_refs": [
-        "09_脚本优化与分镜拆解规范_v3.0.md"
-      ]
-    },
     {
       "id": "script-visible-change",
       "prompt": "脚本节奏检查中，每 3–5 秒至少需要发生什么？",
       "answer_sha256": "d86d54b5083ddc1e01ecde0cdaff12e8a41bebafce92889e0594eb7c25dd9dbf",
       "protocol_refs": [
         "09_脚本优化与分镜拆解规范_v3.0.md"
-      ]
-    },
-    {
-      "id": "degraded-route",
-      "prompt": "复杂风险但未授权制作故事本时，生产单元走的路线枚举值是什么？",
-      "answer_sha256": "223cdd7a98065ac67711858dc02b41384df7e8279c9d2ce961b43c4c84db343c",
-      "protocol_refs": [
-        "核心自动化生产包/03_生产与资产规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "material-change-approval",
-      "prompt": "修复需要改变已锁定的动作/结尾或生成范围，用户尚未回答时应如何处理？",
-      "answer_sha256": "f2b95ac9dfbe5563f41ec68712cda1e4488c699cfe0832defddba75dd173fdc9",
-      "protocol_refs": [
-        "22_用户决策交互与版本防循环规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "protocol-version",
-      "prompt": "当前核心协议的版本号是？",
-      "answer_sha256": "94d362738276c994337f42f6438216b264d4dc30c9856a443f128cf8a4b5fb3e",
-      "protocol_refs": [
-        "VERSION.md"
       ]
     },
     {
@@ -267,11 +171,107 @@
       ]
     },
     {
+      "id": "material-change-approval",
+      "prompt": "修复需要改变已锁定的动作/结尾或生成范围，用户尚未回答时应如何处理？",
+      "answer_sha256": "f2b95ac9dfbe5563f41ec68712cda1e4488c699cfe0832defddba75dd173fdc9",
+      "protocol_refs": [
+        "22_用户决策交互与版本防循环规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "empty-assets-submit",
+      "prompt": "已获用户授权，但参考资产清单为空时是否允许提交？（允许/不允许）",
+      "answer_sha256": "4a044484f863c5e5b36bfaf7d3b6786dab109c03f07faa7edfd323c4b2c10549",
+      "protocol_refs": [
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "degraded-route",
+      "prompt": "复杂风险但未授权制作故事本时，生产单元走的路线枚举值是什么？",
+      "answer_sha256": "223cdd7a98065ac67711858dc02b41384df7e8279c9d2ce961b43c4c84db343c",
+      "protocol_refs": [
+        "核心自动化生产包/03_生产与资产规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "image-model",
+      "prompt": "本协议下生图唯一允许的图像模型是什么？",
+      "answer_sha256": "9ba2827204791ed85334d9169cfdc7568e85f54747d31d3132d798d7dabc231b",
+      "protocol_refs": [
+        "16_生图渠道规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "autonomous-asset-fill",
+      "prompt": "G3-S06 缺失身份资产时，未取得当前范围授权能否生成？",
+      "answer_sha256": "c96b1db89e0979d6777dc4f8badc0dccd5a80ed32c6c1af64280df8d73133704",
+      "protocol_refs": [
+        "24_资产索引与RUN恢复规则_v1.md"
+      ]
+    },
+    {
       "id": "image-unauthorized",
       "prompt": "常规（非全自动）模式下，Agent 是否可以自行执行生图？（是/否）",
       "answer_sha256": "0c70665b6eb65f1aebf3b59f684ce52ed3473b2443ed4b4e0b815e2e9d66b8c2",
       "protocol_refs": [
         "16_生图渠道规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "max-submissions",
+      "prompt": "一份合同授权的付费视频提交最多几次？（数字）",
+      "answer_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "protocol_refs": [
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "protocol-version",
+      "prompt": "当前核心协议的版本号是？",
+      "answer_sha256": "94d362738276c994337f42f6438216b264d4dc30c9856a443f128cf8a4b5fb3e",
+      "protocol_refs": [
+        "VERSION.md"
+      ]
+    },
+    {
+      "id": "image-fallback",
+      "prompt": "订阅额度耗尽且已授权时的生图兜底通道枚举值是什么？",
+      "answer_sha256": "a1dbb11bebea54382d118f200b09b382faff73707c9a3e1c403c68790808b850",
+      "protocol_refs": [
+        "16_生图渠道规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "script-revision-limit",
+      "prompt": "生产拆解前的创作自查最多允许几轮集中候选修订？（数字）",
+      "answer_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "protocol_refs": [
+        "09_脚本优化与分镜拆解规范_v3.0.md"
+      ]
+    },
+    {
+      "id": "tail-frame-blocking",
+      "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）",
+      "answer_sha256": "0c70665b6eb65f1aebf3b59f684ce52ed3473b2443ed4b4e0b815e2e9d66b8c2",
+      "protocol_refs": [
+        "核心自动化生产包/03_生产与资产规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "run-trace-missing",
+      "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）",
+      "answer_sha256": "aaebf58da809b6117f4a4cb4d952cbfb6994d8362d2a83026b52243b03711af6",
+      "protocol_refs": [
+        "18_运行轨迹与进度可视规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "submit-requires-report",
+      "prompt": "提交视频前必须落盘哪份产物？（填名称）",
+      "answer_sha256": "59f20217d404d43b93cf4e95aea7f6188ca4ef439f08aadb05c41c7f4d8c9bd9",
+      "protocol_refs": [
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
       ]
     }
   ]
