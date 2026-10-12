@@ -48,7 +48,13 @@ def main() -> int:
         print("SKILL_NOT_RUN：不允许降级，不允许先建节点再补 Skill。")
         return 1
 
-    verdict = skill_audit.evaluate(json.loads(path.read_text(encoding="utf-8")))
+    try:
+        audit = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        print(f"Skill 审计文件不可读或格式错误：{exc}")
+        print("SKILL_EVIDENCE_INVALID：阻断，不开始后续步骤。")
+        return 1
+    verdict = skill_audit.evaluate(audit, root, args.unit)
     print(f"单元 {verdict['unit_id'] or args.unit} · 模型 {verdict['model'] or '-'} · "
           f"Prompt {verdict['prompt_id'] or '-'} ({verdict['prompt_version'] or '-'})")
     print(f"  skill 项数：{verdict['skill_count']}")

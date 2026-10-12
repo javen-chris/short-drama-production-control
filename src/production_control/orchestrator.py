@@ -162,13 +162,26 @@ def _advance(state: dict, handlers: dict, approvals: set[str] | None = None) -> 
             run_state.pause_for_exception(state, current, 'PROTOCOL_SCOPE_CHANGED: ' + '; '.join(drift))
             return state
         submit_entry = step_registry.by_id('S11')
-        if contract.get('selected_provider') == 'runninghub' and submit_entry and current == submit_entry.skill:
-            from .final_submission import verify_bound_packet
-            try:
-                verify_bound_packet(state['project_root'], contract)
-            except (ValueError, KeyError, OSError) as exc:
-                run_state.pause_for_exception(state, current, str(exc))
+        if contract.get('selected_provider') and submit_entry and current == submit_entry.skill:
+            # Fail closed before any platform adapter can submit paid work.
+            from . import skill_audit
+            audit_file = skill_audit.audit_path(state.get('project_root', contract.get('project_root', '')),
+                                                contract.get('task_id', ''))
+            audit = skill_audit.load_audit(state.get('project_root', contract.get('project_root', '')),
+                                           contract.get('task_id', ''))
+            verdict = skill_audit.evaluate(audit, state.get('project_root', contract.get('project_root', '')),
+                                           contract.get('task_id', ''))
+            if not verdict['ok']:
+                reason = 'SKILL_GATE_BLOCKED: ' + '; '.join(verdict['codes'])
+                run_state.pause_for_exception(state, current, reason, str(audit_file))
                 return state
+            if contract.get('selected_provider') == 'runninghub':
+                from .final_submission import verify_bound_packet
+                try:
+                    verify_bound_packet(state['project_root'], contract)
+                except (ValueError, KeyError, OSError) as exc:
+                    run_state.pause_for_exception(state, current, str(exc))
+                    return state
     if current in APPROVAL_BREAKPOINTS and current not in approvals:
         run_state.wait_for_approval(state, current, APPROVAL_BREAKPOINTS[current])
         return state
