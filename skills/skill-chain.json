@@ -303,7 +303,8 @@
       "approval": "明确授权本次付费提交",
       "protocol_refs": [
         "19_视频提交前确认报告与授权范围规则_v3.0.md",
-        "20_G6生成提交与平台调用规则_v3.0.md"
+        "20_G6生成提交与平台调用规则_v3.0.md",
+        "21_G5.1模型Skill审计与Prompt版本规则_v3.0.md"
       ],
       "provider_protocol_refs": {
         "runninghub": ["23_RH最终提交包与资产快照规则_v1.md"]

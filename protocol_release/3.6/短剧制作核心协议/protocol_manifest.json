@@ -1,6 +1,6 @@
 {
   "manifest_version": "1.0",
-  "generated_at": "2026-10-10T13:58:48.295312+00:00",
+  "generated_at": "2026-10-12T08:35:03.485613+00:00",
   "protocol_root": ".",
   "files": [
     {
@@ -10,8 +10,8 @@
     },
     {
       "path": "../../../skills/skill-chain.json",
-      "sha256": "02f869ac6e679fcedea25da2b485a1002b5986fce1c2f83e437a9876c82f45bb",
-      "bytes": 16434
+      "sha256": "3f841a99cc4fc4b913476474523440e8d1f28347e7926d5c2811632f47d9d17f",
+      "bytes": 16499
     },
     {
       "path": "00_自动化生产唯一入口_v3.0.md",
@@ -99,6 +99,11 @@
       "bytes": 13659
     },
     {
+      "path": "21_G5.1模型Skill审计与Prompt版本规则_v3.0.md",
+      "sha256": "e9c45d0d5d97e5c26101243298fd66d20bb6a229262b0086440b629071ee0b53",
+      "bytes": 10121
+    },
+    {
       "path": "22_用户决策交互与版本防循环规则_v3.0.md",
       "sha256": "997705cf56102b56d8da455f6ee334d9fa600d5710dfa8243b83bc53579e43a4",
       "bytes": 4740
@@ -144,8 +149,24 @@
       "bytes": 3890
     }
   ],
-  "fingerprint": "9b3012943603e55d6657c91a6484d0658ac43e079effc86e98780d4b7b03d66a",
+  "fingerprint": "1b36930126d3a37eee204691dc8b8d90137327c6e8a01d81c626294dad09eeb0",
   "challenges": [
+    {
+      "id": "material-change-approval",
+      "prompt": "修复需要改变已锁定的动作/结尾或生成范围，用户尚未回答时应如何处理？",
+      "answer_sha256": "f2b95ac9dfbe5563f41ec68712cda1e4488c699cfe0832defddba75dd173fdc9",
+      "protocol_refs": [
+        "22_用户决策交互与版本防循环规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "image-unauthorized",
+      "prompt": "常规（非全自动）模式下，Agent 是否可以自行执行生图？（是/否）",
+      "answer_sha256": "0c70665b6eb65f1aebf3b59f684ce52ed3473b2443ed4b4e0b815e2e9d66b8c2",
+      "protocol_refs": [
+        "16_生图渠道规则_v3.0.md"
+      ]
+    },
     {
       "id": "autonomous-asset-fill",
       "prompt": "G3-S06 缺失身份资产时，未取得当前范围授权能否生成？",
@@ -155,17 +176,25 @@
       ]
     },
     {
-      "id": "submit-requires-report",
-      "prompt": "提交视频前必须落盘哪份产物？（填名称）",
-      "answer_sha256": "59f20217d404d43b93cf4e95aea7f6188ca4ef439f08aadb05c41c7f4d8c9bd9",
+      "id": "image-model",
+      "prompt": "本协议下生图唯一允许的图像模型是什么？",
+      "answer_sha256": "9ba2827204791ed85334d9169cfdc7568e85f54747d31d3132d798d7dabc231b",
       "protocol_refs": [
-        "19_视频提交前确认报告与授权范围规则_v3.0.md"
+        "16_生图渠道规则_v3.0.md"
       ]
     },
     {
-      "id": "master-gate",
-      "prompt": "角色/场景/道具 MASTER 缺失时，生产停在哪个 Gate？（如 G5）",
-      "answer_sha256": "3921871aa0881e3e94830142ac90994452f670fe337eb50303ea9cc6d0f3ae37",
+      "id": "image-fallback",
+      "prompt": "订阅额度耗尽且已授权时的生图兜底通道枚举值是什么？",
+      "answer_sha256": "a1dbb11bebea54382d118f200b09b382faff73707c9a3e1c403c68790808b850",
+      "protocol_refs": [
+        "16_生图渠道规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "tail-frame-blocking",
+      "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）",
+      "answer_sha256": "0c70665b6eb65f1aebf3b59f684ce52ed3473b2443ed4b4e0b815e2e9d66b8c2",
       "protocol_refs": [
         "核心自动化生产包/03_生产与资产规则_v3.0.md"
       ]
@@ -179,11 +208,19 @@
       ]
     },
     {
-      "id": "protocol-version",
-      "prompt": "当前核心协议的版本号是？",
-      "answer_sha256": "94d362738276c994337f42f6438216b264d4dc30c9856a443f128cf8a4b5fb3e",
+      "id": "master-gate",
+      "prompt": "角色/场景/道具 MASTER 缺失时，生产停在哪个 Gate？（如 G5）",
+      "answer_sha256": "3921871aa0881e3e94830142ac90994452f670fe337eb50303ea9cc6d0f3ae37",
       "protocol_refs": [
-        "VERSION.md"
+        "核心自动化生产包/03_生产与资产规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "submit-requires-report",
+      "prompt": "提交视频前必须落盘哪份产物？（填名称）",
+      "answer_sha256": "59f20217d404d43b93cf4e95aea7f6188ca4ef439f08aadb05c41c7f4d8c9bd9",
+      "protocol_refs": [
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
       ]
     },
     {
@@ -195,59 +232,11 @@
       ]
     },
     {
-      "id": "image-fallback",
-      "prompt": "订阅额度耗尽且已授权时的生图兜底通道枚举值是什么？",
-      "answer_sha256": "a1dbb11bebea54382d118f200b09b382faff73707c9a3e1c403c68790808b850",
+      "id": "script-visible-change",
+      "prompt": "脚本节奏检查中，每 3–5 秒至少需要发生什么？",
+      "answer_sha256": "d86d54b5083ddc1e01ecde0cdaff12e8a41bebafce92889e0594eb7c25dd9dbf",
       "protocol_refs": [
-        "16_生图渠道规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "image-model",
-      "prompt": "本协议下生图唯一允许的图像模型是什么？",
-      "answer_sha256": "9ba2827204791ed85334d9169cfdc7568e85f54747d31d3132d798d7dabc231b",
-      "protocol_refs": [
-        "16_生图渠道规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "max-submissions",
-      "prompt": "一份合同授权的付费视频提交最多几次？（数字）",
-      "answer_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "protocol_refs": [
-        "19_视频提交前确认报告与授权范围规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "image-unauthorized",
-      "prompt": "常规（非全自动）模式下，Agent 是否可以自行执行生图？（是/否）",
-      "answer_sha256": "0c70665b6eb65f1aebf3b59f684ce52ed3473b2443ed4b4e0b815e2e9d66b8c2",
-      "protocol_refs": [
-        "16_生图渠道规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "run-trace-missing",
-      "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）",
-      "answer_sha256": "aaebf58da809b6117f4a4cb4d952cbfb6994d8362d2a83026b52243b03711af6",
-      "protocol_refs": [
-        "18_运行轨迹与进度可视规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "run-trace-location",
-      "prompt": "每段（每次运行）的轨迹文件存放在项目 workflow 下的哪个目录？（填目录名）",
-      "answer_sha256": "1f64fff08d787e732e04559f4d241876b399d9d4251af79833bd22adbb2d331a",
-      "protocol_refs": [
-        "18_运行轨迹与进度可视规则_v3.0.md"
-      ]
-    },
-    {
-      "id": "material-change-approval",
-      "prompt": "修复需要改变已锁定的动作/结尾或生成范围，用户尚未回答时应如何处理？",
-      "answer_sha256": "f2b95ac9dfbe5563f41ec68712cda1e4488c699cfe0832defddba75dd173fdc9",
-      "protocol_refs": [
-        "22_用户决策交互与版本防循环规则_v3.0.md"
+        "09_脚本优化与分镜拆解规范_v3.0.md"
       ]
     },
     {
@@ -259,19 +248,35 @@
       ]
     },
     {
-      "id": "script-visible-change",
-      "prompt": "脚本节奏检查中，每 3–5 秒至少需要发生什么？",
-      "answer_sha256": "d86d54b5083ddc1e01ecde0cdaff12e8a41bebafce92889e0594eb7c25dd9dbf",
+      "id": "max-submissions",
+      "prompt": "一份合同授权的付费视频提交最多几次？（数字）",
+      "answer_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
       "protocol_refs": [
-        "09_脚本优化与分镜拆解规范_v3.0.md"
+        "19_视频提交前确认报告与授权范围规则_v3.0.md"
       ]
     },
     {
-      "id": "tail-frame-blocking",
-      "prompt": "首尾帧未授权制作时是否阻断生产？（是/否）",
-      "answer_sha256": "0c70665b6eb65f1aebf3b59f684ce52ed3473b2443ed4b4e0b815e2e9d66b8c2",
+      "id": "run-trace-missing",
+      "prompt": "一步完成但轨迹里没有事件记录，该步算完成吗？（算/不算）",
+      "answer_sha256": "aaebf58da809b6117f4a4cb4d952cbfb6994d8362d2a83026b52243b03711af6",
       "protocol_refs": [
-        "核心自动化生产包/03_生产与资产规则_v3.0.md"
+        "18_运行轨迹与进度可视规则_v3.0.md"
+      ]
+    },
+    {
+      "id": "protocol-version",
+      "prompt": "当前核心协议的版本号是？",
+      "answer_sha256": "94d362738276c994337f42f6438216b264d4dc30c9856a443f128cf8a4b5fb3e",
+      "protocol_refs": [
+        "VERSION.md"
+      ]
+    },
+    {
+      "id": "run-trace-location",
+      "prompt": "每段（每次运行）的轨迹文件存放在项目 workflow 下的哪个目录？（填目录名）",
+      "answer_sha256": "1f64fff08d787e732e04559f4d241876b399d9d4251af79833bd22adbb2d331a",
+      "protocol_refs": [
+        "18_运行轨迹与进度可视规则_v3.0.md"
       ]
     }
   ]

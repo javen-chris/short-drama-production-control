@@ -694,8 +694,8 @@ def skill_audit_block(audits: list[dict]) -> str:
   <section class="pstate">
     <h2>G5.1 模型 Skill 审计（workflow/skill_audits/）</h2>
     <div class="sub">未跑（<code>NOT_RUN</code>）、不确定（<code>UNCERTAIN</code>）、
-      无证据的 PASS —— 一律按阻断处理，<strong>不允许先建节点再补 Skill</strong>。
-      Prompt 改一句就要递增版本并重新审计。</div>
+      非法/缺失状态、审计错误、阻断码及无效证据一律阻断。
+      当前合同模型、Prompt 内容哈希、模式与输入哈希必须匹配；改版本名不能绕过审计。</div>
     <div class="reason">⚠️ <strong>没有任何审计记录</strong>——说明这批 Prompt
       <strong>从未跑过 Skill</strong>。这是 G5.1 最严重的状态：内容看起来写好了，
       但没有任何一项经过校验。</div>
@@ -714,8 +714,8 @@ def skill_audit_block(audits: list[dict]) -> str:
   <section class="pstate">
     <h2>G5.1 模型 Skill 审计（workflow/skill_audits/）</h2>
     <div class="sub">未跑（<code>NOT_RUN</code>）、不确定（<code>UNCERTAIN</code>）、
-      无证据的 PASS —— 一律按阻断处理，<strong>不允许先建节点再补 Skill</strong>。
-      Prompt 改一句就要递增版本并重新审计。</div>
+      非法/缺失状态、审计错误、阻断码及无效证据一律阻断。
+      当前合同模型、Prompt 内容哈希、模式与输入哈希必须匹配；改版本名不能绕过审计。</div>
     <table>
       <thead><tr><th>单元</th><th>判定</th><th>skill 项数</th><th>Prompt 版本</th><th>问题</th></tr></thead>
       <tbody>{''.join(rows)}</tbody>
